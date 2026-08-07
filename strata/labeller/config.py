@@ -28,6 +28,10 @@ class CatalogConfig:
     """
 
     root: str = "catalog"
+    #: What the blobs mount is called inside the Label Studio container.
+    #: Machine-level because the catalog is shared across projects, unlike
+    #: the per-project data root it replaces.
+    blobs_prefix: str = "blobs"
 
 
 @dataclass

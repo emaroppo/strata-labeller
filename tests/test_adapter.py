@@ -1,0 +1,204 @@
+"""The Label Studio boundary.
+
+Everything Label Studio shaped has to stop here, so these tests are mostly
+about what crosses and in what form — and about the two cases that are easy
+to conflate, an empty answer and no answer.
+"""
+
+import pytest
+
+from strata.catalog import Catalog
+from strata.labeller.adapter import (
+    LOCAL_FILES,
+    blob_url,
+    build_tasks,
+    from_results,
+    location_from_url,
+    to_results,
+)
+from strata.labels import Choices, ChoicesPrediction
+
+
+@pytest.fixture
+def schema(project):
+    return project.schema
+
+
+@pytest.fixture
+def catalog(tmp_path):
+    return Catalog.local(tmp_path / "catalog")
+
+
+@pytest.fixture
+def stocked(catalog, tmp_path):
+    """A catalog with samples and a label set over them."""
+    from strata.labels import ClassificationSchema
+
+    root = tmp_path / "raw"
+    root.mkdir(exist_ok=True)
+    paths = []
+    for i in range(4):
+        path = root / f"img{i}.jpg"
+        path.write_bytes(f"image {i}".encode())
+        paths.append(path)
+    ids = catalog.ingest(paths, media="image")
+    label_set_id = catalog.create_label_set(
+        "presence", ClassificationSchema(classes=["cat", "dog"])
+    )
+    return ids, label_set_id
+
+
+# ----------------------------------------------------------------------
+# Values
+# ----------------------------------------------------------------------
+
+
+def test_a_value_becomes_label_studio_results(schema):
+    results = to_results(Choices(values=["cat", "dog"]), schema)
+    assert results[0]["type"] == "choices"
+    assert results[0]["value"]["choices"] == ["cat", "dog"]
+
+
+def test_results_become_a_value(schema):
+    results = to_results(Choices(values=["cat"]), schema)
+    assert from_results(results, schema) == Choices(values=["cat"])
+
+
+def test_a_value_survives_a_round_trip(schema):
+    value = Choices(values=["cat", "dog"])
+    assert from_results(to_results(value, schema), schema) == value
+
+
+def test_an_empty_value_produces_no_results(schema):
+    # Label Studio has no way to say "nothing", and does not need one: an
+    # annotation with an empty result list is exactly that
+    assert to_results(Choices(), schema) == []
+
+
+def test_no_results_is_an_empty_value_rather_than_nothing(schema):
+    # The distinction the catalog keeps: a reviewer who found none of the
+    # classes present has answered, and that is not the same as never having
+    # been asked. Absence of a row is the second; this is the first.
+    assert from_results([], schema) == Choices()
+
+
+def test_the_control_names_come_from_the_schema(schema):
+    [result] = to_results(Choices(values=["cat"]), schema)
+    assert result["from_name"] == schema.from_name
+    assert result["to_name"] == schema.to_name
+
+
+def test_a_prediction_crosses_as_its_values(schema):
+    from strata.labeller.adapter import prediction_to_results
+
+    prediction = ChoicesPrediction(values=["cat"], confidences=[0.9])
+    assert prediction_to_results(prediction, schema)[0]["value"]["choices"] == ["cat"]
+
+
+# ----------------------------------------------------------------------
+# Addressing
+# ----------------------------------------------------------------------
+
+
+def test_a_url_addresses_the_blob(catalog, stocked, tmp_path):
+    _, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id)[:1]
+    url = blob_url(sample, "blobs")
+    # The checksum is in the path, so the URL names one sample rather than
+    # matching a string that might mean several things
+    assert sample.checksum in url
+    assert url.startswith(LOCAL_FILES)
+
+
+def test_a_url_round_trips_to_its_location(catalog, stocked):
+    _, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id)[:1]
+    url = blob_url(sample, "blobs")
+    assert location_from_url(url, "blobs") == sample.location.container
+
+
+def test_a_url_is_percent_encoded(catalog, tmp_path):
+    from strata.catalog import Location
+
+    class Odd:
+        location = Location("ab/cd/file name&x.jpg", 0, 1)
+
+    url = blob_url(Odd(), "blobs")
+    assert " " not in url and "&" not in url.split("?d=", 1)[1]
+    assert location_from_url(url, "blobs") == "ab/cd/file name&x.jpg"
+
+
+def test_a_url_from_before_the_catalog_names_no_blob():
+    # A task created against the old data root: it points somewhere real,
+    # just not at a blob, and that has to be distinguishable
+    old = f"{LOCAL_FILES}images/vid1/f001.jpg"
+    assert location_from_url(old, "blobs") is None
+
+
+def test_something_that_is_not_a_local_file_names_no_blob():
+    assert location_from_url("https://example.com/photo.jpg", "blobs") is None
+
+
+# ----------------------------------------------------------------------
+# Tasks
+# ----------------------------------------------------------------------
+
+
+def test_a_task_carries_the_sample_it_came_from(catalog, stocked, schema):
+    ids, label_set_id = stocked
+    samples = catalog.unlabelled(label_set_id)
+    tasks = build_tasks(samples, catalog, label_set_id, schema, "blobs")
+    assert {t.sample_id for t in tasks} == set(ids)
+
+
+def test_a_task_points_at_the_right_key_for_the_media(catalog, stocked, schema):
+    _, label_set_id = stocked
+    [task] = build_tasks(
+        catalog.unlabelled(label_set_id)[:1], catalog, label_set_id, schema, "blobs"
+    )
+    assert schema.data_key in task.data
+
+
+def test_an_unannotated_task_carries_no_annotation(catalog, stocked, schema):
+    _, label_set_id = stocked
+    [task] = build_tasks(
+        catalog.unlabelled(label_set_id)[:1], catalog, label_set_id, schema, "blobs"
+    )
+    assert task.annotations == []
+    assert not task.answered
+    assert "annotations" not in task.as_import()
+
+
+def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
+    ids, label_set_id = stocked
+    catalog.annotate(ids[0], label_set_id, Choices(values=["cat"]))
+    samples = [s for s in catalog.labelled(label_set_id)]
+    [task] = build_tasks(samples, catalog, label_set_id, schema, "blobs")
+
+    # Label Studio is a view of the catalog rather than a second copy, so
+    # rebuilding a project must not ask again for what is already answered
+    assert task.as_import()["annotations"] == [{"result": task.annotations}]
+    assert task.annotations[0]["value"]["choices"] == ["cat"]
+
+
+def test_an_empty_annotation_still_arrives_as_answered(catalog, stocked, schema):
+    ids, label_set_id = stocked
+    catalog.annotate(ids[0], label_set_id, Choices())
+    samples = catalog.labelled(label_set_id)
+    [task] = build_tasks(samples, catalog, label_set_id, schema, "blobs")
+
+    # An empty result list is the answer "none of these apply", and it has
+    # to arrive as an answer — otherwise rebuilding a project puts every
+    # such sample back in the queue for someone to answer again
+    assert task.annotations == []
+    assert task.answered
+    assert task.as_import()["annotations"] == [{"result": []}]
+
+
+def test_a_skipped_sample_has_no_annotation_to_carry(catalog, stocked, schema):
+    ids, label_set_id = stocked
+    catalog.skip(ids[0], label_set_id)
+    tasks = build_tasks(
+        catalog.unlabelled(label_set_id), catalog, label_set_id, schema, "blobs"
+    )
+    assert all(t.sample_id != ids[0] for t in tasks)
