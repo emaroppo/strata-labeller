@@ -65,7 +65,7 @@ def main() -> int:
         root.mkdir(parents=True, exist_ok=True)
     old_class = old.get("model", {}).get("class_name", "MyModel")
     model_ref = (
-        f"auto_labeller.models.classifier:{MODEL_CLASS_MAP.get(old_class, old_class)}"
+        f"strata.labeller.models.classifier:{MODEL_CLASS_MAP.get(old_class, old_class)}"
     )
 
     # Sample paths were repo-root relative; they become data-root relative

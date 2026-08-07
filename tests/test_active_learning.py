@@ -1,5 +1,5 @@
-from auto_labeller.active_learning import rank_by_uncertainty, select_for_review
-from auto_labeller.schemas import Prediction
+from strata.labeller.active_learning import rank_by_uncertainty, select_for_review
+from strata.labeller.schemas import Prediction
 
 
 def prediction(path: str, score: float, uncertainty: float) -> Prediction:

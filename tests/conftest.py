@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from auto_labeller.project import Project
+from strata.labeller.project import Project
 
 
 @pytest.fixture

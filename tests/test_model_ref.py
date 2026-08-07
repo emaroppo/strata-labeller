@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from auto_labeller import models
-from auto_labeller.project import Project, ProjectError
+from strata.labeller import models
+from strata.labeller.project import Project, ProjectError
 
 TOY_MODEL = '''
 from pathlib import Path
 
-from auto_labeller.model import BaseModel
-from auto_labeller.schemas import ChoiceOutput
+from strata.labeller.model import BaseModel
+from strata.labeller.schemas import ChoiceOutput
 
 
 class ToyModel(BaseModel):
@@ -91,8 +91,8 @@ def test_model_params_reach_the_constructor(toy_project):
 def test_a_plugin_output_reaches_label_studio_results(toy_project):
     """The whole point of the seam: a model that knows nothing about Label
     Studio still produces results Label Studio can read."""
-    from auto_labeller.dataset import Sample
-    from auto_labeller.predict import run_predictions
+    from strata.labeller.dataset import Sample
+    from strata.labeller.predict import run_predictions
 
     predictions = run_predictions(toy_project.load_model(), [Sample(path="a.jpg")], toy_project)
 
@@ -121,7 +121,7 @@ def test_a_missing_class_names_the_module(toy_project):
 
 
 def test_a_ref_without_a_class_is_refused(project):
-    loaded = set_ref(project, "auto_labeller.models.classifier")
+    loaded = set_ref(project, "strata.labeller.models.classifier")
     with pytest.raises(ProjectError, match="must be"):
         loaded.load_model()
 
@@ -144,8 +144,8 @@ def test_an_installed_module_ref_imports(project):
 
 
 def test_extra_hint_names_the_extra_for_each_baseline():
-    assert "image" in models.extra_hint("auto_labeller.models.classifier")
-    assert "text" in models.extra_hint("auto_labeller.models.text_classifier")
+    assert "image" in models.extra_hint("strata.labeller.models.classifier")
+    assert "text" in models.extra_hint("strata.labeller.models.text_classifier")
     # A project's own model brings its own dependencies; we have no advice
     assert models.extra_hint("some.third.party:Model") is None
 
@@ -156,12 +156,12 @@ def test_a_baseline_without_its_framework_names_the_extra(project, monkeypatch):
     real_import = importlib.import_module
 
     def fake_import(name, *args, **kwargs):
-        if name.startswith("auto_labeller.models."):
+        if name.startswith("strata.labeller.models."):
             raise ImportError("No module named 'timm'")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(importlib, "import_module", fake_import)
-    loaded = set_ref(project, "auto_labeller.models.classifier:MultiLabelClassifier")
+    loaded = set_ref(project, "strata.labeller.models.classifier:MultiLabelClassifier")
     with pytest.raises(ProjectError, match="needs the 'image' extra"):
         loaded.load_model()
 
@@ -188,8 +188,8 @@ def test_baselines_are_not_imported_until_asked_for():
     keeps the base install free of torch."""
     import sys
 
-    assert "auto_labeller.models" in sys.modules
-    module = sys.modules["auto_labeller.models"]
+    assert "strata.labeller.models" in sys.modules
+    module = sys.modules["strata.labeller.models"]
     assert not hasattr(module, "classifier") or "torch" in sys.modules
 
 

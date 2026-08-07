@@ -12,7 +12,7 @@ import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from auto_labeller.models.classifier import (  # noqa: E402
+from strata.labeller.models.classifier import (  # noqa: E402
     MulticlassClassifier,
     MultiLabelClassifier,
     PresenceClassifier,

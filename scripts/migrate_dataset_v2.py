@@ -33,8 +33,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from auto_labeller.dataset import is_v1, load_dataset, save_dataset  # noqa: E402
-from auto_labeller.project import Project, ProjectError  # noqa: E402
+from strata.labeller.dataset import is_v1, load_dataset, save_dataset  # noqa: E402
+from strata.labeller.project import Project, ProjectError  # noqa: E402
 
 
 def main() -> int:

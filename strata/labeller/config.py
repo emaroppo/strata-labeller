@@ -1,7 +1,7 @@
 """Machine-level settings: how to reach Label Studio on this host.
 
 Everything that belongs to a labelling job lives in the project directory
-instead — see :mod:`auto_labeller.project`.
+instead — see :mod:`strata.labeller.project`.
 """
 
 import os

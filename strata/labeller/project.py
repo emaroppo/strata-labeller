@@ -61,7 +61,7 @@ class LabelConfigSpec:
 class ModelSpec:
     # "<file>.py:Class" resolves inside the project; "pkg.module:Class"
     # falls back to an installed package
-    ref: str = "auto_labeller.models.classifier:MultiLabelClassifier"
+    ref: str = "strata.labeller.models.classifier:MultiLabelClassifier"
     params: dict = field(default_factory=dict)
 
 
@@ -288,7 +288,7 @@ class Project:
             module_path = _resolve(self.root, target)
             if not module_path.exists():
                 raise ProjectError(f"[model] ref points at a missing file: {module_path}")
-            module_name = f"auto_labeller_project_model_{module_path.stem}"
+            module_name = f"strata.labeller_project_model_{module_path.stem}"
             spec = importlib.util.spec_from_file_location(module_name, module_path)
             if spec is None or spec.loader is None:
                 raise ProjectError(f"Could not load model module from {module_path}")
@@ -457,7 +457,7 @@ class Project:
             "\n"
             "[model]\n"
             '# "model.py:MyModel" to use a model carried by this project\n'
-            'ref = "auto_labeller.models.classifier:MultiLabelClassifier"\n'
+            'ref = "strata.labeller.models.classifier:MultiLabelClassifier"\n'
             "\n"
             "[model.params]\n"
             "num_epochs = 4\n"

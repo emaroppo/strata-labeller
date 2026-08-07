@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from auto_labeller.dataset import Sample
-from auto_labeller.project import (
+from strata.labeller.dataset import Sample
+from strata.labeller.project import (
     PROJECT_ENV_VAR,
     Project,
     ProjectError,

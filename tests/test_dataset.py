@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from auto_labeller.dataset import (
+from strata.labeller.dataset import (
     DATASET_VERSION,
     Sample,
     get_classes,
@@ -14,7 +14,7 @@ from auto_labeller.dataset import (
     split_labeled_unlabeled,
     train_val_split,
 )
-from auto_labeller.schemas import ClassificationSchema
+from strata.labeller.schemas import ClassificationSchema
 
 
 @pytest.fixture

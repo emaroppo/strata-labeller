@@ -697,7 +697,7 @@ def serve(
     console.print("Add this URL as an ML backend in Label Studio:")
     console.print(f"  http://host.docker.internal:{port}")
     uvicorn.run(
-        "auto_labeller.ls_backend:app",
+        "strata.labeller.ls_backend:app",
         host=host,
         port=port,
         reload=True,

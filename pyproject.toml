@@ -1,5 +1,5 @@
 [project]
-name = "auto-labeller"
+name = "strata-labeller"
 version = "0.1.0"
 description = "Semi-automatic labelling pipeline with Label Studio"
 requires-python = ">=3.13"
@@ -11,15 +11,15 @@ dependencies = [
     "uvicorn>=0.20",
     # Declared ahead of use so the dependency graph is enforced by the build
     # from the start rather than at the phase that first imports them.
-    "labels",
-    "catalog",
-    "modelling",
+    "strata-labels",
+    "strata-catalog",
+    "strata-modelling",
 ]
 
 [tool.uv.sources]
-labels = { workspace = true }
-catalog = { workspace = true }
-modelling = { workspace = true }
+strata-labels = { workspace = true }
+strata-catalog = { workspace = true }
+strata-modelling = { workspace = true }
 
 # Still declared here while the models live in this package. They move to
 # modelling in Phase 4 and these go with them.
@@ -35,12 +35,16 @@ text = [
     "transformers>=4.40",
 ]
 all = [
-    "auto-labeller[image,text]",
+    "strata-labeller[image,text]",
 ]
 
 [project.scripts]
-auto-labeller = "auto_labeller.cli:app"
+auto-labeller = "strata.labeller.cli:app"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# PEP 420 namespace: no strata/__init__.py in any package, or they stop merging
+packages = ["strata"]
