@@ -16,8 +16,9 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from strata.modelling import Model
+
 from .config import Settings
-from .model import BaseModel
 from .project import PROJECT_ENV_VAR, PROJECTS_DIR, Project, ProjectError
 
 app = typer.Typer(name="auto-labeller")
@@ -87,7 +88,7 @@ def _warn_undeclared(project: Project, samples: list) -> list[str]:
 
 
 def _resolve_checkpoint(
-    model: BaseModel,
+    model: Model,
     project: Project,
     checkpoint: Path | None = None,
     fresh: bool = False,
@@ -104,7 +105,7 @@ def _resolve_checkpoint(
     return latest
 
 
-def _require_checkpoint(model: BaseModel, project: Project, checkpoint: Path | None) -> Path:
+def _require_checkpoint(model: Model, project: Project, checkpoint: Path | None) -> Path:
     ckpt = _resolve_checkpoint(model, project, checkpoint)
     if not ckpt:
         console.print("[red]No checkpoint found. Run 'train' first or pass --checkpoint.[/red]")

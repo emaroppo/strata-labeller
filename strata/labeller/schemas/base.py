@@ -86,6 +86,20 @@ class LabelSchema(Protocol):
         ...
 
 
+def _confidences(output, legacy_attr: str) -> list[float]:
+    """Per-item confidence, from either shape of model output.
+
+    strata.labels carries confidences alongside the values; the legacy
+    dataclasses carried a ``score`` on each item. Both are read here rather
+    than in three schemas.
+    """
+    values = getattr(output, "values", None)
+    if values is not None:
+        confidences = getattr(output, "confidences", None) or []
+        return [float(c) for c in confidences]
+    return [float(item.score) for item in getattr(output, legacy_attr, [])]
+
+
 def strip_volatile(result: dict, keep: tuple[str, ...] = ()) -> Result:
     """One result entry, minus the fields that change on every export."""
     cleaned = {k: v for k, v in result.items() if k not in VOLATILE_FIELDS}

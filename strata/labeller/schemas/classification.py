@@ -90,8 +90,11 @@ class ClassificationSchema(LabelSchema):
             }
         ]
 
-    def encode_output(self, output: ChoiceOutput) -> list[Result]:
-        return self.encode_target(output.labels)
+    def encode_output(self, output) -> list[Result]:
+        # A model speaks strata.labels now, so `values`; the legacy
+        # ChoiceOutput dataclass says `labels`. Both are accepted while the
+        # adapter is being built out.
+        return self.encode_target(getattr(output, "values", None) or output.labels)
 
     # ------------------------------------------------------------------
     # Active learning

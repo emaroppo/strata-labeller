@@ -2,6 +2,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from strata.modelling import Model
+
 from .dataset import (
     get_classes,
     load_dataset,
@@ -9,12 +11,11 @@ from .dataset import (
     split_labeled_unlabeled,
     train_val_split,
 )
-from .model import BaseModel
 from .project import Project
 
 
 def run_training(
-    model: BaseModel,
+    model: Model,
     project: Project,
     round_num: int | None = None,
 ) -> dict:

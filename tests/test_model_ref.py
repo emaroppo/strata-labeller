@@ -1,9 +1,10 @@
 """The `[model] ref` contract — the seam a project plugs its model into.
 
-Both forms have to keep working: a model.py carried inside the project, and
-any installed ``pkg.module:Class``. The frameworks are optional extras, so a
-missing one has to arrive as an error naming the extra rather than a stray
-ModuleNotFoundError from inside importlib.
+Resolution itself lives in strata.modelling and is tested there. What this
+covers is the project's side: that every form of ref still reaches a model,
+that [model.params] arrive as constructor arguments, and that a project.toml
+written before the baselines moved keeps working rather than failing with an
+import error that says nothing about what to change.
 """
 
 import importlib
@@ -12,32 +13,32 @@ from pathlib import Path
 
 import pytest
 
-from strata.labeller import models
-from strata.labeller.project import Project, ProjectError
+from strata.labeller.project import LEGACY_MODEL_REFS, Project, ProjectError
 
 TOY_MODEL = '''
 from pathlib import Path
 
-from strata.labeller.model import BaseModel
-from strata.labeller.schemas import ChoiceOutput
+from strata.labels import ChoicesPrediction
+from strata.modelling import Model
 
 
-class ToyModel(BaseModel):
+class ToyModel(Model):
     """A model with no ML dependency at all."""
 
-    schema_type = "image_classification"
+    task = "classification"
+    version = "1"
 
     def __init__(self, num_epochs: int = 3, note: str = "default"):
         self.num_epochs = num_epochs
         self.note = note
         self.classes: list[str] = []
 
-    def finetune(self, samples, classes, val_samples=None):
+    def finetune(self, train, classes, val=None):
         self.classes = classes
         return {"loss": 0.0}
 
     def predict(self, paths):
-        return [ChoiceOutput(labels=["cat"], confidences=[0.87]) for _ in paths]
+        return [ChoicesPrediction(values=["cat"], confidences=[0.87]) for _ in paths]
 
     def save(self, path: Path) -> None:
         ...
@@ -120,9 +121,16 @@ def test_a_missing_class_names_the_module(toy_project):
         loaded.load_model()
 
 
-def test_a_ref_without_a_class_is_refused(project):
-    loaded = set_ref(project, "strata.labeller.models.classifier")
-    with pytest.raises(ProjectError, match="must be"):
+def test_a_bare_name_is_looked_up_in_the_registry(project):
+    # No ':' now means a registered short name rather than a malformed ref,
+    # which is what lets a request carry "multilabel" over a wire
+    loaded = set_ref(project, "presence")
+    assert type(loaded.load_model()).__name__ == "PresenceClassifier"
+
+
+def test_an_unregistered_bare_name_says_what_is_available(project):
+    loaded = set_ref(project, "not-a-model")
+    with pytest.raises(ProjectError, match="available: "):
         loaded.load_model()
 
 
@@ -143,25 +151,18 @@ def test_an_installed_module_ref_imports(project):
 # ----------------------------------------------------------------------
 
 
-def test_extra_hint_names_the_extra_for_each_baseline():
-    assert "image" in models.extra_hint("strata.labeller.models.classifier")
-    assert "text" in models.extra_hint("strata.labeller.models.text_classifier")
-    # A project's own model brings its own dependencies; we have no advice
-    assert models.extra_hint("some.third.party:Model") is None
-
-
 def test_a_baseline_without_its_framework_names_the_extra(project, monkeypatch):
     """Simulated rather than uninstalling torch: the behaviour under test is
     the ImportError -> ProjectError mapping, not torch itself."""
     real_import = importlib.import_module
 
     def fake_import(name, *args, **kwargs):
-        if name.startswith("strata.labeller.models."):
+        if name.startswith("strata.modelling.baselines."):
             raise ImportError("No module named 'timm'")
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(importlib, "import_module", fake_import)
-    loaded = set_ref(project, "strata.labeller.models.classifier:MultiLabelClassifier")
+    loaded = set_ref(project, "strata.modelling.baselines.classifier:MultiLabelClassifier")
     with pytest.raises(ProjectError, match="needs the 'image' extra"):
         loaded.load_model()
 
@@ -183,20 +184,24 @@ def test_a_broken_project_model_is_reported_as_a_project_error(project):
         loaded.load_model()
 
 
-def test_baselines_are_not_imported_until_asked_for():
-    """Importing the package must not pull in a framework — that is what
-    keeps the base install free of torch."""
-    import sys
-
-    assert "strata.labeller.models" in sys.modules
-    module = sys.modules["strata.labeller.models"]
-    assert not hasattr(module, "classifier") or "torch" in sys.modules
+def test_the_toy_model_declares_a_task_it_matches(toy_project):
+    # Training refuses a model written for another task, and the label set
+    # says which one it is
+    assert type(toy_project.load_model()).task == "classification"
 
 
-def test_the_toy_model_declares_a_schema_it_matches(toy_project):
-    # train.py refuses a model written for another task, and the check is a
-    # bare string match against the template name
-    assert toy_project.load_model().schema_type == toy_project.schema.type
+@pytest.mark.parametrize(
+    "legacy",
+    [
+        "auto_labeller.models.classifier:PresenceClassifier",
+        "strata.labeller.models.classifier:MultiLabelClassifier",
+    ],
+)
+def test_a_ref_from_before_the_move_still_resolves(project, legacy):
+    # The baselines moved twice. A project.toml written before either should
+    # not fail with an import error that says nothing about what to change.
+    assert legacy in LEGACY_MODEL_REFS
+    assert set_ref(project, legacy).load_model() is not None
 
 
 def test_paths_handed_to_a_model_are_absolute(toy_project):

@@ -1,11 +1,12 @@
+from strata.modelling import Model
+
 from .dataset import Sample
-from .model import BaseModel
 from .project import Project
 from .schemas import Prediction
 
 
 def run_predictions(
-    model: BaseModel, samples: list[Sample], project: Project
+    model: Model, samples: list[Sample], project: Project
 ) -> list[Prediction]:
     """Predict on samples and convert the model's output to storage form.
 

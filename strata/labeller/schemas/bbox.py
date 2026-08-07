@@ -8,7 +8,7 @@ else.
 
 from dataclasses import dataclass, field
 
-from .base import LabelSchema, Result, strip_volatile
+from .base import LabelSchema, Result, _confidences, strip_volatile
 from .media import IMAGE, Media
 from .render import render_template
 
@@ -108,24 +108,25 @@ class BBoxSchema(LabelSchema):
             for box in target
         ]
 
-    def encode_output(self, output: BoxOutput) -> list[Result]:
-        return self.encode_target(output.boxes)
+    def encode_output(self, output) -> list[Result]:
+        return self.encode_target(getattr(output, "values", None) or output.boxes)
 
-    def score(self, output: BoxOutput) -> float:
+    def score(self, output) -> float:
         # A detection is only as trustworthy as its weakest box; an empty
         # prediction claims nothing, so it scores zero
-        return min((b.score for b in output.boxes), default=0.0)
+        return min(_confidences(output, "boxes"), default=0.0)
 
-    def uncertainty(self, output: BoxOutput) -> float:
+    def uncertainty(self, output) -> float:
         """Boxes sitting near the decision threshold are the informative ones.
 
         An image with no boxes at all is maximally uncertain: either the
         model found nothing, or it missed everything, and only a human
         settles which.
         """
-        if not output.boxes:
+        scores = _confidences(output, "boxes")
+        if not scores:
             return 1.0
-        return max(1.0 - abs(b.score - 0.5) * 2.0 for b in output.boxes)
+        return max(1.0 - abs(s - 0.5) * 2.0 for s in scores)
 
     def classes_in_use(self, results_lists: list[list[Result]]) -> list[str]:
         seen: set[str] = set()

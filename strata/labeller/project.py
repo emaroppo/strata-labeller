@@ -19,19 +19,18 @@ Sample paths in ``dataset.json`` are relative to ``[data] root``, so moving
 the files or the project never rewrites the dataset.
 """
 
-import importlib
-import importlib.util
 import os
 import re
-import sys
 import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from pathlib import Path, PurePosixPath
 
-from . import models, schemas
+from strata.modelling import ModelError, resolve
+from strata.modelling.model import Model
+
+from . import schemas
 from .dataset import Sample
-from .model import BaseModel
 from .schemas import LabelSchema
 
 PROJECT_FILE = "project.toml"
@@ -40,6 +39,27 @@ PROJECT_ENV_VAR = "AUTO_LABELLER_PROJECT"
 PROJECTS_DIR = "projects"
 
 CUSTOM_LABEL_CONFIG = "label_config.xml"
+
+# The baselines have moved twice: out of auto_labeller when the packages were
+# namespaced, and out of the labeller when they became strata.modelling's.
+# A project.toml written before either still resolves rather than failing
+# with an import error that says nothing about what to change.
+LEGACY_MODEL_REFS: dict[str, str] = {
+    f"{old}:{name}": f"strata.modelling.baselines.{module}:{name}"
+    for old, module in (
+        ("auto_labeller.models.classifier", "classifier"),
+        ("auto_labeller.models.text_classifier", "text_classifier"),
+        ("strata.labeller.models.classifier", "classifier"),
+        ("strata.labeller.models.text_classifier", "text_classifier"),
+    )
+    for name in (
+        "MulticlassClassifier",
+        "MultiLabelClassifier",
+        "PresenceClassifier",
+        "TextClassifier",
+        "TextSpanTagger",
+    )
+}
 
 
 class ProjectError(Exception):
@@ -61,7 +81,7 @@ class LabelConfigSpec:
 class ModelSpec:
     # "<file>.py:Class" resolves inside the project; "pkg.module:Class"
     # falls back to an installed package
-    ref: str = "strata.labeller.models.classifier:MultiLabelClassifier"
+    ref: str = "multilabel"
     params: dict = field(default_factory=dict)
 
 
@@ -266,61 +286,23 @@ class Project:
     # Model
     # ------------------------------------------------------------------
 
-    def load_model(self) -> BaseModel:
+    def load_model(self) -> Model:
         """Instantiate the project's model with its configured parameters.
 
-        A ``*.py:Class`` ref is loaded from a file inside the project, so a
-        project can carry a bespoke model. Note this executes code from the
-        project directory.
+        Resolution is ``strata.modelling``'s: a short name goes through the
+        registry, and anything with a ``:`` is a direct reference — either a
+        ``file.py:Class`` carried by the project, which executes code from
+        the project directory, or an installed ``module:Class``.
 
-        A model is the only part of the pipeline that needs an ML framework,
-        and the frameworks are optional dependencies, so this is where a
-        missing one surfaces — as an error naming the extra to install.
+        A model is the only part of the pipeline needing an ML framework, and
+        the frameworks are optional dependencies, so this is where a missing
+        one surfaces.
         """
-        ref = self.model.ref
-        if ":" not in ref:
-            raise ProjectError(
-                f"[model] ref must be '<file>.py:Class' or 'pkg.module:Class', got '{ref}'"
-            )
-        target, class_name = ref.rsplit(":", 1)
-
-        if target.endswith(".py"):
-            module_path = _resolve(self.root, target)
-            if not module_path.exists():
-                raise ProjectError(f"[model] ref points at a missing file: {module_path}")
-            module_name = f"strata.labeller_project_model_{module_path.stem}"
-            spec = importlib.util.spec_from_file_location(module_name, module_path)
-            if spec is None or spec.loader is None:
-                raise ProjectError(f"Could not load model module from {module_path}")
-            module = importlib.util.module_from_spec(spec)
-            # Registered before exec so dataclasses/pickle inside can find it
-            sys.modules[module_name] = module
-            try:
-                spec.loader.exec_module(module)
-            except ImportError as exc:
-                extras = ", ".join(sorted(set(models.EXTRAS.values())))
-                raise ProjectError(
-                    f"{module_path} will not import: {exc}. A project's own model "
-                    f"brings its own dependencies; if it builds on a baseline's "
-                    f"framework, install that extra ({extras})"
-                ) from exc
-        else:
-            try:
-                module = importlib.import_module(target)
-            except ImportError as exc:
-                hint = models.extra_hint(target)
-                if hint is None:
-                    raise ProjectError(
-                        f"[model] ref points at a module that will not import: {exc}"
-                    ) from exc
-                raise ProjectError(
-                    f"[model] ref = '{ref}' is a baseline model and {hint}"
-                ) from exc
-
+        ref = LEGACY_MODEL_REFS.get(self.model.ref, self.model.ref)
         try:
-            model_cls = getattr(module, class_name)
-        except AttributeError:
-            raise ProjectError(f"No class '{class_name}' in {target}") from None
+            model_cls = resolve(ref, root=self.root)
+        except ModelError as exc:
+            raise ProjectError(str(exc)) from exc
         return model_cls(**self.model.params)
 
     def latest_checkpoint(self) -> Path | None:
@@ -457,7 +439,7 @@ class Project:
             "\n"
             "[model]\n"
             '# "model.py:MyModel" to use a model carried by this project\n'
-            'ref = "strata.labeller.models.classifier:MultiLabelClassifier"\n'
+            'ref = "multilabel"  # a registered name, or "model.py:MyModel"\n'
             "\n"
             "[model.params]\n"
             "num_epochs = 4\n"

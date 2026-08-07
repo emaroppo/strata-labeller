@@ -9,17 +9,18 @@ from pathlib import Path
 from urllib.parse import unquote
 
 from fastapi import FastAPI
-from pydantic import BaseModel as PydanticBaseModel
+from pydantic import Model as PydanticModel
 
-from .model import BaseModel
+from strata.modelling import Model
+
 from .project import Project
 
 app = FastAPI(title="auto-labeller ML backend")
-_model: BaseModel | None = None
+_model: Model | None = None
 _project: Project | None = None
 
 
-class PredictRequest(PydanticBaseModel):
+class PredictRequest(PydanticModel):
     tasks: list[dict]
     project: str | None = None
 

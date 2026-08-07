@@ -21,23 +21,6 @@ strata-labels = { workspace = true }
 strata-catalog = { workspace = true }
 strata-modelling = { workspace = true }
 
-# Still declared here while the models live in this package. They move to
-# modelling in Phase 4 and these go with them.
-[project.optional-dependencies]
-image = [
-    "Pillow>=10.0",
-    "timm>=1.0",
-    "torch>=2.0",
-    "torchvision>=0.15",
-]
-text = [
-    "torch>=2.0",
-    "transformers>=4.40",
-]
-all = [
-    "strata-labeller[image,text]",
-]
-
 [project.scripts]
 auto-labeller = "strata.labeller.cli:app"
 

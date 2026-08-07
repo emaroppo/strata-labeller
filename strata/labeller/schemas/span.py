@@ -7,7 +7,7 @@ is kept because it makes a stored annotation readable on its own.
 
 from dataclasses import dataclass, field
 
-from .base import LabelSchema, Result, strip_volatile
+from .base import LabelSchema, Result, _confidences, strip_volatile
 from .media import TEXT, Media
 from .render import render_template
 
@@ -96,23 +96,24 @@ class SpanSchema(LabelSchema):
             for span in target
         ]
 
-    def encode_output(self, output: SpanOutput) -> list[Result]:
-        return self.encode_target(output.spans)
+    def encode_output(self, output) -> list[Result]:
+        return self.encode_target(getattr(output, "values", None) or output.spans)
 
-    def score(self, output: SpanOutput) -> float:
+    def score(self, output) -> float:
         # As trustworthy as its least certain span; claiming nothing scores zero
-        return min((s.score for s in output.spans), default=0.0)
+        return min(_confidences(output, "spans"), default=0.0)
 
-    def uncertainty(self, output: SpanOutput) -> float:
+    def uncertainty(self, output) -> float:
         """Spans near the decision threshold are the informative ones.
 
         A document the model found nothing in is maximally uncertain: it
         either contains nothing or the model missed everything, and only a
         reader settles which.
         """
-        if not output.spans:
+        scores = _confidences(output, "spans")
+        if not scores:
             return 1.0
-        return max(1.0 - abs(s.score - 0.5) * 2.0 for s in output.spans)
+        return max(1.0 - abs(s - 0.5) * 2.0 for s in scores)
 
     def classes_in_use(self, results_lists: list[list[Result]]) -> list[str]:
         seen: set[str] = set()
