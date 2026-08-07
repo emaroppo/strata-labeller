@@ -1,0 +1,6 @@
+<View>
+  <Labels name="@from_name" toName="@to_name">
+@labels
+  </Labels>
+  <Text name="@to_name" value="$text" valueType="url"/>
+</View>

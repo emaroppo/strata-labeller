@@ -1,0 +1,46 @@
+[project]
+name = "auto-labeller"
+version = "0.1.0"
+description = "Semi-automatic labelling pipeline with Label Studio"
+requires-python = ">=3.13"
+dependencies = [
+    "typer>=0.9",
+    "rich>=13.0",
+    "label-studio-sdk>=1.0",
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+    # Declared ahead of use so the dependency graph is enforced by the build
+    # from the start rather than at the phase that first imports them.
+    "labels",
+    "catalog",
+    "modelling",
+]
+
+[tool.uv.sources]
+labels = { workspace = true }
+catalog = { workspace = true }
+modelling = { workspace = true }
+
+# Still declared here while the models live in this package. They move to
+# modelling in Phase 4 and these go with them.
+[project.optional-dependencies]
+image = [
+    "Pillow>=10.0",
+    "timm>=1.0",
+    "torch>=2.0",
+    "torchvision>=0.15",
+]
+text = [
+    "torch>=2.0",
+    "transformers>=4.40",
+]
+all = [
+    "auto-labeller[image,text]",
+]
+
+[project.scripts]
+auto-labeller = "auto_labeller.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

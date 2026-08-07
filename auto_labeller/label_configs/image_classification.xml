@@ -1,0 +1,10 @@
+<View style="display: flex; gap: 1em; align-items: flex-start;">
+  <View style="flex: 1;">
+    <Image name="@to_name" value="$image" zoom="true" maxWidth="100%"/>
+  </View>
+  <View style="width: 200px;">
+    <Choices name="@from_name" toName="@to_name" choice="@choice">
+@labels
+    </Choices>
+  </View>
+</View>

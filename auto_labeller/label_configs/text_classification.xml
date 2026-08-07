@@ -1,0 +1,10 @@
+<View style="display: flex; gap: 1em; align-items: flex-start;">
+  <View style="flex: 1; max-height: 80vh; overflow-y: auto;">
+    <Text name="@to_name" value="$text" valueType="url"/>
+  </View>
+  <View style="width: 200px;">
+    <Choices name="@from_name" toName="@to_name" choice="@choice">
+@labels
+    </Choices>
+  </View>
+</View>
