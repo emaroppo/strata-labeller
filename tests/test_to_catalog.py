@@ -290,3 +290,63 @@ def test_a_v1_dataset_migrates_through_the_upgrade(project, catalog):
     report = migrate(project, catalog)
     [sample] = catalog.labelled(report.label_set_id)
     assert catalog.annotation_of(sample.id, report.label_set_id) == Choices(values=["dog"])
+
+
+# ----------------------------------------------------------------------
+# Keeping the label set in step with the project
+# ----------------------------------------------------------------------
+
+
+def test_adding_a_class_widens_the_label_set(project, catalog, populated, tmp_path):
+    from strata.labeller.cli import _add_to_label_set
+    from strata.labeller.config import CatalogConfig, Settings
+
+    populated(annotated=2, skipped=0, unlabelled=0)
+    report = migrate(project, catalog)
+    settings = Settings(catalog=CatalogConfig(root=str(tmp_path / "catalog")))
+
+    classes = project.add_classes(["bird"])
+    _add_to_label_set(project, settings, classes)
+
+    # The labeling config comes from project.toml but an export is validated
+    # against the label set; a class in one and not the other lets a reviewer
+    # apply a label the catalog then refuses
+    _, schema = catalog.label_set(report.label_set)
+    assert schema.classes == ["cat", "dog", "bird"]
+
+
+def test_widening_is_append_only(project, catalog, populated, tmp_path):
+    from strata.labeller.cli import _add_to_label_set
+    from strata.labeller.config import CatalogConfig, Settings
+
+    populated(annotated=1, skipped=0, unlabelled=0)
+    report = migrate(project, catalog)
+    settings = Settings(catalog=CatalogConfig(root=str(tmp_path / "catalog")))
+
+    _add_to_label_set(project, settings, project.add_classes(["bird"]))
+    _, schema = catalog.label_set(report.label_set)
+    # Order is data: a checkpoint maps output neurons to it by position
+    assert schema.classes[:2] == ["cat", "dog"]
+
+
+def test_a_class_already_in_the_label_set_is_a_no_op(project, catalog, populated, tmp_path):
+    from strata.labeller.cli import _add_to_label_set
+    from strata.labeller.config import CatalogConfig, Settings
+
+    populated(annotated=1, skipped=0, unlabelled=0)
+    report = migrate(project, catalog)
+    settings = Settings(catalog=CatalogConfig(root=str(tmp_path / "catalog")))
+
+    _add_to_label_set(project, settings, ["cat", "dog"])
+    _, schema = catalog.label_set(report.label_set)
+    assert schema.classes == ["cat", "dog"]
+
+
+def test_no_catalog_is_not_an_error(project, tmp_path):
+    from strata.labeller.cli import _add_to_label_set
+    from strata.labeller.config import CatalogConfig, Settings
+
+    # A project can be used before anything is migrated; to-catalog will
+    # create the label set from project.toml when it runs
+    settings = Settings(catalog=CatalogConfig(root=str(tmp_path / "nothing-here")))
+    _add_to_label_set(project, settings, ["cat", "dog", "bird"])

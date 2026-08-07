@@ -253,6 +253,7 @@ def class_add(
     from .label_config import LabelConfigError
 
     project = _load_project(project_path)
+    settings = Settings.load(config_path)
 
     dataset = []
     if project.dataset_path.exists():
@@ -265,8 +266,9 @@ def class_add(
         raise typer.Exit(1) from None
     console.print(f"[green]Added {', '.join(names)}[/green] — classes: {', '.join(classes)}")
 
+    _add_to_label_set(project, settings, classes)
+
     if push and project.label_studio.project_id is not None:
-        settings = Settings.load(config_path)
         client = _ls_client(settings, project, config_path)
         for name in names:
             try:
@@ -294,6 +296,37 @@ def class_add(
             f"[dim]{skipped} skipped samples may contain it — "
             f"'auto-labeller unskip' returns them to the review queue.[/dim]"
         )
+
+
+def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
+    """Widen the catalog's label set to match the project's class list.
+
+    Both have to move together: the labeling config Label Studio renders
+    comes from project.toml, while what an export is validated against comes
+    from the label set. A class in one and not the other means a reviewer can
+    apply a label the catalog will then refuse.
+    """
+    from strata.catalog import Catalog, CatalogError
+
+    root = Path(settings.catalog.root)
+    if not (root / "catalog.db").exists():
+        return
+
+    catalog = Catalog.local(root)
+    try:
+        label_set_id, schema = catalog.label_set(project.label_set_name)
+    except CatalogError:
+        # No label set yet: to-catalog creates it from project.toml, so the
+        # classes arrive with it
+        return
+
+    added = [c for c in classes if c not in schema.classes]
+    if not added:
+        return
+    # Append-only, because a checkpoint maps output neurons to this list by
+    # position and a run records the list it trained with
+    catalog.set_classes(label_set_id, schema.model_copy(update={"classes": list(classes)}))
+    console.print(f"Label set '{project.label_set_name}' widened by {', '.join(added)}")
 
 
 @class_app.command("list")
