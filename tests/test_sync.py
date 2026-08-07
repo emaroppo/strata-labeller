@@ -1,0 +1,265 @@
+"""Keeping Label Studio and the catalog in step.
+
+No Label Studio here: what is under test is the translation either way, so
+these work on the payloads the SDK hands over and hands back.
+"""
+
+import pytest
+
+from strata.catalog import Catalog
+from strata.labeller.adapter import blob_url
+from strata.labeller.sync import (
+    load_task_map,
+    pull_annotations,
+    rebuild_task_map,
+    save_task_map,
+    tasks_to_push,
+)
+from strata.labels import Choices, ClassificationSchema
+
+
+@pytest.fixture
+def schema(project):
+    return project.schema
+
+
+@pytest.fixture
+def stocked(tmp_path):
+    catalog = Catalog.local(tmp_path / "catalog")
+    root = tmp_path / "raw"
+    root.mkdir(exist_ok=True)
+    paths = []
+    for i in range(5):
+        path = root / f"img{i}.jpg"
+        path.write_bytes(f"image {i}".encode())
+        paths.append(path)
+    ids = catalog.ingest(paths, media="image")
+    label_set_id = catalog.create_label_set(
+        "presence", ClassificationSchema(classes=["cat", "dog"])
+    )
+    return catalog, ids, label_set_id
+
+
+def ls_task(task_id: int, url: str, data_key: str = "image", **extra) -> dict:
+    return {"id": task_id, "data": {data_key: url}, **extra}
+
+
+# ----------------------------------------------------------------------
+# The task map
+# ----------------------------------------------------------------------
+
+
+def test_a_task_map_round_trips(project):
+    save_task_map(project, 7, {1: 100, 2: 200})
+    # JSON keys are strings and sample ids are not, which is a quiet way to
+    # lose a whole map
+    assert load_task_map(project, 7) == {1: 100, 2: 200}
+
+
+def test_a_missing_task_map_is_empty(project):
+    assert load_task_map(project, 7) == {}
+
+
+def test_task_maps_are_kept_per_label_studio_project(project):
+    save_task_map(project, 1, {1: 100})
+    save_task_map(project, 2, {1: 999})
+    assert load_task_map(project, 1) == {1: 100}
+
+
+def test_the_map_rebuilds_from_what_label_studio_holds(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    samples = catalog.unlabelled(label_set_id)
+    tasks = [ls_task(500 + i, blob_url(s, "blobs")) for i, s in enumerate(samples)]
+
+    mapping, unrecognised = rebuild_task_map(tasks, catalog, "blobs", schema.data_key)
+    # The cache only saves a listing; nothing depends on it surviving
+    assert mapping == {s.id: 500 + i for i, s in enumerate(samples)}
+    assert unrecognised == []
+
+
+def test_a_task_from_before_the_cutover_is_reported_not_guessed(stocked, schema):
+    catalog, _, _ = stocked
+    tasks = [ls_task(1, "/data/local-files/?d=images/vid1/f001.jpg")]
+
+    mapping, unrecognised = rebuild_task_map(tasks, catalog, "blobs", schema.data_key)
+    # It points at the old data root, which names no blob. Matching it to
+    # some sample by string similarity would be worse than saying so.
+    assert mapping == {}
+    assert len(unrecognised) == 1
+
+
+def test_a_blob_no_longer_in_the_catalog_is_unrecognised(stocked, schema):
+    catalog, _, _ = stocked
+    tasks = [ls_task(1, "/data/local-files/?d=blobs/aa/bb/" + "0" * 64 + ".jpg")]
+    mapping, unrecognised = rebuild_task_map(tasks, catalog, "blobs", schema.data_key)
+    assert mapping == {} and len(unrecognised) == 1
+
+
+# ----------------------------------------------------------------------
+# Pushing
+# ----------------------------------------------------------------------
+
+
+def test_everything_unseen_is_pushed(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    samples = catalog.unlabelled(label_set_id)
+    tasks, report = tasks_to_push(samples, catalog, label_set_id, schema, "blobs", {})
+    assert report.pushed == 5
+    assert len(tasks) == 5
+
+
+def test_samples_label_studio_already_has_are_skipped(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    samples = catalog.unlabelled(label_set_id)
+    existing = {samples[0].id: 100, samples[1].id: 101}
+
+    tasks, report = tasks_to_push(samples, catalog, label_set_id, schema, "blobs", existing)
+    # What makes a push resumable: an interrupted one is just run again
+    assert report.pushed == 3
+    assert report.already_present == 2
+    assert all(t.sample_id not in existing for t in tasks)
+
+
+def test_a_pushed_task_points_at_the_blob(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    samples = catalog.unlabelled(label_set_id)
+    tasks, _ = tasks_to_push(samples[:1], catalog, label_set_id, schema, "blobs", {})
+    assert samples[0].checksum in tasks[0].data[schema.data_key]
+
+
+# ----------------------------------------------------------------------
+# Pulling
+# ----------------------------------------------------------------------
+
+
+def annotated(task_id, url, choices, **extra):
+    return ls_task(
+        task_id,
+        url,
+        annotations=[
+            {
+                "was_cancelled": False,
+                "result": [
+                    {
+                        "from_name": "label",
+                        "to_name": "image",
+                        "type": "choices",
+                        "value": {"choices": choices},
+                    }
+                ]
+                if choices is not None
+                else [],
+                **extra,
+            }
+        ],
+    )
+
+
+def test_an_annotation_comes_back_as_a_value(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id)[:1]
+    exported = [annotated(1, blob_url(sample, "blobs"), ["cat"])]
+
+    items, report = pull_annotations(
+        exported, catalog, label_set_id, schema, "blobs", ["cat", "dog"]
+    )
+    assert items == [(sample.id, Choices(values=["cat"]))]
+    assert report.annotated == 1
+
+
+def test_an_empty_annotation_comes_back_as_an_answer(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id)[:1]
+    exported = [annotated(1, blob_url(sample, "blobs"), [])]
+
+    items, report = pull_annotations(
+        exported, catalog, label_set_id, schema, "blobs", ["cat", "dog"]
+    )
+    # A reviewer who found none of the classes present has answered
+    assert items == [(sample.id, Choices())]
+    assert report.annotated == 1
+
+
+def test_a_task_nobody_has_answered_is_left_alone(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id)[:1]
+    exported = [ls_task(1, blob_url(sample, "blobs"))]
+
+    items, report = pull_annotations(
+        exported, catalog, label_set_id, schema, "blobs", ["cat"]
+    )
+    # Writing an empty value here would claim someone had looked
+    assert items == []
+    assert report.total == 0
+
+
+def test_a_cancelled_annotation_is_a_skip(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id)[:1]
+    exported = [
+        ls_task(
+            1,
+            blob_url(sample, "blobs"),
+            annotations=[{"was_cancelled": True, "result": []}],
+        )
+    ]
+
+    items, report = pull_annotations(
+        exported, catalog, label_set_id, schema, "blobs", ["cat"]
+    )
+    assert items == [(sample.id, None)]
+    assert report.skipped == 1
+
+
+def test_a_class_nobody_declared_is_reported(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id)[:1]
+    exported = [annotated(1, blob_url(sample, "blobs"), ["cat", "fox"])]
+
+    _, report = pull_annotations(
+        exported, catalog, label_set_id, schema, "blobs", ["cat", "dog"]
+    )
+    # Someone added a class in the Label Studio UI; the catalog will refuse
+    # it, so it has to be visible rather than an error mid-write
+    assert report.undeclared == {"fox"}
+
+
+def test_volatile_fields_do_not_survive(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id)[:1]
+    exported = [
+        ls_task(
+            1,
+            blob_url(sample, "blobs"),
+            annotations=[
+                {
+                    "was_cancelled": False,
+                    "result": [
+                        {
+                            "id": "abc123",
+                            "lead_time": 4.2,
+                            "from_name": "label",
+                            "to_name": "image",
+                            "type": "choices",
+                            "value": {"choices": ["dog"]},
+                        }
+                    ],
+                }
+            ],
+        )
+    ]
+    items, _ = pull_annotations(
+        exported, catalog, label_set_id, schema, "blobs", ["cat", "dog"]
+    )
+    # They say nothing about the annotation and would churn the store
+    assert items == [(sample.id, Choices(values=["dog"]))]
+
+
+def test_an_unrecognised_task_is_reported_not_dropped(stocked, schema):
+    catalog, _, label_set_id = stocked
+    exported = [annotated(1, "/data/local-files/?d=images/old.jpg", ["cat"])]
+    items, report = pull_annotations(
+        exported, catalog, label_set_id, schema, "blobs", ["cat"]
+    )
+    assert items == []
+    assert len(report.unrecognised) == 1
