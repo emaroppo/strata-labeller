@@ -86,6 +86,20 @@ class ModelSpec:
 
 
 @dataclass
+class CatalogSpec:
+    """Which label set in the catalog this job annotates against.
+
+    Where the catalog is lives in config.toml — it describes the machine.
+    This says what the job is, so it travels with the project.
+    """
+
+    #: Defaults to the project's own name, which is what `to-catalog` writes.
+    label_set: str = ""
+    #: The dataset name versions accumulate under; defaults to the label set.
+    dataset: str = ""
+
+
+@dataclass
 class DataSpec:
     root: str = "data/raw"
     # How the samples relate to each other. "images": independent samples.
@@ -114,6 +128,7 @@ class Project:
     label_config: LabelConfigSpec = field(default_factory=LabelConfigSpec)
     model: ModelSpec = field(default_factory=ModelSpec)
     data: DataSpec = field(default_factory=DataSpec)
+    catalog: CatalogSpec = field(default_factory=CatalogSpec)
     label_studio: LabelStudioSpec = field(default_factory=LabelStudioSpec)
 
     # ------------------------------------------------------------------
@@ -135,7 +150,7 @@ class Project:
         with open(toml_path, "rb") as f:
             data = tomllib.load(f)
 
-        known_sections = {"label_config", "model", "data", "label_studio"}
+        known_sections = {"label_config", "model", "data", "catalog", "label_studio"}
         unknown = set(data) - known_sections - {"name"}
         if unknown:
             raise ProjectError(
@@ -148,6 +163,7 @@ class Project:
             label_config=_section(LabelConfigSpec, data.get("label_config", {}), "label_config"),
             model=_section(ModelSpec, data.get("model", {}), "model"),
             data=_section(DataSpec, data.get("data", {}), "data"),
+            catalog=_section(CatalogSpec, data.get("catalog", {}), "catalog"),
             label_studio=_section(LabelStudioSpec, data.get("label_studio", {}), "label_studio"),
         )
         project._validate()
@@ -209,6 +225,24 @@ class Project:
     # ------------------------------------------------------------------
     # Paths
     # ------------------------------------------------------------------
+
+    @property
+    def label_set_name(self) -> str:
+        return self.catalog.label_set or self.name
+
+    @property
+    def dataset_name(self) -> str:
+        return self.catalog.dataset or self.label_set_name
+
+    @property
+    def datasets_dir(self) -> Path:
+        """Where materialised dataset versions are written."""
+        return self.root / "datasets"
+
+    @property
+    def runs_dir(self) -> Path:
+        """The model catalog for this project: runs, metrics and checkpoints."""
+        return self.root / "runs"
 
     @property
     def dataset_path(self) -> Path:

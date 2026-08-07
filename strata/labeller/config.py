@@ -19,8 +19,21 @@ class LabelStudioConfig:
 
 
 @dataclass
+class CatalogConfig:
+    """Where the catalog lives on this host.
+
+    Machine-level for the same reason the Label Studio URL is: it describes
+    this setup, not the job. Which *label set* inside it a job annotates
+    against is the job's business and lives in project.toml.
+    """
+
+    root: str = "catalog"
+
+
+@dataclass
 class Settings:
     label_studio: LabelStudioConfig = field(default_factory=LabelStudioConfig)
+    catalog: CatalogConfig = field(default_factory=CatalogConfig)
 
     @classmethod
     def load(cls, path: Path = Path("config.toml")) -> "Settings":
@@ -30,6 +43,8 @@ class Settings:
                 data = tomllib.load(f)
             if "label_studio" in data:
                 settings.label_studio = LabelStudioConfig(**data["label_studio"])
+            if "catalog" in data:
+                settings.catalog = CatalogConfig(**data["catalog"])
 
         api_key = os.environ.get("LABEL_STUDIO_API_KEY")
         if api_key:
