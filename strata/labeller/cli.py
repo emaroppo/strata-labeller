@@ -843,3 +843,61 @@ def to_catalog(
     if dry_run:
         console.print("[yellow]Dry run — nothing was written.[/yellow]")
     console.print(describe(report, catalog_root))
+
+
+@app.command(name="catalog-stats")
+def catalog_stats(
+    catalog_root: Path = typer.Option(
+        Path("catalog"), "--catalog", help="The catalog to read"
+    ),
+) -> None:
+    """What is in a catalog: samples, label sets, and the class breakdown.
+
+    The per-class counts come from the annotation_class index rather than
+    from scanning stored values, so they are also the check that indexing
+    did its job.
+    """
+    from sqlalchemy import func, select
+
+    from strata.catalog import Catalog
+    from strata.catalog import tables as t
+
+    if not (catalog_root / "catalog.db").exists():
+        console.print(f"[red]No catalog at {catalog_root}[/red]")
+        raise typer.Exit(1)
+
+    catalog = Catalog.local(catalog_root)
+    with catalog.engine.connect() as conn:
+        total = conn.execute(select(func.count()).select_from(t.sample)).scalar()
+        groups = conn.execute(
+            select(func.count(func.distinct(t.sample.c.group_id))).where(
+                t.sample.c.group_id.is_not(None)
+            )
+        ).scalar()
+        ungrouped = conn.execute(
+            select(func.count()).select_from(t.sample).where(t.sample.c.group_id.is_(None))
+        ).scalar()
+        label_sets = conn.execute(select(t.label_set.c.id, t.label_set.c.name)).all()
+
+    console.print(f"[bold]{catalog_root}[/bold]: {total} sample(s)")
+    if groups:
+        console.print(f"  {groups} group(s), {ungrouped} sample(s) in no group")
+
+    if not label_sets:
+        console.print("[yellow]No label sets yet.[/yellow]")
+        return
+
+    for label_set_id, name in label_sets:
+        _, schema = catalog.label_set(name)
+        labelled = catalog.labelled(label_set_id)
+        queue = catalog.unlabelled(label_set_id)
+        console.print(
+            f"\n[bold]{name}[/bold] — {schema.task}, "
+            f"{'multi' if schema.multiple else 'single'}-choice"
+        )
+        console.print(f"  {len(labelled)} annotated, {len(queue)} awaiting review")
+
+        table = Table("Class", "Samples", box=None, pad_edge=False)
+        for class_name in schema.classes:
+            table.add_row(class_name, str(len(catalog.with_class(label_set_id, class_name))))
+        console.print(table)
