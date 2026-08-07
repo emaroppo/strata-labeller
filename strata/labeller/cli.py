@@ -460,40 +460,85 @@ def ingest(
 @app.command()
 def train(
     project_path: Path | None = ProjectOption,
-    round_num: int | None = typer.Option(
-        None, help="Round number (auto-detected if omitted)"
-    ),
-    checkpoint: Path | None = typer.Option(
-        None, help="Checkpoint to continue from (default: latest)"
-    ),
+    config_path: Path = ConfigOption,
     fresh: bool = typer.Option(
-        False, "--fresh/--no-fresh", help="Train from scratch, ignoring existing checkpoints"
+        False, "--fresh/--no-fresh", help="Cold start, ignoring the previous run"
     ),
+    val_ratio: float = typer.Option(0.2, help="Share of samples to hold out"),
+    legacy: bool = typer.Option(
+        False,
+        "--legacy",
+        help="Train from dataset.json instead of the catalog (removed once the cutover settles)",
+    ),
+    round_num: int | None = typer.Option(None, help="--legacy only: round number"),
+    checkpoint: Path | None = typer.Option(None, help="--legacy only: checkpoint to continue from"),
 ) -> None:
-    """Train the project's model on its labeled data."""
+    """Train on the project's labelled data.
+
+    A round freezes a dataset version in the catalog, materialises it, and
+    trains from that directory — so the run resolves back to the exact
+    samples behind it, and validation membership is inherited rather than
+    recomputed.
+    """
+    project = _load_project(project_path)
+
+    if legacy:
+        _train_from_dataset_json(project, round_num, checkpoint, fresh)
+        return
+
+    from strata.catalog import Catalog
+
+    from .round import RoundError, describe, run_round
+
+    settings = Settings.load(config_path)
+    catalog_root = Path(settings.catalog.root)
+    if not (catalog_root / "catalog.db").exists():
+        console.print(
+            f"[red]No catalog at {catalog_root}.[/red] Run 'auto-labeller to-catalog' "
+            f"first, or set [catalog] root in {config_path}."
+        )
+        raise typer.Exit(1)
+
+    console.print("Training...")
+    try:
+        result = run_round(project, Catalog.local(catalog_root), fresh=fresh, val_ratio=val_ratio)
+    except RoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from None
+
+    for line in describe(result):
+        console.print(line)
+    console.print(f"  checkpoint: {result.run.checkpoint}")
+
+
+def _train_from_dataset_json(
+    project: Project, round_num: int | None, checkpoint: Path | None, fresh: bool
+) -> None:
+    """The pre-catalog round, kept for one cutover.
+
+    Reads dataset.json and writes rounds/<n>/metadata.json. It cannot see
+    anything labelled since the last `to-catalog`, and its split is
+    recomputed each time rather than inherited.
+    """
     from .train import run_training
 
-    project = _load_project(project_path)
+    console.print("[yellow]--legacy: training from dataset.json, not the catalog.[/yellow]")
     model = project.load_model()
-
     ckpt = _resolve_checkpoint(model, project, checkpoint, fresh)
     if ckpt:
         console.print(f"Loaded checkpoint: {ckpt}")
     elif fresh:
         console.print("Training from scratch.")
 
-    console.print("Training...")
     meta = run_training(model, project, round_num)
-
     console.print(f"[green]Round {meta['round']} complete[/green]")
     console.print(
         f"  Train: {meta['num_train']}, Val: {meta['num_val']}, "
         f"Unlabeled: {meta['num_unlabeled']}"
     )
     console.print(f"  Classes: {', '.join(meta['classes'])}")
-    if meta["metrics"]:
-        for k, v in meta["metrics"].items():
-            console.print(f"  {k}: {v}")
+    for k, v in (meta["metrics"] or {}).items():
+        console.print(f"  {k}: {v}")
 
 
 @app.command()
