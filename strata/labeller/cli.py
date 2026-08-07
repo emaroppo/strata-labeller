@@ -793,6 +793,16 @@ def to_catalog(
     annotations are upserted, so a run that stopped halfway can just be run
     again. Nothing about the project is modified.
     """
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+
     from strata.catalog import Catalog
 
     from .to_catalog import MigrationError, describe, migrate
@@ -804,7 +814,28 @@ def to_catalog(
 
     catalog = None if dry_run else Catalog.local(catalog_root)
     try:
-        report = migrate(project, catalog, label_set=label_set, dry_run=dry_run)
+        if dry_run:
+            report = migrate(project, catalog, label_set=label_set, dry_run=True)
+        else:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                TimeRemainingColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task("Migrating", total=None)
+
+                def advance(done: int, total: int) -> None:
+                    # Total is only known once the files have been resolved,
+                    # so the bar starts indeterminate and settles
+                    progress.update(task, completed=done, total=total)
+
+                report = migrate(
+                    project, catalog, label_set=label_set, on_progress=advance
+                )
     except MigrationError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1) from None

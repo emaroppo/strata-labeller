@@ -10,6 +10,8 @@ Re-running is safe. Ingest is idempotent on content and annotations are
 upserted, so a migration interrupted halfway can simply be run again.
 """
 
+from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
@@ -85,8 +87,16 @@ def migrate(
     catalog: Catalog,
     label_set: str | None = None,
     dry_run: bool = False,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> Report:
-    """Move a project's samples and annotations into ``catalog``."""
+    """Move a project's samples and annotations into ``catalog``.
+
+    Work is batched into a transaction per group rather than per sample: a
+    commit costs an fsync, and one per file turns a few thousand frames into
+    a very long wait. ``on_progress`` is called with ``(done, total)`` as it
+    goes, which is how a caller shows movement without breaking the
+    batching up again.
+    """
     schema = schema_for(project)
     name = label_set or project.name
     subtype = "frames" if project.data.kind == "frames" else "plain"
@@ -111,6 +121,10 @@ def migrate(
 
     report.label_set_id = _label_set(catalog, name, schema)
 
+    # Grouped so each group is one transaction. Ungrouped samples share a
+    # single bucket, so a plain image project is one batch rather than one
+    # per file.
+    buckets: dict[str | None, list] = defaultdict(list)
     for sample in dataset:
         path = project.sample_file(sample.path)
         if not path.exists():
@@ -118,29 +132,44 @@ def migrate(
             # than failing the whole migration on one moved image
             report.missing.append(sample.path)
             continue
-        [sample_id] = catalog.ingest(
-            [path],
+        buckets[group_id_for(project, sample.path)].append((sample, path))
+
+    total = sum(len(entries) for entries in buckets.values())
+    done = 0
+
+    def tick(_=None) -> None:
+        nonlocal done
+        done += 1
+        if on_progress is not None:
+            on_progress(done, total)
+
+    for group_id, entries in buckets.items():
+        ids = catalog.ingest(
+            [path for _, path in entries],
             media=media,
             subtype=subtype,
-            group_id=group_id_for(project, sample.path),
+            group_id=group_id,
+            on_sample=tick,
         )
-        report.ingested += 1
+        report.ingested += len(ids)
 
-        if sample.skipped:
-            catalog.skip(sample_id, report.label_set_id)
-            report.skipped += 1
-        elif sample.annotated:
-            catalog.annotate(
-                sample_id,
-                report.label_set_id,
-                Choices(values=project.schema.decode_target(sample.results)),
-                source="import",
-            )
-            report.annotated += 1
-        else:
-            # No row at all: nobody has looked at it, which is not the same
-            # as having looked and found nothing
-            report.unlabelled += 1
+        items = []
+        for sample_id, (sample, _) in zip(ids, entries, strict=True):
+            if sample.skipped:
+                items.append((sample_id, None))
+            elif sample.annotated:
+                items.append(
+                    (sample_id, Choices(values=project.schema.decode_target(sample.results)))
+                )
+            else:
+                # No row at all: nobody has looked at it, which is not the
+                # same as having looked and found nothing
+                report.unlabelled += 1
+        annotated, skipped = catalog.annotate_many(
+            report.label_set_id, items, source="import"
+        )
+        report.annotated += annotated
+        report.skipped += skipped
 
     return report
 
