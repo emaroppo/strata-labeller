@@ -774,3 +774,41 @@ def report(
                         if isinstance(curr, (int, float)) and isinstance(prev, (int, float)):
                             delta = curr - prev
                             console.print(f"  {k}: {'+' if delta >= 0 else ''}{delta:.4f}")
+
+
+@app.command(name="to-catalog")
+def to_catalog(
+    project_path: Path | None = ProjectOption,
+    catalog_root: Path = typer.Option(
+        Path("catalog"), "--catalog", help="Where the catalog lives (created if absent)"
+    ),
+    label_set: str | None = typer.Option(
+        None, "--label-set", help="Name for the label set (default: the project's name)"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report without writing anything"),
+) -> None:
+    """Move this project's dataset.json into a catalog.
+
+    One direction, and safe to repeat: samples are addressed by content and
+    annotations are upserted, so a run that stopped halfway can just be run
+    again. Nothing about the project is modified.
+    """
+    from strata.catalog import Catalog
+
+    from .to_catalog import MigrationError, describe, migrate
+
+    project = _load_project(project_path)
+    if not project.dataset_path.exists():
+        console.print(f"[red]No dataset at {project.dataset_path}[/red]")
+        raise typer.Exit(1)
+
+    catalog = None if dry_run else Catalog.local(catalog_root)
+    try:
+        report = migrate(project, catalog, label_set=label_set, dry_run=dry_run)
+    except MigrationError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from None
+
+    if dry_run:
+        console.print("[yellow]Dry run — nothing was written.[/yellow]")
+    console.print(describe(report, catalog_root))
