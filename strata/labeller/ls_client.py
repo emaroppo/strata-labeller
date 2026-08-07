@@ -276,25 +276,43 @@ class LSClient:
     # The catalog path
     # ------------------------------------------------------------------
 
-    def import_catalog_tasks(self, project_id: int, tasks: list) -> dict[int, int]:
+    def import_catalog_tasks(
+        self,
+        project_id: int,
+        tasks: list,
+        chunk_size: int = 500,
+        on_progress: Callable[[int], None] | None = None,
+    ) -> dict[int, int]:
         """Create tasks from :class:`adapter.Task` and map sample id -> task id.
+
+        Chunked, because a first import on a real corpus is tens of thousands
+        of tasks and one request that size times out. A chunk that fails
+        leaves the ones before it created, which is why the map is returned
+        as it goes and a re-run skips what already exists.
 
         Returns the mapping rather than caching it here: the catalog knows
         what a sample is, and this class should not.
         """
-        if not tasks:
-            return {}
-        response = self.client.projects.import_tasks(
-            id=project_id,
-            request=[task.as_import() for task in tasks],
-            return_task_ids=True,
-        )
-        task_ids = (response.model_extra or {}).get("task_ids") or []
-        if len(task_ids) != len(tasks):
-            # Without a positional match there is no way to say which task
-            # is which, and guessing would corrupt the map
-            return {}
-        return {task.sample_id: task_id for task, task_id in zip(tasks, task_ids)}
+        mapping: dict[int, int] = {}
+        for i in range(0, len(tasks), chunk_size):
+            batch = tasks[i : i + chunk_size]
+            response = self.client.projects.import_tasks(
+                id=project_id,
+                request=[task.as_import() for task in batch],
+                return_task_ids=True,
+            )
+            task_ids = (response.model_extra or {}).get("task_ids") or []
+            if len(task_ids) != len(batch):
+                # Without a positional match there is no saying which task is
+                # which, and guessing would corrupt the map. The tasks exist;
+                # --rebuild-map recovers the mapping by listing them.
+                continue
+            mapping.update(
+                {task.sample_id: task_id for task, task_id in zip(batch, task_ids)}
+            )
+            if on_progress is not None:
+                on_progress(len(batch))
+        return mapping
 
     def list_tasks(self, project_id: int) -> list[dict]:
         """Every task, flat enough for the task map to be rebuilt from it."""

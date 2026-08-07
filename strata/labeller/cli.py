@@ -9,6 +9,7 @@ from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
     Progress,
+    SpinnerColumn,
     TextColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
@@ -461,7 +462,9 @@ def init(
         raise typer.Exit(1)
 
     schema = project.schema
-    samples = catalog.unlabelled(label_set_id) + catalog.labelled(label_set_id)
+    # Answered first: with a limit, the point is to carry what is already
+    # known rather than to fill the project with unreviewed samples
+    samples = catalog.labelled(label_set_id) + catalog.unlabelled(label_set_id)
     if limit is not None:
         samples = samples[:limit]
 
@@ -474,9 +477,27 @@ def init(
     tasks, _ = tasks_to_push(
         samples, catalog, label_set_id, schema, settings.catalog.blobs_prefix, {}
     )
-    mapping = client.import_catalog_tasks(ls_project_id, tasks)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        bar = progress.add_task("Importing tasks", total=len(tasks))
+        mapping = client.import_catalog_tasks(
+            ls_project_id, tasks, on_progress=lambda n: progress.advance(bar, n)
+        )
     save_task_map(project, ls_project_id, mapping)
     project.save_ls_project_id(ls_project_id)
+
+    if len(mapping) != len(tasks):
+        console.print(
+            f"[yellow]{len(tasks) - len(mapping)} task(s) were created but could "
+            f"not be mapped. Run 'auto-labeller push --rebuild-map' to recover "
+            f"the mapping by listing them.[/yellow]"
+        )
 
     answered = sum(1 for task in tasks if task.answered)
     console.print(
@@ -981,16 +1002,6 @@ def to_catalog(
     annotations are upserted, so a run that stopped halfway can just be run
     again. Nothing about the project is modified.
     """
-    from rich.progress import (
-        BarColumn,
-        MofNCompleteColumn,
-        Progress,
-        SpinnerColumn,
-        TextColumn,
-        TimeElapsedColumn,
-        TimeRemainingColumn,
-    )
-
     from strata.catalog import Catalog
 
     from .to_catalog import MigrationError, describe, migrate
