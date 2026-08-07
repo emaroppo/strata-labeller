@@ -882,6 +882,14 @@ def catalog_stats(
     console.print(f"[bold]{catalog_root}[/bold]: {total} sample(s)")
     if groups:
         console.print(f"  {groups} group(s), {ungrouped} sample(s) in no group")
+    elif total:
+        # Always said, because no grouping is the answer worth noticing: for
+        # video frames it means near-duplicates will be split individually
+        # and validation will score the model on what it trained on.
+        console.print(
+            "  [yellow]no grouping[/yellow] — every sample is its own group, "
+            "which is right for standalone images and wrong for video frames"
+        )
 
     if not label_sets:
         console.print("[yellow]No label sets yet.[/yellow]")
