@@ -264,14 +264,99 @@ class LSClient:
             if not (exclude_predicted and entry[1])
         }
 
-    def setup_local_storage(self, project_id: int) -> None:
-        container_path = self.settings.label_studio.local_storage_path
+    def setup_local_storage(self, project_id: int, path: str | None = None) -> None:
         self.client.import_storage.local.create(
             project=project_id,
-            path=container_path,
+            path=path or self.settings.label_studio.local_storage_path,
             title="Local Images",
             use_blob_urls=False,
         )
+
+    # ------------------------------------------------------------------
+    # The catalog path
+    # ------------------------------------------------------------------
+
+    def import_catalog_tasks(self, project_id: int, tasks: list) -> dict[int, int]:
+        """Create tasks from :class:`adapter.Task` and map sample id -> task id.
+
+        Returns the mapping rather than caching it here: the catalog knows
+        what a sample is, and this class should not.
+        """
+        if not tasks:
+            return {}
+        response = self.client.projects.import_tasks(
+            id=project_id,
+            request=[task.as_import() for task in tasks],
+            return_task_ids=True,
+        )
+        task_ids = (response.model_extra or {}).get("task_ids") or []
+        if len(task_ids) != len(tasks):
+            # Without a positional match there is no way to say which task
+            # is which, and guessing would corrupt the map
+            return {}
+        return {task.sample_id: task_id for task, task_id in zip(tasks, task_ids)}
+
+    def list_tasks(self, project_id: int) -> list[dict]:
+        """Every task, flat enough for the task map to be rebuilt from it."""
+        return [
+            {"id": task.id, "data": task.data or {}}
+            for task in self.client.tasks.list(
+                project=project_id, page_size=1000, fields="task_only", resolve_uri=False
+            )
+        ]
+
+    def export_raw(self, project_id: int) -> list[dict]:
+        """The export snapshot, unconverted.
+
+        One bulk download rather than paging; what it means is the sync
+        layer's business, not this one's.
+        """
+        return [
+            task if isinstance(task, dict) else task.dict()
+            for task in self.client.projects.exports.as_json(project_id, timeout=600)
+        ]
+
+    def push_catalog_predictions(
+        self,
+        project_id: int,
+        predictions: list[tuple[int, list[dict], float]],
+        task_map: dict[int, int],
+        model_version: str | None = None,
+        replace_existing: bool = False,
+        chunk_size: int = 200,
+    ) -> int:
+        """Bulk-import predictions keyed by sample id."""
+        to_push = [
+            (task_map[sample_id], results, score)
+            for sample_id, results, score in predictions
+            if sample_id in task_map
+        ]
+        if not to_push:
+            return 0
+
+        if replace_existing:
+            self.client.actions.create(
+                id="delete_tasks_predictions",
+                project=project_id,
+                selected_items={"all": False, "included": [t for t, _, _ in to_push]},
+            )
+
+        requests = [
+            PredictionRequest(
+                task=task_id, result=results, score=score, model_version=model_version
+            )
+            for task_id, results, score in to_push
+        ]
+        for i in range(0, len(requests), chunk_size):
+            self.client.projects.import_predictions(
+                id=project_id, request=requests[i : i + chunk_size]
+            )
+
+        if model_version is not None:
+            # LS only displays predictions matching the project's active
+            # model version, so keep it pointed at what was just pushed
+            self.client.projects.update(id=project_id, model_version=model_version)
+        return len(to_push)
 
     def add_ml_backend(
         self,

@@ -1,6 +1,5 @@
 import json
 import os
-import random
 from pathlib import Path
 
 import typer
@@ -376,35 +375,83 @@ def unskip(
     console.print("Run 'auto-labeller push' to queue them with fresh predictions.")
 
 
+def _catalog_for(settings, config_path: Path):
+    """The catalog this host holds, or an exit with something actionable."""
+    from strata.catalog import Catalog
+
+    root = Path(settings.catalog.root)
+    if not (root / "catalog.db").exists():
+        _error(
+            f"No catalog at {root}. Run 'auto-labeller to-catalog' first, or set "
+            f"[catalog] root in {config_path}."
+        )
+        raise typer.Exit(1)
+    return Catalog.local(root), root
+
+
+def _label_set_for(catalog, project: Project):
+    from strata.catalog import CatalogError
+
+    try:
+        return catalog.label_set(project.label_set_name)
+    except CatalogError:
+        _error(
+            f"No label set named '{project.label_set_name}' in the catalog. "
+            f"Run 'auto-labeller to-catalog', or set [catalog] label_set."
+        )
+        raise typer.Exit(1) from None
+
+
 @app.command()
 def init(
     project_path: Path | None = ProjectOption,
     config_path: Path = ConfigOption,
+    limit: int | None = typer.Option(
+        None, help="Import only the first N samples (the rest arrive via push)"
+    ),
 ) -> None:
-    """Create the Label Studio project and import the dataset's tasks."""
-    from .dataset import get_classes, load_dataset
+    """Create a Label Studio project and fill it from the catalog.
+
+    Everything already answered arrives answered, because Label Studio is a
+    view of the catalog rather than a second copy of it. That is what makes
+    a project disposable: delete it, run this again, lose nothing.
+    """
+    from .sync import save_task_map, tasks_to_push
 
     project = _load_project(project_path)
     settings = Settings.load(config_path)
-    schema = project.schema
-    dataset = load_dataset(project.dataset_path, schema)
-    classes = schema.classes or get_classes(dataset, schema)
+    catalog, _ = _catalog_for(settings, config_path)
+    label_set_id, label_schema = _label_set_for(catalog, project)
 
-    if not classes:
-        _error("No classes: set [label_config] classes in project.toml.")
+    if not label_schema.classes:
+        _error("The label set declares no classes; add some before labelling.")
         raise typer.Exit(1)
 
-    client = _ls_client(settings, project, config_path)
-    project_id = client.create_project(project.name)
-    client.setup_local_storage(project_id)
-    client.import_tasks(project_id, dataset)
-    project.save_ls_project_id(project_id)
+    schema = project.schema
+    samples = catalog.unlabelled(label_set_id) + catalog.labelled(label_set_id)
+    if limit is not None:
+        samples = samples[:limit]
 
-    console.print(
-        f"[green]Created Label Studio project '{project.name}' (ID: {project_id}) "
-        f"with {len(dataset)} tasks[/green]"
+    client = _ls_client(settings, project, config_path)
+    ls_project_id = client.create_project(project.name)
+    client.setup_local_storage(
+        ls_project_id, path=f"/label-studio/data/{settings.catalog.blobs_prefix}"
     )
-    console.print(f"Classes: {', '.join(classes)}")
+
+    tasks, _ = tasks_to_push(
+        samples, catalog, label_set_id, schema, settings.catalog.blobs_prefix, {}
+    )
+    mapping = client.import_catalog_tasks(ls_project_id, tasks)
+    save_task_map(project, ls_project_id, mapping)
+    project.save_ls_project_id(ls_project_id)
+
+    answered = sum(1 for task in tasks if task.answered)
+    console.print(
+        f"[green]Created Label Studio project '{project.name}' "
+        f"(ID: {ls_project_id}) with {len(tasks)} tasks[/green]"
+    )
+    console.print(f"  {answered} arrived already answered, {len(tasks) - answered} to review")
+    console.print(f"  Classes: {', '.join(label_schema.classes)}")
 
 
 @app.command()
@@ -587,142 +634,204 @@ def predict(
 def push(
     project_path: Path | None = ProjectOption,
     config_path: Path = ConfigOption,
-    unlabeled_only: bool = typer.Option(True, help="Only push for unlabeled samples"),
-    checkpoint: Path | None = typer.Option(None, help="Checkpoint to use (default: latest)"),
-    prioritize_uncertain: bool = typer.Option(True, help="Show uncertain images first"),
-    refresh: bool = typer.Option(
-        False,
-        "--refresh/--no-refresh",
-        help="Replace existing predictions instead of skipping those tasks",
-    ),
     limit: int | None = typer.Option(
-        None, help="Push only the top-N predictions (most uncertain first when prioritized)"
+        None, help="Review only the top-N, most uncertain first"
     ),
-    sample: int | None = typer.Option(
-        None, help="Predict on a random subset of N eligible images instead of all of them"
+    run_id: int | None = typer.Option(None, help="Predict with this run (default: latest)"),
+    predictions: bool = typer.Option(
+        True, "--predictions/--no-predictions", help="Attach pre-annotations"
     ),
-    use_cache: bool = typer.Option(
-        True,
-        "--cache/--no-cache",
-        help="Use the local task-id cache (--no-cache forces a full refetch, "
-        "e.g. after manual prediction changes in LS)",
+    refresh: bool = typer.Option(
+        False, "--refresh", help="Replace existing predictions rather than adding to them"
+    ),
+    rebuild_map: bool = typer.Option(
+        False, "--rebuild-map", help="Re-list tasks instead of trusting the local cache"
     ),
 ) -> None:
-    """Push model predictions to Label Studio as pre-annotations."""
-    from .active_learning import rank_by_uncertainty
-    from .dataset import Sample, load_dataset, split_labeled_unlabeled
-    from .predict import run_predictions
+    """Send unreviewed samples to Label Studio, least confident first.
+
+    Predictions come from a recorded run, so what a reviewer sees is tied to
+    a checkpoint that resolves back to the data behind it.
+    """
+    from strata.modelling import PredictRequest, RunStore
+    from strata.modelling import predict as run_predict
+
+    from .active_learning import least_confident
+    from .adapter import prediction_to_results
+    from .sync import load_task_map, rebuild_task_map, save_task_map, tasks_to_push
 
     project = _load_project(project_path)
     settings = Settings.load(config_path)
+    catalog, _ = _catalog_for(settings, config_path)
+    label_set_id, _ = _label_set_for(catalog, project)
+    prefix = settings.catalog.blobs_prefix
+    schema = project.schema
+
     try:
-        project_id = project.require_ls_project_id()
+        ls_project_id = project.require_ls_project_id()
     except ProjectError as e:
         _error(str(e))
         raise typer.Exit(1) from None
 
-    model = project.load_model()
-    ckpt = _require_checkpoint(model, project, checkpoint)
-
     client = _ls_client(settings, project, config_path)
-    with console.status("Fetching task list from Label Studio (slow on large projects)..."):
-        task_id_map = client.get_task_id_map(project_id, use_cache=use_cache)
-        if refresh:
-            already_predicted: set[str] = set()
-        else:
-            unpredicted = client.get_task_id_map(
-                project_id, exclude_predicted=True, use_cache=use_cache
+    task_map = load_task_map(project, ls_project_id)
+    if rebuild_map or not task_map:
+        with console.status("Listing tasks in Label Studio..."):
+            task_map, unrecognised = rebuild_task_map(
+                client.list_tasks(ls_project_id), catalog, prefix, schema.data_key
             )
-            already_predicted = set(task_id_map) - set(unpredicted)
+        if unrecognised:
+            console.print(
+                f"[yellow]{len(unrecognised)} task(s) point at nothing this catalog "
+                f"knows — from before the cutover, or since removed.[/yellow]"
+            )
+        save_task_map(project, ls_project_id, task_map)
 
-    dataset = load_dataset(project.dataset_path, project.schema)
-    samples = (
-        split_labeled_unlabeled(dataset)[1]
-        if unlabeled_only
-        else [s for s in dataset if not s.skipped]
-    )
-    # Images without an LS task are eligible: tasks are created on demand for
-    # whatever makes the final cut. Without --refresh, skip what's already
-    # pushed so an interrupted push can resume without re-predicting.
-    samples = [s for s in samples if s.path not in already_predicted]
-    if not samples:
-        console.print("[yellow]Nothing to push — all eligible images have predictions.[/yellow]")
-        raise typer.Exit(0)
+    pool = catalog.unlabelled(label_set_id)
+    if not pool:
+        console.print("[yellow]Nothing is waiting for review.[/yellow]")
+        return
 
-    if sample is not None and len(samples) > sample:
-        # Fresh subset each run so successive rounds see different candidates
-        samples = random.sample(samples, sample)
-        console.print(f"Sampled {sample} of the eligible images")
+    ranked, scored = pool, {}
+    store = RunStore.local(project.runs_dir)
+    run = store.get(run_id) if run_id else store.latest(project.dataset_name)
 
-    predictions = run_predictions(model, samples, project)
-    if prioritize_uncertain:
-        predictions = rank_by_uncertainty(predictions)
+    if predictions and run is not None and run.checkpoint:
+        with console.status(f"Predicting with run {run.id}..."):
+            made = run_predict(
+                PredictRequest(
+                    run_id=run.id,
+                    paths=[catalog.blobs.path_for(s.location) for s in pool],
+                ),
+                store,
+            )
+        by_sample = dict(zip(pool, made, strict=True))
+        # Least confident first: what the model committed to least is what a
+        # human settles fastest
+        ranked = sorted(pool, key=lambda s: least_confident(by_sample[s].value), reverse=True)
+        scored = {s.id: by_sample[s].value for s in pool}
+    elif predictions:
+        console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
+
     if limit is not None:
-        predictions = predictions[:limit]
+        ranked = ranked[:limit]
 
-    missing = [p for p in predictions if p.path not in task_id_map]
-    if missing:
-        console.print(f"Creating {len(missing)} new tasks in Label Studio...")
-        client.import_tasks(project_id, [Sample(path=p.path) for p in missing])
-        task_id_map = client.get_task_id_map(project_id, use_cache=use_cache)
-
-    num_pushed = _push_with_progress(
-        client,
-        project_id,
-        predictions,
-        task_id_map,
-        model_version=ckpt.stem,
-        replace_existing=refresh,
+    tasks, report = tasks_to_push(
+        ranked, catalog, label_set_id, schema, prefix, task_map
     )
+    created = client.import_catalog_tasks(ls_project_id, tasks)
+    task_map.update(created)
+    save_task_map(project, ls_project_id, task_map)
 
-    skipped = len(predictions) - num_pushed
     console.print(
-        f"[green]Pushed {num_pushed} predictions to project {project_id} "
-        f"(model version: {ckpt.stem})[/green]"
-        + (f" [dim]({skipped} tasks already had predictions)[/dim]" if skipped else "")
+        f"[green]{report.pushed} task(s) created[/green]"
+        + (f", {report.already_present} already there" if report.already_present else "")
     )
+
+    if scored:
+        payload = [
+            (s.id, prediction_to_results(scored[s.id], schema), scored[s.id].confidences[0]
+             if scored[s.id].confidences else 0.0)
+            for s in ranked
+        ]
+        pushed = client.push_catalog_predictions(
+            ls_project_id,
+            payload,
+            task_map,
+            model_version=f"run-{run.id}",
+            replace_existing=refresh,
+        )
+        console.print(f"[green]{pushed} pre-annotation(s) attached from run {run.id}[/green]")
 
 
 @app.command(name="export")
 def export_annotations(
     project_path: Path | None = ProjectOption,
     config_path: Path = ConfigOption,
-    output: Path | None = typer.Option(None, help="Output path (defaults to the project dataset)"),
+    dataset_json: bool = typer.Option(
+        True,
+        "--dataset-json/--no-dataset-json",
+        help="Also write dataset.json, so `train --legacy` keeps working",
+    ),
 ) -> None:
-    """Export corrected annotations from Label Studio back into the dataset."""
-    from .dataset import load_dataset, save_dataset
+    """Pull corrected annotations out of Label Studio into the catalog.
+
+    The catalog is what remembers; Label Studio is where the answering
+    happens. dataset.json is written alongside for as long as the legacy
+    training path is worth keeping.
+    """
+    from .sync import pull_annotations
 
     project = _load_project(project_path)
     settings = Settings.load(config_path)
+    catalog, _ = _catalog_for(settings, config_path)
+    label_set_id, label_schema = _label_set_for(catalog, project)
+    schema = project.schema
+
     try:
-        project_id = project.require_ls_project_id()
+        ls_project_id = project.require_ls_project_id()
     except ProjectError as e:
         _error(str(e))
         raise typer.Exit(1) from None
 
     client = _ls_client(settings, project, config_path)
-    with console.status("Exporting annotations from Label Studio (slow on large projects)..."):
-        exported = client.export_annotations(project_id)
+    with console.status("Exporting from Label Studio (slow on large projects)..."):
+        exported = client.export_raw(ls_project_id)
 
-    # Merge: LS only holds a subset of the dataset (tasks are created on
-    # demand), so overwriting would drop every image without a task
-    out_path = output or project.dataset_path
-    samples = list(exported)
-    if out_path.exists():
-        by_path = {e.path: e for e in exported}
-        existing = load_dataset(out_path, project.schema)
-        samples = [by_path.get(s.path, s) for s in existing]
-        known = {s.path for s in existing}
-        samples += [e for e in exported if e.path not in known]
-    save_dataset(samples, out_path)
-
-    labeled = [s for s in samples if s.is_labeled]
-    console.print(
-        f"[green]Merged {len(exported)} exported tasks into {out_path} "
-        f"({len(samples)} samples, {len(labeled)} labeled)[/green]"
+    items, report = pull_annotations(
+        exported,
+        catalog,
+        label_set_id,
+        schema,
+        settings.catalog.blobs_prefix,
+        label_schema.classes,
     )
 
-    _warn_undeclared(project, samples)
+    if report.undeclared:
+        # The catalog validates against the label set, so this would fail
+        # partway through rather than at the end
+        _error(
+            f"Label(s) nobody declared: {', '.join(sorted(report.undeclared))}. "
+            f"Add them with 'auto-labeller class add', then export again."
+        )
+        raise typer.Exit(1)
+
+    annotated, skipped = catalog.annotate_many(label_set_id, items, source="human")
+    console.print(
+        f"[green]{annotated} annotation(s) and {skipped} skip(s) into the catalog[/green]"
+    )
+    if report.unrecognised:
+        console.print(
+            f"[yellow]{len(report.unrecognised)} task(s) point at nothing this "
+            f"catalog knows, and were left alone.[/yellow]"
+        )
+
+    if dataset_json:
+        _mirror_to_dataset_json(project, catalog, label_set_id)
+
+
+def _mirror_to_dataset_json(project: Project, catalog, label_set_id: int) -> None:
+    """Keep dataset.json in step, so `train --legacy` remains a real fallback.
+
+    Written from the catalog rather than merged with what is there: the
+    catalog is the store now, and reconciling two of them is exactly what
+    this stops being worth doing.
+    """
+    from .dataset import Sample, save_dataset
+
+    schema = project.schema
+    samples = []
+    for row in catalog.labelled(label_set_id):
+        value = catalog.annotation_of(row.id, label_set_id)
+        samples.append(
+            Sample(
+                path=row.location.container,
+                results=schema.encode_target(list(value.values)) if value else [],
+                annotated=True,
+            )
+        )
+    save_dataset(samples, project.dataset_path)
+    console.print(f"  mirrored {len(samples)} labelled sample(s) to {project.dataset_path}")
 
 
 @app.command()
