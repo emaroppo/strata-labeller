@@ -877,11 +877,34 @@ def catalog_stats(
         ungrouped = conn.execute(
             select(func.count()).select_from(t.sample).where(t.sample.c.group_id.is_(None))
         ).scalar()
+        sizes = [
+            row.n
+            for row in conn.execute(
+                select(func.count().label("n"))
+                .select_from(t.sample)
+                .where(t.sample.c.group_id.is_not(None))
+                .group_by(t.sample.c.group_id)
+            )
+        ]
         label_sets = conn.execute(select(t.label_set.c.id, t.label_set.c.name)).all()
 
     console.print(f"[bold]{catalog_root}[/bold]: {total} sample(s)")
     if groups:
         console.print(f"  {groups} group(s), {ungrouped} sample(s) in no group")
+        sizes.sort()
+        singletons = sum(1 for n in sizes if n == 1)
+        # A group is indivisible, so the largest one is the floor on how
+        # coarse the split can be; singletons are groups doing no work
+        console.print(
+            f"    {sizes[0]}–{sizes[-1]} samples per group "
+            f"(median {sizes[len(sizes) // 2]}), "
+            f"largest is {sizes[-1] / max(total, 1):.1%} of the catalog"
+        )
+        if singletons:
+            console.print(
+                f"    {singletons} group(s) hold a single sample, so grouping "
+                f"changes nothing for them"
+            )
     elif total:
         # Always said, because no grouping is the answer worth noticing: for
         # video frames it means near-duplicates will be split individually
