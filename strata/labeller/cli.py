@@ -863,11 +863,15 @@ def push(
                 ),
                 store,
             )
-        by_sample = dict(zip(pool, made, strict=True))
+        # Keyed by id rather than by the row, which says what the mapping
+        # is really on and does not depend on a row being hashable
+        by_sample = {s.id: p for s, p in zip(pool, made, strict=True)}
         # Least confident first: what the model committed to least is what a
         # human settles fastest
-        ranked = sorted(pool, key=lambda s: least_confident(by_sample[s].value), reverse=True)
-        scored = {s.id: by_sample[s].value for s in pool}
+        ranked = sorted(
+            pool, key=lambda s: least_confident(by_sample[s.id].value), reverse=True
+        )
+        scored = {s.id: by_sample[s.id].value for s in pool}
     elif predictions:
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
 
