@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import typer
-from rich.console import Console
+from rich import get_console
 from rich.markup import escape
 from rich.progress import (
     BarColumn,
@@ -18,7 +18,12 @@ from .config import Settings
 from .project import PROJECT_ENV_VAR, PROJECTS_DIR, Project, ProjectError
 
 app = typer.Typer(name="auto-labeller")
-console = Console()
+#: The console rich itself hands out, not one of our own. Two Console
+#: objects writing to one terminal cannot coordinate: a live display owned
+#: by one knows nothing about text printed through the other, and the two
+#: fight over the same lines — which is what made a progress bar flicker
+#: against a model's own output.
+console = get_console()
 
 ProjectOption = typer.Option(
     None,
