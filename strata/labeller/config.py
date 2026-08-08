@@ -32,6 +32,11 @@ class CatalogConfig:
     #: Machine-level because the catalog is shared across projects, unlike
     #: the per-project data root it replaces.
     blobs_prefix: str = "blobs"
+    #: The index. Empty means SQLite under ``root``, which is what keeps a
+    #: checkout runnable with nothing installed. A Postgres URL points
+    #: several machines at one index, which is what a corpus of millions of
+    #: rows needs — the schema and the queries are the same either way.
+    url: str = ""
 
 
 @dataclass
@@ -53,5 +58,11 @@ class Settings:
         api_key = os.environ.get("LABEL_STUDIO_API_KEY")
         if api_key:
             settings.label_studio.api_key = api_key
+
+        # Credentials belong in the environment rather than in a file that
+        # gets copied around, the same argument as the Label Studio token
+        url = os.environ.get("STRATA_CATALOG_URL")
+        if url:
+            settings.catalog.url = url
 
         return settings

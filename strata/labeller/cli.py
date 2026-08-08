@@ -89,9 +89,14 @@ def _catalog_for(settings, config_path: Path, create: bool = False):
     ``create`` for the commands that put data in: refusing to make one would
     leave no way to make the first, and the advice would be circular.
     """
-    from strata.catalog import Catalog
+    from strata.catalog import Catalog, LocalBackend
 
     root = Path(settings.catalog.root)
+    if settings.catalog.url:
+        # A shared index: nothing local to check for, and create_all is
+        # harmless against one that already exists
+        return Catalog.connect(settings.catalog.url, LocalBackend(root / "blobs")), root
+
     if not create and not (root / "catalog.db").exists():
         _error(
             f"No catalog at {root}. Run 'auto-labeller ingest' or "
