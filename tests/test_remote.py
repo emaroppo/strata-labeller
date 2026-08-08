@@ -12,7 +12,7 @@ import urllib.request
 
 import pytest
 
-from strata.labeller.remote import RemoteError, Trainer
+from strata.labeller.remote import Refused, Trainer, Unreachable
 
 
 class Reply:
@@ -47,7 +47,7 @@ def sent(monkeypatch):
 
 
 def test_a_round_sends_an_id_not_a_dataset(sent):
-    Trainer("http://gpu:8082", "t").round(7, "multilabel", {"num_epochs": 4})
+    Trainer("http://gpu:8082", "t").submit(7, "multilabel", {"num_epochs": 4})
 
     assert sent["url"] == "http://gpu:8082/round"
     # The host has the index and the bucket; sending it images it can fetch
@@ -61,20 +61,20 @@ def test_a_round_sends_an_id_not_a_dataset(sent):
 
 
 def test_the_token_travels(sent):
-    Trainer("http://gpu:8082", "sekrit").round(7, "multilabel", {})
+    Trainer("http://gpu:8082", "sekrit").submit(7, "multilabel", {})
     assert sent["headers"]["Authorization"] == "Bearer sekrit"
 
 
 def test_a_trailing_slash_does_not_double_up(sent):
-    Trainer("http://gpu:8082/", "t").round(7, "m", {})
+    Trainer("http://gpu:8082/", "t").submit(7, "m", {})
     assert sent["url"] == "http://gpu:8082/round"
 
 
-def test_a_round_is_given_room_to_finish(sent):
-    Trainer("http://gpu:8082", "t").round(7, "m", {})
-    # Training is minutes; a default timeout would turn a working round into
-    # a failed one
-    assert sent["timeout"] >= 3600
+def test_submitting_is_a_short_request(sent):
+    Trainer("http://gpu:8082", "t").submit(7, "m", {})
+    # The round outlives the request that asked for it, so this waits for an
+    # acknowledgement rather than for training
+    assert sent["timeout"] <= 60
 
 
 def test_listing_models_does_not_wait_for_hours(sent):
@@ -91,8 +91,8 @@ def test_the_hosts_reason_is_what_surfaces(monkeypatch):
         )
 
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
-    with pytest.raises(RemoteError, match="entry point"):
-        Trainer("http://gpu:8082", "t").round(7, "model.py:Custom", {})
+    with pytest.raises(Refused, match="entry point"):
+        Trainer("http://gpu:8082", "t").submit(7, "model.py:Custom", {})
 
 
 def test_an_unreachable_host_says_so(monkeypatch):
@@ -100,8 +100,8 @@ def test_an_unreachable_host_says_so(monkeypatch):
         raise urllib.error.URLError("Connection refused")
 
     monkeypatch.setattr(urllib.request, "urlopen", unreachable)
-    with pytest.raises(RemoteError, match="Could not reach"):
-        Trainer("http://gpu:8082", "t").round(7, "m", {})
+    with pytest.raises(Unreachable, match="Could not reach"):
+        Trainer("http://gpu:8082", "t").submit(7, "m", {})
 
 
 class _Body:
@@ -115,3 +115,70 @@ class _Body:
 
     def close(self):
         pass
+
+
+# ----------------------------------------------------------------------
+# Following a round from a network that comes and goes
+# ----------------------------------------------------------------------
+
+
+def test_following_ends_when_the_round_does(monkeypatch):
+    states = [
+        {"state": "running", "stage": "materialising", "done": 5, "total": 10},
+        {"state": "running", "stage": "training"},
+        {"state": "done", "result": {"run": {"id": 3}}},
+    ]
+    trainer = Trainer("http://gpu:8082", "t")
+    monkeypatch.setattr(trainer, "job", lambda job_id: states.pop(0))
+
+    seen = []
+    final = trainer.follow("abc", on_state=seen.append, sleep=lambda _: None)
+
+    assert final["result"]["run"]["id"] == 3
+    assert [s["state"] for s in seen] == ["running", "running", "done"]
+
+
+def test_a_dropped_network_does_not_end_a_round(monkeypatch):
+    """The coffee shop case: the wifi fails, the training does not."""
+    answers = [
+        Unreachable("Could not reach"),
+        Unreachable("Could not reach"),
+        {"state": "done", "result": {"run": {"id": 3}}},
+    ]
+
+    def flaky(job_id):
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    trainer = Trainer("http://gpu:8082", "t")
+    monkeypatch.setattr(trainer, "job", flaky)
+
+    seen = []
+    final = trainer.follow("abc", on_state=seen.append, sleep=lambda _: None)
+
+    assert final["state"] == "done"
+    # Reported, not hidden — a silent stall looks like a hung round
+    assert [s["state"] for s in seen] == ["unreachable", "unreachable", "done"]
+
+
+def test_a_refusal_ends_it(monkeypatch):
+    def refuse(job_id):
+        raise Refused("no such job")
+
+    trainer = Trainer("http://gpu:8082", "t")
+    monkeypatch.setattr(trainer, "job", refuse)
+    # The host answered. Asking again produces the same answer more often.
+    with pytest.raises(Refused):
+        trainer.follow("abc", sleep=lambda _: None)
+
+
+def test_a_failed_round_is_returned_not_raised(monkeypatch):
+    trainer = Trainer("http://gpu:8082", "t")
+    monkeypatch.setattr(
+        trainer, "job", lambda job_id: {"state": "failed", "error": "CUDA out of memory"}
+    )
+    # The caller wants the reason, and a reason is data rather than an
+    # exception from the polling loop
+    assert trainer.follow("abc", sleep=lambda _: None)["error"] == "CUDA out of memory"

@@ -734,6 +734,9 @@ def train(
         False, "--fresh/--no-fresh", help="Cold start, ignoring the previous run"
     ),
     val_ratio: float = typer.Option(0.2, help="Share of samples to hold out"),
+    job: str | None = typer.Option(
+        None, "--job", help="Reattach to a round already running on the modelling host"
+    ),
 ) -> None:
     """Train on the project's labelled data.
 
@@ -750,6 +753,9 @@ def train(
     settings = Settings.load(config_path)
     catalog, catalog_root = _catalog_for(settings, config_path)
 
+    if job is not None:
+        _reattach(settings, job)
+        return
     if settings.modelling.url:
         _remote_round(project, catalog, settings, fresh=fresh, val_ratio=val_ratio)
         return
@@ -800,6 +806,76 @@ def train(
     console.print(f"  checkpoint: {result.run.checkpoint}")
 
 
+def _reattach(settings, job_id: str) -> None:
+    """Pick up a round that is already running elsewhere."""
+    from .remote import Trainer
+
+    if not settings.modelling.url:
+        _error("No modelling host configured, so there is no job to reattach to.")
+        raise typer.Exit(1)
+
+    trainer = Trainer(settings.modelling.url, settings.modelling.token)
+    result = _follow(trainer, job_id)
+    run = result["run"]
+    console.print(
+        f"[green]Run {run['id']}[/green]"
+        + (f", continuing run {run['parent_run_id']}" if run.get("parent_run_id") else " (cold)")
+    )
+    for metric, value in sorted(result.get("metrics", {}).items()):
+        console.print(f"  {metric}: {value}")
+
+
+def _follow(trainer, job_id: str) -> dict:
+    """Watch a round to its end, surviving a network that comes and goes.
+
+    Interrupting this stops watching, not training. That distinction is
+    worth stating out loud, because Ctrl-C usually means the opposite.
+    """
+    from .remote import RemoteError
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        bar = progress.add_task("Waiting for the host...")
+
+        def show(job: dict) -> None:
+            if job.get("state") == "unreachable":
+                progress.update(
+                    bar,
+                    description=(
+                        f"[yellow]Cannot reach the host (attempt "
+                        f"{job['attempts']}) — the round is unaffected[/yellow]"
+                    ),
+                )
+                return
+            stage = job.get("stage", job.get("state", ""))
+            if stage == "materialising" and job.get("total"):
+                stage = f"materialising {job['done']:,}/{job['total']:,}"
+            progress.update(bar, description=f"Host: {stage}")
+
+        try:
+            job = trainer.follow(job_id, on_state=show)
+        except KeyboardInterrupt:
+            progress.stop()
+            console.print(
+                f"[yellow]Stopped watching. The round is still running on the "
+                f"host.[/yellow]\n  auto-labeller train --job {job_id}"
+            )
+            raise typer.Exit(0) from None
+        except RemoteError as e:
+            progress.stop()
+            _error(str(e))
+            raise typer.Exit(1) from None
+
+    if job.get("state") == "failed":
+        _error(f"The round failed on the host: {job.get('error')}")
+        raise typer.Exit(1)
+    return job["result"]
+
+
 def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> None:
     """Freeze a dataset here, and have another host train on it.
 
@@ -834,14 +910,19 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     try:
-        with console.status("Training on the modelling host..."):
-            result = trainer.round(
-                dataset_id, project.model_ref, project.model.params_for(fresh), fresh
-            )
+        job = trainer.submit(
+            dataset_id, project.model_ref, project.model.params_for(fresh), fresh
+        )
     except RemoteError as e:
         _error(str(e))
         raise typer.Exit(1) from None
 
+    # Printed before following, and printed plainly: from here the round is
+    # the host's problem, and this id is how to ask after it from anywhere.
+    console.print(f"Job [bold]{job['id']}[/bold] accepted. Training continues there.")
+    console.print(f"  [dim]Reattach any time: auto-labeller train --job {job['id']}[/dim]\n")
+
+    result = _follow(trainer, job["id"])
     run = result["run"]
     console.print(
         f"[green]Run {run['id']}[/green]"
