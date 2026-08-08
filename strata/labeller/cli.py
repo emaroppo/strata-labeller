@@ -252,9 +252,10 @@ def list_projects_cmd() -> None:
             except CatalogError:
                 pass
             else:
-                annotated = catalog.labelled(label_set_id)
-                queued = catalog.unlabelled(label_set_id)
-                skipped = catalog.skipped(label_set_id)
+                where = project.collections
+                annotated = catalog.labelled(label_set_id, where)
+                queued = catalog.unlabelled(label_set_id, where)
+                skipped = catalog.skipped(label_set_id, where)
                 total = str(len(annotated) + len(queued) + len(skipped))
                 labeled = str(len(annotated))
         table.add_row(
@@ -332,8 +333,8 @@ def class_add(
             label_set_id, _ = catalog.label_set(project.label_set_name)
         except CatalogError:
             return
-        labelled = len(catalog.labelled(label_set_id))
-        skipped = len(catalog.skipped(label_set_id))
+        labelled = len(catalog.labelled(label_set_id, project.collections))
+        skipped = len(catalog.skipped(label_set_id, project.collections))
         if labelled:
             console.print(
                 f"[dim]{labelled} sample(s) were labelled before this class "
@@ -394,7 +395,9 @@ def class_list(
     for name in schema.classes:
         # From the class index rather than by decoding every annotation,
         # which is what that table exists for
-        table.add_row(name, str(len(catalog.with_class(label_set_id, name))))
+        table.add_row(
+            name, str(len(catalog.with_class(label_set_id, name, project.collections)))
+        )
     console.print(table)
 
     declared = set(project.label_config.classes)
@@ -429,7 +432,7 @@ def unskip(
     catalog, _ = _catalog_for(settings, config_path)
     label_set_id, _ = _label_set_for(catalog, project)
 
-    skipped = catalog.skipped(label_set_id)
+    skipped = catalog.skipped(label_set_id, project.collections)
     if not skipped:
         console.print("[yellow]Nothing is skipped.[/yellow]")
         return
@@ -487,7 +490,9 @@ def init(
     schema = project.schema
     # Answered first: with a limit, the point is to carry what is already
     # known rather than to fill the project with unreviewed samples
-    samples = catalog.labelled(label_set_id) + catalog.unlabelled(label_set_id)
+    samples = catalog.labelled(label_set_id, project.collections) + catalog.unlabelled(
+        label_set_id, project.collections
+    )
     if limit is not None:
         samples = samples[:limit]
 
@@ -576,7 +581,10 @@ def ingest(
         )
         return
 
-    before = len(catalog.unlabelled(label_set_id)) + len(catalog.labelled(label_set_id))
+    where = project.collections
+    before = len(catalog.unlabelled(label_set_id, where)) + len(
+        catalog.labelled(label_set_id, where)
+    )
     subtype = "frames" if project.data.kind == "frames" else "plain"
 
     # Grouped, because a group is one transaction and one group_id. Ungrouped
@@ -607,11 +615,14 @@ def ingest(
                     subtype=subtype,
                     group_id=group_id,
                     metadata_for=lambda p: {"source_path": sources[p]},
+                    collections=project.collections,
                     on_sample=lambda _p: progress.advance(bar),
                 )
 
-    after = len(catalog.unlabelled(label_set_id)) + len(catalog.labelled(label_set_id))
-    skipped_count = len(catalog.skipped(label_set_id))
+    after = len(catalog.unlabelled(label_set_id, where)) + len(
+        catalog.labelled(label_set_id, where)
+    )
+    skipped_count = len(catalog.skipped(label_set_id, where))
     console.print(
         f"[green]{len(found)} file(s) scanned, {after - before} new[/green] "
         f"into {catalog_root}"
@@ -722,7 +733,7 @@ def push(
             )
         save_task_map(project, ls_project_id, task_map)
 
-    pool = catalog.unlabelled(label_set_id)
+    pool = catalog.unlabelled(label_set_id, project.collections)
     if not pool:
         console.print("[yellow]Nothing is waiting for review.[/yellow]")
         return
@@ -1009,6 +1020,7 @@ def catalog_stats(
     """
     from sqlalchemy import func, select
 
+    from strata.catalog import EVERYTHING
     from strata.catalog import tables as t
 
     settings = Settings.load(config_path)
@@ -1032,6 +1044,20 @@ def catalog_stats(
                 .group_by(t.sample.c.group_id)
             )
         ]
+        collections = conn.execute(
+            select(t.sample_collection.c.collection, func.count())
+            .group_by(t.sample_collection.c.collection)
+            .order_by(t.sample_collection.c.collection)
+        ).all()
+        uncollected = conn.execute(
+            select(func.count())
+            .select_from(t.sample)
+            .outerjoin(
+                t.sample_collection,
+                t.sample_collection.c.sample_id == t.sample.c.id,
+            )
+            .where(t.sample_collection.c.sample_id.is_(None))
+        ).scalar()
         label_sets = conn.execute(select(t.label_set.c.id, t.label_set.c.name)).all()
 
     where = settings.catalog.url or catalog_root
@@ -1061,14 +1087,28 @@ def catalog_stats(
             "which is right for standalone images and wrong for video frames"
         )
 
+    if collections:
+        console.print("\n[bold]collections[/bold]")
+        for name, count in collections:
+            console.print(f"  {name:<40} {count:>9,}")
+    if uncollected:
+        # Reachable only through EVERYTHING, so no project would ever see
+        # them — worth saying rather than leaving them to be discovered
+        console.print(
+            f"  [yellow]{uncollected:,} sample(s) in no collection[/yellow] — "
+            f"no project draws from them"
+        )
+
     if not label_sets:
-        console.print("[yellow]No label sets yet.[/yellow]")
+        console.print("\n[yellow]No label sets yet.[/yellow]")
         return
 
     for label_set_id, name in label_sets:
         _, schema = catalog.label_set(name)
-        labelled = catalog.labelled(label_set_id)
-        queue = catalog.unlabelled(label_set_id)
+        # The whole catalog on purpose: this is the view of everything there
+        # is, not of what any one job draws from
+        labelled = catalog.labelled(label_set_id, EVERYTHING)
+        queue = catalog.unlabelled(label_set_id, EVERYTHING)
         console.print(
             f"\n[bold]{name}[/bold] — {schema.task}, "
             f"{'multi' if schema.multiple else 'single'}-choice"
@@ -1077,7 +1117,10 @@ def catalog_stats(
 
         table = Table("Class", "Samples", box=None, pad_edge=False)
         for class_name in schema.classes:
-            table.add_row(class_name, str(len(catalog.with_class(label_set_id, class_name))))
+            table.add_row(
+                class_name,
+                str(len(catalog.with_class(label_set_id, class_name, EVERYTHING))),
+            )
         console.print(table)
 
 

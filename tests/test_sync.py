@@ -6,7 +6,7 @@ these work on the payloads the SDK hands over and hands back.
 
 import pytest
 
-from strata.catalog import Catalog
+from strata.catalog import EVERYTHING, Catalog
 from strata.labeller.adapter import blob_url
 from strata.labeller.sync import (
     load_task_map,
@@ -68,7 +68,7 @@ def test_task_maps_are_kept_per_label_studio_project(project):
 
 def test_the_map_rebuilds_from_what_label_studio_holds(stocked, schema):
     catalog, ids, label_set_id = stocked
-    samples = catalog.unlabelled(label_set_id)
+    samples = catalog.unlabelled(label_set_id, EVERYTHING)
     tasks = [ls_task(500 + i, blob_url(s, "blobs")) for i, s in enumerate(samples)]
 
     mapping, unrecognised = rebuild_task_map(tasks, catalog, "blobs", schema.data_key)
@@ -102,7 +102,7 @@ def test_a_blob_no_longer_in_the_catalog_is_unrecognised(stocked, schema):
 
 def test_everything_unseen_is_pushed(stocked, schema):
     catalog, ids, label_set_id = stocked
-    samples = catalog.unlabelled(label_set_id)
+    samples = catalog.unlabelled(label_set_id, EVERYTHING)
     tasks, report = tasks_to_push(samples, catalog, label_set_id, schema, "blobs", {})
     assert report.pushed == 5
     assert len(tasks) == 5
@@ -110,7 +110,7 @@ def test_everything_unseen_is_pushed(stocked, schema):
 
 def test_samples_label_studio_already_has_are_skipped(stocked, schema):
     catalog, ids, label_set_id = stocked
-    samples = catalog.unlabelled(label_set_id)
+    samples = catalog.unlabelled(label_set_id, EVERYTHING)
     existing = {samples[0].id: 100, samples[1].id: 101}
 
     tasks, report = tasks_to_push(samples, catalog, label_set_id, schema, "blobs", existing)
@@ -122,7 +122,7 @@ def test_samples_label_studio_already_has_are_skipped(stocked, schema):
 
 def test_a_pushed_task_points_at_the_blob(stocked, schema):
     catalog, ids, label_set_id = stocked
-    samples = catalog.unlabelled(label_set_id)
+    samples = catalog.unlabelled(label_set_id, EVERYTHING)
     tasks, _ = tasks_to_push(samples[:1], catalog, label_set_id, schema, "blobs", {})
     assert samples[0].checksum in tasks[0].data[schema.data_key]
 
@@ -157,7 +157,7 @@ def annotated(task_id, url, choices, **extra):
 
 def test_an_annotation_comes_back_as_a_value(stocked, schema):
     catalog, ids, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id)[:1]
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     exported = [annotated(1, blob_url(sample, "blobs"), ["cat"])]
 
     items, report = pull_annotations(
@@ -169,7 +169,7 @@ def test_an_annotation_comes_back_as_a_value(stocked, schema):
 
 def test_an_empty_annotation_comes_back_as_an_answer(stocked, schema):
     catalog, ids, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id)[:1]
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     exported = [annotated(1, blob_url(sample, "blobs"), [])]
 
     items, report = pull_annotations(
@@ -182,7 +182,7 @@ def test_an_empty_annotation_comes_back_as_an_answer(stocked, schema):
 
 def test_a_task_nobody_has_answered_is_left_alone(stocked, schema):
     catalog, ids, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id)[:1]
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     exported = [ls_task(1, blob_url(sample, "blobs"))]
 
     items, report = pull_annotations(
@@ -195,7 +195,7 @@ def test_a_task_nobody_has_answered_is_left_alone(stocked, schema):
 
 def test_a_cancelled_annotation_is_a_skip(stocked, schema):
     catalog, ids, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id)[:1]
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     exported = [
         ls_task(
             1,
@@ -213,7 +213,7 @@ def test_a_cancelled_annotation_is_a_skip(stocked, schema):
 
 def test_a_class_nobody_declared_is_reported(stocked, schema):
     catalog, ids, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id)[:1]
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     exported = [annotated(1, blob_url(sample, "blobs"), ["cat", "fox"])]
 
     _, report = pull_annotations(
@@ -226,7 +226,7 @@ def test_a_class_nobody_declared_is_reported(stocked, schema):
 
 def test_volatile_fields_do_not_survive(stocked, schema):
     catalog, ids, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id)[:1]
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     exported = [
         ls_task(
             1,

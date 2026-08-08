@@ -156,6 +156,7 @@ def migrate(
             subtype=subtype,
             group_id=group_id,
             metadata_for=lambda p: {"source_path": sources[p]},
+            collections=project.collections,
             on_sample=tick,
         )
         report.ingested += len(ids)

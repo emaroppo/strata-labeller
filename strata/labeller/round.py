@@ -54,15 +54,18 @@ def run_round(
             f"Run 'auto-labeller to-catalog' first, or set [catalog] label_set."
         ) from exc
 
-    labelled = catalog.labelled(label_set_id)
+    labelled = catalog.labelled(label_set_id, project.collections)
     if not labelled:
         raise RoundError(
-            f"Nothing is labelled for {project.label_set_name!r} yet, so there "
-            f"is nothing to train on."
+            f"Nothing is labelled for {project.label_set_name!r} in "
+            f"{', '.join(project.collections)}, so there is nothing to train on."
         )
 
     dataset_id = catalog.create_dataset(
-        project.dataset_name, label_set_id, val_ratio=val_ratio
+        project.dataset_name,
+        label_set_id,
+        collections=project.collections,
+        val_ratio=val_ratio,
     )
     manifest, dataset_dir = _materialise(project, catalog, dataset_id)
 

@@ -105,6 +105,14 @@ class CatalogSpec:
     label_set: str = ""
     #: The dataset name versions accumulate under; defaults to the label set.
     dataset: str = ""
+    #: Which collections in the catalog this job draws from, as paths:
+    #: ["sat_images"] takes everything under it, ["sat_images/2024"] one
+    #: batch. Defaults to a collection named after the label set.
+    #:
+    #: Dropping one declares that data out of scope, training included. To
+    #: stop being asked about a batch while keeping what it already
+    #: answered, skip the rest of it instead.
+    collections: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -241,6 +249,11 @@ class Project:
     @property
     def dataset_name(self) -> str:
         return self.catalog.dataset or self.label_set_name
+
+    @property
+    def collections(self) -> list[str]:
+        """Where this job draws its samples from."""
+        return self.catalog.collections or [self.label_set_name]
 
     @property
     def datasets_dir(self) -> Path:

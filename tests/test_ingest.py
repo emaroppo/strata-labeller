@@ -8,7 +8,7 @@ is used is to point it at a growing directory.
 import pytest
 from typer.testing import CliRunner
 
-from strata.catalog import Catalog
+from strata.catalog import EVERYTHING, Catalog
 from strata.labeller.cli import app
 
 runner = CliRunner()
@@ -55,7 +55,7 @@ def test_ingest_creates_the_catalog_and_the_label_set(workspace, tmp_path):
     catalog = catalog_at(tmp_path)
     label_set_id, schema = catalog.label_set(project.name)
     assert schema.classes == ["cat", "dog"]
-    assert len(catalog.unlabelled(label_set_id)) == 4
+    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 4
 
 
 def test_ingest_is_safe_to_repeat(workspace, tmp_path):
@@ -66,7 +66,7 @@ def test_ingest_is_safe_to_repeat(workspace, tmp_path):
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_set(project.name)
     assert "0 new" in result.stdout
-    assert len(catalog.unlabelled(label_set_id)) == 5
+    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 5
 
 
 def test_new_files_are_picked_up_on_a_second_run(workspace, tmp_path):
@@ -77,7 +77,7 @@ def test_new_files_are_picked_up_on_a_second_run(workspace, tmp_path):
 
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_set(project.name)
-    assert len(catalog.unlabelled(label_set_id)) == 6
+    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 6
 
 
 def test_frames_are_grouped_by_folder(workspace, tmp_path):
@@ -86,7 +86,7 @@ def test_frames_are_grouped_by_folder(workspace, tmp_path):
 
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_set(project.name)
-    assert {s.group_id for s in catalog.unlabelled(label_set_id)} == {"vid1"}
+    assert {s.group_id for s in catalog.unlabelled(label_set_id, EVERYTHING)} == {"vid1"}
 
 
 def test_plain_images_get_no_group(workspace, tmp_path):
@@ -95,7 +95,7 @@ def test_plain_images_get_no_group(workspace, tmp_path):
 
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_set(project.name)
-    assert {s.group_id for s in catalog.unlabelled(label_set_id)} == {None}
+    assert {s.group_id for s in catalog.unlabelled(label_set_id, EVERYTHING)} == {None}
 
 
 def test_the_source_path_is_recorded(workspace, tmp_path):
@@ -106,7 +106,8 @@ def test_the_source_path_is_recorded(workspace, tmp_path):
 
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_set(project.name)
-    assert {(s.metadata or {}).get("source_path") for s in catalog.unlabelled(label_set_id)} == {
+    queue = catalog.unlabelled(label_set_id, EVERYTHING)
+    assert {(s.metadata or {}).get("source_path") for s in queue} == {
         "vid1/img000.jpg",
         "vid1/img001.jpg",
     }
@@ -120,7 +121,7 @@ def test_files_of_another_media_type_are_ignored(workspace, tmp_path):
 
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_set(project.name)
-    assert len(catalog.unlabelled(label_set_id)) == 3
+    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 3
 
 
 def test_a_missing_data_root_is_an_error(project, tmp_path, monkeypatch):
@@ -149,5 +150,5 @@ def test_registering_is_not_queueing(workspace, tmp_path):
 
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_set(project.name)
-    assert len(catalog.unlabelled(label_set_id)) == 20
-    assert len(catalog.labelled(label_set_id)) == 0
+    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 20
+    assert len(catalog.labelled(label_set_id, EVERYTHING)) == 0

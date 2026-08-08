@@ -10,7 +10,7 @@ It needs no ML framework: the model is nine lines and imports nothing.
 
 import json
 
-from strata.catalog import Catalog
+from strata.catalog import EVERYTHING, Catalog
 from strata.labeller.dataset import Sample, save_dataset
 from strata.labeller.to_catalog import migrate
 from strata.modelling import PredictRequest, RunStore, TrainRequest, predict, train
@@ -69,7 +69,7 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
     report = migrate(project, catalog)
     assert (report.ingested, report.annotated, report.unlabelled) == (20, 16, 4)
 
-    dataset_id = catalog.create_dataset("demo", report.label_set_id)
+    dataset_id = catalog.create_dataset("demo", report.label_set_id, collections=EVERYTHING)
     materialised = catalog.materialise(dataset_id, tmp_path / "materialised")
     manifest = json.loads((materialised / "manifest.json").read_text())
 
@@ -86,7 +86,8 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
     # The split the catalog decided is the split the model was handed
     assert run.metrics["n_train"] + run.metrics["n_val"] == 16
 
-    pool = [catalog.blobs.path_for(s.location) for s in catalog.unlabelled(report.label_set_id)]
+    queue = catalog.unlabelled(report.label_set_id, EVERYTHING)
+    pool = [catalog.blobs.path_for(s.location) for s in queue]
     assert len(predict(PredictRequest(run_id=run.id, paths=pool), store)) == 4
 
 
@@ -109,7 +110,7 @@ def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
     store = RunStore.local(tmp_path / "runs")
 
     first_dir = catalog.materialise(
-        catalog.create_dataset("demo", report.label_set_id), tmp_path / "v1"
+        catalog.create_dataset("demo", report.label_set_id, collections=EVERYTHING), tmp_path / "v1"
     )
     (first_dir / "toy.py").write_text(TOY_MODEL)
     first = train(TrainRequest(dataset_dir=first_dir, model="toy.py:Toy"), store)
@@ -123,7 +124,7 @@ def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
     migrate(project, catalog)
 
     second_dir = catalog.materialise(
-        catalog.create_dataset("demo", report.label_set_id), tmp_path / "v2"
+        catalog.create_dataset("demo", report.label_set_id, collections=EVERYTHING), tmp_path / "v2"
     )
     (second_dir / "toy.py").write_text(TOY_MODEL)
     second = train(

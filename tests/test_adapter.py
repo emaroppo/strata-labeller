@@ -7,7 +7,7 @@ to conflate, an empty answer and no answer.
 
 import pytest
 
-from strata.catalog import Catalog
+from strata.catalog import EVERYTHING, Catalog
 from strata.labeller.adapter import (
     LOCAL_FILES,
     blob_url,
@@ -102,7 +102,7 @@ def test_a_prediction_crosses_as_its_values(schema):
 
 def test_a_url_addresses_the_blob(catalog, stocked, tmp_path):
     _, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id)[:1]
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     url = blob_url(sample, "blobs")
     # The checksum is in the path, so the URL names one sample rather than
     # matching a string that might mean several things
@@ -112,7 +112,7 @@ def test_a_url_addresses_the_blob(catalog, stocked, tmp_path):
 
 def test_a_url_round_trips_to_its_location(catalog, stocked):
     _, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id)[:1]
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     url = blob_url(sample, "blobs")
     assert location_from_url(url, "blobs") == sample.location.container
 
@@ -146,7 +146,7 @@ def test_something_that_is_not_a_local_file_names_no_blob():
 
 def test_a_task_carries_the_sample_it_came_from(catalog, stocked, schema):
     ids, label_set_id = stocked
-    samples = catalog.unlabelled(label_set_id)
+    samples = catalog.unlabelled(label_set_id, EVERYTHING)
     tasks = build_tasks(samples, catalog, label_set_id, schema, "blobs")
     assert {t.sample_id for t in tasks} == set(ids)
 
@@ -154,7 +154,7 @@ def test_a_task_carries_the_sample_it_came_from(catalog, stocked, schema):
 def test_a_task_points_at_the_right_key_for_the_media(catalog, stocked, schema):
     _, label_set_id = stocked
     [task] = build_tasks(
-        catalog.unlabelled(label_set_id)[:1], catalog, label_set_id, schema, "blobs"
+        catalog.unlabelled(label_set_id, EVERYTHING)[:1], catalog, label_set_id, schema, "blobs"
     )
     assert schema.data_key in task.data
 
@@ -162,7 +162,7 @@ def test_a_task_points_at_the_right_key_for_the_media(catalog, stocked, schema):
 def test_an_unannotated_task_carries_no_annotation(catalog, stocked, schema):
     _, label_set_id = stocked
     [task] = build_tasks(
-        catalog.unlabelled(label_set_id)[:1], catalog, label_set_id, schema, "blobs"
+        catalog.unlabelled(label_set_id, EVERYTHING)[:1], catalog, label_set_id, schema, "blobs"
     )
     assert task.annotations == []
     assert not task.answered
@@ -172,7 +172,7 @@ def test_an_unannotated_task_carries_no_annotation(catalog, stocked, schema):
 def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.annotate(ids[0], label_set_id, Choices(values=["cat"]))
-    samples = [s for s in catalog.labelled(label_set_id)]
+    samples = [s for s in catalog.labelled(label_set_id, EVERYTHING)]
     [task] = build_tasks(samples, catalog, label_set_id, schema, "blobs")
 
     # Label Studio is a view of the catalog rather than a second copy, so
@@ -184,7 +184,7 @@ def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
 def test_an_empty_annotation_still_arrives_as_answered(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.annotate(ids[0], label_set_id, Choices())
-    samples = catalog.labelled(label_set_id)
+    samples = catalog.labelled(label_set_id, EVERYTHING)
     [task] = build_tasks(samples, catalog, label_set_id, schema, "blobs")
 
     # An empty result list is the answer "none of these apply", and it has
@@ -199,6 +199,6 @@ def test_a_skipped_sample_has_no_annotation_to_carry(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.skip(ids[0], label_set_id)
     tasks = build_tasks(
-        catalog.unlabelled(label_set_id), catalog, label_set_id, schema, "blobs"
+        catalog.unlabelled(label_set_id, EVERYTHING), catalog, label_set_id, schema, "blobs"
     )
     assert all(t.sample_id != ids[0] for t in tasks)

@@ -8,7 +8,7 @@ the record supports.
 import pytest
 from typer.testing import CliRunner
 
-from strata.catalog import Catalog
+from strata.catalog import EVERYTHING, Catalog
 from strata.labeller.cli import app
 from strata.labels import Choices, ClassificationSchema
 from strata.modelling import Run, RunStore
@@ -30,7 +30,9 @@ def workspace(project, tmp_path, monkeypatch):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(f"image {i}".encode())
         paths.append(path)
-    ids = catalog.ingest(paths, media="image")
+    # Tagged into the collection the project draws from: a sample in none is
+    # invisible to every project, which is the point of the scoping
+    ids = catalog.ingest(paths, media="image", collections=project.collections)
     return project, catalog, label_set_id, ids
 
 
@@ -58,8 +60,8 @@ def test_unskip_returns_samples_to_the_queue(workspace):
     assert run_cmd(project, "unskip").exit_code == 0
     # The queue is the absence of a row, so the row is deleted rather than
     # flagged
-    assert catalog.skipped(label_set_id) == []
-    assert len(catalog.unlabelled(label_set_id)) == 6
+    assert catalog.skipped(label_set_id, EVERYTHING) == []
+    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 6
 
 
 def test_unskip_honours_a_limit(workspace):
@@ -68,7 +70,7 @@ def test_unskip_honours_a_limit(workspace):
         catalog.skip(ids[i], label_set_id)
 
     run_cmd(project, "unskip", "--limit", "2")
-    assert len(catalog.skipped(label_set_id)) == 2
+    assert len(catalog.skipped(label_set_id, EVERYTHING)) == 2
 
 
 def test_unskip_leaves_annotations_alone(workspace):
@@ -80,7 +82,7 @@ def test_unskip_leaves_annotations_alone(workspace):
     # A skip is the only state this undoes; discarding an answer by accident
     # would be far worse
     assert catalog.annotation_of(ids[0], label_set_id) == Choices(values=["cat"])
-    assert len(catalog.labelled(label_set_id)) == 1
+    assert len(catalog.labelled(label_set_id, EVERYTHING)) == 1
 
 
 def test_unskip_with_nothing_skipped_says_so(workspace):

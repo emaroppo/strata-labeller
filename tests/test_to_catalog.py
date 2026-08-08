@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from strata.catalog import Catalog
+from strata.catalog import EVERYTHING, Catalog
 from strata.labeller.dataset import Sample, save_dataset
 from strata.labeller.to_catalog import (
     MigrationError,
@@ -134,7 +134,7 @@ def test_every_file_reaches_the_catalog(project, catalog, populated):
 def test_annotations_survive_the_crossing(project, catalog, populated):
     populated(annotated=2, skipped=0, unlabelled=0)
     report = migrate(project, catalog)
-    labelled = catalog.labelled(report.label_set_id)
+    labelled = catalog.labelled(report.label_set_id, EVERYTHING)
     assert len(labelled) == 2
     assert catalog.annotation_of(labelled[0].id, report.label_set_id) == Choices(values=["cat"])
 
@@ -144,8 +144,8 @@ def test_skipped_samples_stay_skipped(project, catalog, populated):
     report = migrate(project, catalog)
     assert report.skipped == 2
     # Reviewed with nothing applicable: not training data, and not in the queue
-    assert len(catalog.labelled(report.label_set_id)) == 1
-    assert catalog.unlabelled(report.label_set_id) == []
+    assert len(catalog.labelled(report.label_set_id, EVERYTHING)) == 1
+    assert catalog.unlabelled(report.label_set_id, EVERYTHING) == []
 
 
 def test_unlabelled_samples_get_no_annotation_row(project, catalog, populated):
@@ -153,7 +153,7 @@ def test_unlabelled_samples_get_no_annotation_row(project, catalog, populated):
     report = migrate(project, catalog)
     # Nobody has looked at them, which is not the same as having looked and
     # found nothing
-    assert len(catalog.unlabelled(report.label_set_id)) == 3
+    assert len(catalog.unlabelled(report.label_set_id, EVERYTHING)) == 3
 
 
 def test_an_empty_annotation_stays_a_real_answer(project, catalog):
@@ -163,7 +163,7 @@ def test_an_empty_annotation_stays_a_real_answer(project, catalog):
     save_dataset([Sample(path="empty.jpg", results=[], annotated=True)], project.dataset_path)
 
     report = migrate(project, catalog)
-    [sample] = catalog.labelled(report.label_set_id)
+    [sample] = catalog.labelled(report.label_set_id, EVERYTHING)
     assert catalog.annotation_of(sample.id, report.label_set_id) == Choices()
 
 
@@ -171,7 +171,7 @@ def test_the_class_index_is_built(project, catalog, populated):
     populated(annotated=4, skipped=0, unlabelled=0)
     report = migrate(project, catalog)
     # "every sample labelled X" has to be a join from the moment data lands
-    assert len(catalog.with_class(report.label_set_id, "cat")) == 2
+    assert len(catalog.with_class(report.label_set_id, "cat", EVERYTHING)) == 2
 
 
 def test_migrated_annotations_are_marked_as_imported(project, catalog, populated):
@@ -217,7 +217,7 @@ def test_running_twice_changes_nothing(project, catalog, populated):
         first.annotated,
         first.skipped,
     )
-    assert len(catalog.labelled(first.label_set_id)) == 3
+    assert len(catalog.labelled(first.label_set_id, EVERYTHING)) == 3
 
 
 def test_a_second_run_widens_the_label_set(project, catalog, populated):
@@ -288,7 +288,7 @@ def test_a_v1_dataset_migrates_through_the_upgrade(project, catalog):
     project.dataset_path.write_text(json.dumps([{"path": "old.jpg", "labels": ["dog"]}]))
 
     report = migrate(project, catalog)
-    [sample] = catalog.labelled(report.label_set_id)
+    [sample] = catalog.labelled(report.label_set_id, EVERYTHING)
     assert catalog.annotation_of(sample.id, report.label_set_id) == Choices(values=["dog"])
 
 
@@ -357,24 +357,27 @@ def test_the_source_path_is_recorded(project, catalog, populated):
     # back from a catalogued sample to the file it was read from
     populated(annotated=2, skipped=0, unlabelled=1)
     report = migrate(project, catalog)
-    sources = {
-        (s.metadata or {}).get("source_path") for s in catalog.unlabelled(report.label_set_id)
-    } | {(s.metadata or {}).get("source_path") for s in catalog.labelled(report.label_set_id)}
+    rows = catalog.unlabelled(report.label_set_id, EVERYTHING) + catalog.labelled(
+        report.label_set_id, EVERYTHING
+    )
+    sources = {(s.metadata or {}).get("source_path") for s in rows}
     assert sources == {"img000.jpg", "img001.jpg", "img002.jpg"}
 
 
 def test_re_running_backfills_a_missing_source_path(project, catalog, populated):
     populated(annotated=2, skipped=0, unlabelled=0)
     paths = sorted(project.data_dir.glob("*.jpg"))
-    catalog.ingest(paths, media="image")  # as an older build would have
-    assert all(s.metadata is None for s in catalog.unlabelled(
-        catalog.create_label_set("tmp", __import__(
-            "strata.labels", fromlist=["ClassificationSchema"]).ClassificationSchema())))
+    # As an older build would have: no source path, and no collection either
+    catalog.ingest(paths, media="image")
+    from strata.labels import ClassificationSchema
+
+    probe = catalog.create_label_set("tmp", ClassificationSchema())
+    assert all(s.metadata is None for s in catalog.unlabelled(probe, EVERYTHING))
 
     report = migrate(project, catalog)
     assert all(
         (s.metadata or {}).get("source_path")
-        for s in catalog.labelled(report.label_set_id)
+        for s in catalog.labelled(report.label_set_id, EVERYTHING)
     )
 
 
@@ -383,5 +386,5 @@ def test_a_frame_keeps_its_folder_in_the_source_path(project, catalog, populated
     report = migrate(project, catalog)
     assert all(
         (s.metadata or {}).get("source_path", "").startswith("vid1/")
-        for s in catalog.labelled(report.label_set_id)
+        for s in catalog.labelled(report.label_set_id, EVERYTHING)
     )
