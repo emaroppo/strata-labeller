@@ -6,6 +6,10 @@ from pathlib import Path
 
 from .schemas import LabelSchema, Result
 
+# Read-only now. The catalog is the store; this reads the format it replaced,
+# so a project that predates it — or a dataset.json handed over by someone
+# else — still has a way in through `to-catalog`. Nothing writes it.
+#
 # v1 stored {"path", "labels", "skipped"} in a bare list; v2 stores
 # canonicalized Label Studio results so any task type fits, and records
 # whether a human has annotated the sample rather than inferring it from

@@ -87,28 +87,6 @@ def test_model_params_reach_the_constructor(toy_project):
     model = toy_project.load_model()
     assert model.num_epochs == 7
     assert model.note == "from params"
-
-
-def test_a_plugin_output_reaches_label_studio_results(toy_project):
-    """The whole point of the seam: a model that knows nothing about Label
-    Studio still produces results Label Studio can read."""
-    from strata.labeller.dataset import Sample
-    from strata.labeller.predict import run_predictions
-
-    predictions = run_predictions(toy_project.load_model(), [Sample(path="a.jpg")], toy_project)
-
-    assert predictions[0].results == [
-        {
-            "from_name": "label",
-            "to_name": "image",
-            "type": "choices",
-            "value": {"choices": ["cat"]},
-        }
-    ]
-    assert predictions[0].score == pytest.approx(0.87)
-    assert predictions[0].uncertainty == pytest.approx(0.13)
-
-
 def test_a_missing_model_file_names_the_path(project):
     loaded = set_ref(project, "nope.py:Missing")
     with pytest.raises(ProjectError, match="missing file"):

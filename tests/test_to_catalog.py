@@ -385,33 +385,3 @@ def test_a_frame_keeps_its_folder_in_the_source_path(project, catalog, populated
         (s.metadata or {}).get("source_path", "").startswith("vid1/")
         for s in catalog.labelled(report.label_set_id)
     )
-
-
-def test_the_mirror_keeps_every_sample_not_only_the_labelled(project, catalog, populated, tmp_path):
-    from strata.labeller.cli import _mirror_to_dataset_json
-    from strata.labeller.dataset import load_dataset
-
-    populated(annotated=2, skipped=1, unlabelled=3)
-    report = migrate(project, catalog)
-    _mirror_to_dataset_json(project, catalog, report.label_set_id)
-
-    written = load_dataset(project.dataset_path, project.schema)
-    # Training reads only what is labelled, but the file is also the record
-    # of what has been skipped and what is still waiting
-    assert len(written) == 6
-    assert sum(1 for s in written if s.is_labeled) == 2
-    assert sum(1 for s in written if s.skipped) == 1
-    assert sum(1 for s in written if not s.annotated and not s.skipped) == 3
-
-
-def test_the_mirror_writes_paths_a_legacy_round_can_resolve(project, catalog, populated):
-    from strata.labeller.cli import _mirror_to_dataset_json
-    from strata.labeller.dataset import load_dataset
-
-    populated(annotated=2, skipped=0, unlabelled=0)
-    report = migrate(project, catalog)
-    _mirror_to_dataset_json(project, catalog, report.label_set_id)
-
-    for sample in load_dataset(project.dataset_path, project.schema):
-        # A blob path resolves against the data root to nothing at all
-        assert project.sample_file(sample.path).exists()

@@ -14,8 +14,6 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from strata.modelling import Model
-
 from .config import Settings
 from .project import PROJECT_ENV_VAR, PROJECTS_DIR, Project, ProjectError
 
@@ -83,53 +81,6 @@ def _warn_undeclared(project: Project, samples: list) -> list[str]:
         )
         console.print(f"  auto-labeller class add {' '.join(undeclared)}")
     return undeclared
-
-
-def _resolve_checkpoint(
-    model: Model,
-    project: Project,
-    checkpoint: Path | None = None,
-    fresh: bool = False,
-) -> Path | None:
-    """Load a checkpoint into model. Returns the path loaded, or None."""
-    if fresh:
-        return None
-    if checkpoint is not None:
-        model.load(checkpoint)
-        return checkpoint
-    latest = project.latest_checkpoint()
-    if latest is not None:
-        model.load(latest)
-    return latest
-
-
-def _require_checkpoint(model: Model, project: Project, checkpoint: Path | None) -> Path:
-    ckpt = _resolve_checkpoint(model, project, checkpoint)
-    if not ckpt:
-        console.print("[red]No checkpoint found. Run 'train' first or pass --checkpoint.[/red]")
-        raise typer.Exit(1)
-    console.print(f"Using checkpoint: {ckpt}")
-    return ckpt
-
-
-def _push_with_progress(client, project_id, predictions, task_id_map, **kwargs) -> int:
-    total = sum(1 for p in predictions if p.path in task_id_map)
-    with Progress(
-        TextColumn("[bold cyan]Pushing"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
-        bar = progress.add_task("push", total=total)
-        return client.push_predictions(
-            project_id,
-            predictions,
-            task_id_map,
-            on_progress=lambda n: progress.advance(bar, n),
-            **kwargs,
-        )
 
 
 def _catalog_for(settings, config_path: Path, create: bool = False):
@@ -222,7 +173,8 @@ def templates() -> None:
 @app.command(name="projects")
 def list_projects_cmd() -> None:
     """List the projects under projects/."""
-    from .dataset import load_dataset
+    from strata.catalog import CatalogError
+
     from .project import list_projects
 
     found = list_projects()
@@ -231,6 +183,15 @@ def list_projects_cmd() -> None:
             "[yellow]No projects yet. Create one with 'auto-labeller new <name>'.[/yellow]"
         )
         return
+
+    # Counts live in the catalog now, and a project can be listed without
+    # one — a project that has never ingested is still a project
+    catalog = None
+    settings = Settings.load()
+    if (Path(settings.catalog.root) / "catalog.db").exists():
+        from strata.catalog import Catalog
+
+        catalog = Catalog.local(Path(settings.catalog.root))
 
     table = Table(title="Projects")
     table.add_column("Name", style="cyan")
@@ -246,17 +207,24 @@ def list_projects_cmd() -> None:
         except ProjectError as e:
             table.add_row(directory.name, "-", f"[red]{escape(str(e))}[/red]", "-", "-", "-")
             continue
-        total = labeled = 0
-        if project.dataset_path.exists():
-            dataset = load_dataset(project.dataset_path, project.schema)
-            total = len(dataset)
-            labeled = sum(1 for s in dataset if s.is_labeled)
+        total, labeled = "-", "-"
+        if catalog is not None:
+            try:
+                label_set_id, _ = catalog.label_set(project.label_set_name)
+            except CatalogError:
+                pass
+            else:
+                annotated = catalog.labelled(label_set_id)
+                queued = catalog.unlabelled(label_set_id)
+                skipped = catalog.skipped(label_set_id)
+                total = str(len(annotated) + len(queued) + len(skipped))
+                labeled = str(len(annotated))
         table.add_row(
             project.name,
             project.schema.type,
             ", ".join(project.schema.classes) or "-",
-            str(total),
-            str(labeled),
+            total,
+            labeled,
             str(project.label_studio.project_id or "-"),
         )
     console.print(table)
@@ -281,18 +249,16 @@ def class_add(
     hand-tuned layout survives. Refresh your Label Studio tab afterwards and
     the new option is there.
     """
-    from .dataset import get_classes, load_dataset
     from .label_config import LabelConfigError
 
     project = _load_project(project_path)
     settings = Settings.load(config_path)
 
-    dataset = []
-    if project.dataset_path.exists():
-        dataset = load_dataset(project.dataset_path, project.schema)
-
     try:
-        classes = project.add_classes(names, known=get_classes(dataset, project.schema))
+        # No inference from what is in use: the label set holds the class
+        # list now, and guessing it from annotations was how an unpinned
+        # project got one before there was anywhere to pin it
+        classes = project.add_classes(names)
     except ProjectError as e:
         _error(str(e))
         raise typer.Exit(1) from None
@@ -317,17 +283,29 @@ def class_add(
             "refresh the tab to see it."
         )
 
-    labeled = sum(1 for s in dataset if s.is_labeled)
-    skipped = sum(1 for s in dataset if s.skipped)
-    if labeled:
-        console.print(
-            f"[dim]{labeled} samples were labeled before this class existed.[/dim]"
-        )
-    if skipped:
-        console.print(
-            f"[dim]{skipped} skipped samples may contain it — "
-            f"'auto-labeller unskip' returns them to the review queue.[/dim]"
-        )
+    from strata.catalog import CatalogError
+
+    root = Path(settings.catalog.root)
+    if (root / "catalog.db").exists():
+        from strata.catalog import Catalog
+
+        catalog = Catalog.local(root)
+        try:
+            label_set_id, _ = catalog.label_set(project.label_set_name)
+        except CatalogError:
+            return
+        labelled = len(catalog.labelled(label_set_id))
+        skipped = len(catalog.skipped(label_set_id))
+        if labelled:
+            console.print(
+                f"[dim]{labelled} sample(s) were labelled before this class "
+                f"existed.[/dim]"
+            )
+        if skipped:
+            console.print(
+                f"[dim]{skipped} skipped sample(s) may contain it — "
+                f"'auto-labeller unskip' returns them to the queue.[/dim]"
+            )
 
 
 def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
@@ -364,31 +342,33 @@ def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
 @class_app.command("list")
 def class_list(
     project_path: Path | None = ProjectOption,
+    config_path: Path = ConfigOption,
 ) -> None:
-    """List the project's classes with how many samples carry each."""
-    from .dataset import load_dataset
-
+    """List the label set's classes with how many samples carry each."""
     project = _load_project(project_path)
-    dataset = (
-        load_dataset(project.dataset_path, project.schema)
-        if project.dataset_path.exists()
-        else []
-    )
+    settings = Settings.load(config_path)
+    catalog, _ = _catalog_for(settings, config_path)
+    label_set_id, schema = _label_set_for(catalog, project)
 
-    schema = project.schema
-    counts: dict[str, int] = {c: 0 for c in schema.classes}
-    for sample in dataset:
-        for name in schema.classes_in_use([sample.results]):
-            counts[name] = counts.get(name, 0) + 1
-
-    table = Table(title=f"Classes — {project.name}")
+    table = Table(title=f"Classes — {project.label_set_name}")
     table.add_column("Class", style="cyan")
     table.add_column("Samples", justify="right", style="green")
-    table.add_column("", style="yellow")
-    for name, count in counts.items():
-        undeclared = "not in the label config" if name not in schema.classes else ""
-        table.add_row(name, str(count), undeclared)
+    for name in schema.classes:
+        # From the class index rather than by decoding every annotation,
+        # which is what that table exists for
+        table.add_row(name, str(len(catalog.with_class(label_set_id, name))))
     console.print(table)
+
+    declared = set(project.label_config.classes)
+    drifted = set(schema.classes) ^ declared
+    if declared and drifted:
+        # Label Studio renders its config from project.toml while an export
+        # is validated against the label set, so a class in one and not the
+        # other lets a reviewer apply a label the catalog then refuses
+        console.print(
+            f"[yellow]project.toml and the label set disagree: "
+            f"{', '.join(sorted(drifted))}[/yellow]"
+        )
 
 
 @app.command()
@@ -612,13 +592,6 @@ def train(
         False, "--fresh/--no-fresh", help="Cold start, ignoring the previous run"
     ),
     val_ratio: float = typer.Option(0.2, help="Share of samples to hold out"),
-    legacy: bool = typer.Option(
-        False,
-        "--legacy",
-        help="Train from dataset.json instead of the catalog (removed once the cutover settles)",
-    ),
-    round_num: int | None = typer.Option(None, help="--legacy only: round number"),
-    checkpoint: Path | None = typer.Option(None, help="--legacy only: checkpoint to continue from"),
 ) -> None:
     """Train on the project's labelled data.
 
@@ -628,10 +601,6 @@ def train(
     recomputed.
     """
     project = _load_project(project_path)
-
-    if legacy:
-        _train_from_dataset_json(project, round_num, checkpoint, fresh)
-        return
 
     from strata.catalog import Catalog
 
@@ -656,78 +625,6 @@ def train(
     for line in describe(result):
         console.print(line)
     console.print(f"  checkpoint: {result.run.checkpoint}")
-
-
-def _train_from_dataset_json(
-    project: Project, round_num: int | None, checkpoint: Path | None, fresh: bool
-) -> None:
-    """The pre-catalog round, kept for one cutover.
-
-    Reads dataset.json and writes rounds/<n>/metadata.json. It cannot see
-    anything labelled since the last `to-catalog`, and its split is
-    recomputed each time rather than inherited.
-    """
-    from .train import run_training
-
-    console.print("[yellow]--legacy: training from dataset.json, not the catalog.[/yellow]")
-    model = project.load_model()
-    ckpt = _resolve_checkpoint(model, project, checkpoint, fresh)
-    if ckpt:
-        console.print(f"Loaded checkpoint: {ckpt}")
-    elif fresh:
-        console.print("Training from scratch.")
-
-    meta = run_training(model, project, round_num)
-    console.print(f"[green]Round {meta['round']} complete[/green]")
-    console.print(
-        f"  Train: {meta['num_train']}, Val: {meta['num_val']}, "
-        f"Unlabeled: {meta['num_unlabeled']}"
-    )
-    console.print(f"  Classes: {', '.join(meta['classes'])}")
-    for k, v in (meta["metrics"] or {}).items():
-        console.print(f"  {k}: {v}")
-
-
-@app.command()
-def predict(
-    project_path: Path | None = ProjectOption,
-    unlabeled_only: bool = typer.Option(True, help="Only predict on unlabeled samples"),
-    checkpoint: Path | None = typer.Option(None, help="Checkpoint to use (default: latest)"),
-    output: Path | None = typer.Option(None, help="Save predictions to JSON"),
-) -> None:
-    """Run model predictions on the dataset."""
-    from .dataset import Sample, load_dataset, save_dataset, split_labeled_unlabeled
-    from .predict import run_predictions
-
-    project = _load_project(project_path)
-    model = project.load_model()
-    _require_checkpoint(model, project, checkpoint)
-
-    dataset = load_dataset(project.dataset_path, project.schema)
-    samples = (
-        split_labeled_unlabeled(dataset)[1]
-        if unlabeled_only
-        else [s for s in dataset if not s.skipped]
-    )
-
-    if not samples:
-        console.print("[yellow]No samples to predict on.[/yellow]")
-        raise typer.Exit(0)
-
-    console.print(f"Predicting on {len(samples)} samples...")
-    predictions = run_predictions(model, samples, project)
-
-    schema = project.schema
-    for pred in predictions:
-        summary = ", ".join(schema.classes_in_use([pred.results])) or "(nothing)"
-        console.print(f"  {pred.path}: {summary} (score {pred.score:.2f})")
-
-    if output:
-        pred_samples = [
-            Sample(path=p.path, results=p.results, annotated=False) for p in predictions
-        ]
-        save_dataset(pred_samples, output)
-        console.print(f"[green]Saved predictions to {output}[/green]")
 
 
 @app.command()
@@ -848,11 +745,6 @@ def push(
 def export_annotations(
     project_path: Path | None = ProjectOption,
     config_path: Path = ConfigOption,
-    dataset_json: bool = typer.Option(
-        True,
-        "--dataset-json/--no-dataset-json",
-        help="Also write dataset.json, so `train --legacy` keeps working",
-    ),
 ) -> None:
     """Pull corrected annotations out of Label Studio into the catalog.
 
@@ -905,74 +797,6 @@ def export_annotations(
             f"[yellow]{len(report.unrecognised)} task(s) point at nothing this "
             f"catalog knows, and were left alone.[/yellow]"
         )
-
-    if dataset_json:
-        _mirror_to_dataset_json(project, catalog, label_set_id)
-
-
-def _mirror_to_dataset_json(project: Project, catalog, label_set_id: int) -> None:
-    """Keep dataset.json in step, so `train --legacy` remains a real fallback.
-
-    Written from the catalog rather than merged with what is there: the
-    catalog is the store now, and reconciling two of them is exactly what
-    this stops being worth doing.
-
-    Every sample, not only the labelled ones. Training reads only what is
-    labelled, but the file is also the record of what has been skipped and
-    what is still waiting — dropping those would leave a fallback that has
-    forgotten most of the job.
-    """
-    from .dataset import Sample, save_dataset
-
-    schema = project.schema
-    samples, unlocatable = [], 0
-
-    def source_of(row):
-        # The blob path is addressed by content and means nothing to a
-        # legacy round, which resolves against the data root
-        return (row.metadata or {}).get("source_path")
-
-    for row in catalog.skipped(label_set_id):
-        source = source_of(row)
-        if source is None:
-            unlocatable += 1
-            continue
-        samples.append(Sample(path=source, skipped=True))
-    for row in catalog.unlabelled(label_set_id):
-        source = source_of(row)
-        if source is None:
-            unlocatable += 1
-            continue
-        samples.append(Sample(path=source))
-    for row in catalog.labelled(label_set_id):
-        # The blob path is addressed by content and means nothing to a
-        # legacy round, which resolves against the data root. Only the
-        # recorded source path is usable here.
-        source = source_of(row)
-        if source is None:
-            unlocatable += 1
-            continue
-        value = catalog.annotation_of(row.id, label_set_id)
-        samples.append(
-            Sample(
-                path=source,
-                results=schema.encode_target(list(value.values)) if value else [],
-                annotated=True,
-            )
-        )
-    if unlocatable:
-        console.print(
-            f"[yellow]{unlocatable} sample(s) have no recorded source path and "
-            f"were left out of {project.dataset_path}. Re-run 'to-catalog' to "
-            f"record them.[/yellow]"
-        )
-    if not samples:
-        console.print(
-            f"[yellow]Nothing to mirror; {project.dataset_path} left alone.[/yellow]"
-        )
-        return
-    save_dataset(samples, project.dataset_path)
-    console.print(f"  mirrored {len(samples)} labelled sample(s) to {project.dataset_path}")
 
 
 @app.command()
