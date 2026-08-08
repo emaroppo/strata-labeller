@@ -870,16 +870,39 @@ def _mirror_to_dataset_json(project: Project, catalog, label_set_id: int) -> Non
     Written from the catalog rather than merged with what is there: the
     catalog is the store now, and reconciling two of them is exactly what
     this stops being worth doing.
+
+    Every sample, not only the labelled ones. Training reads only what is
+    labelled, but the file is also the record of what has been skipped and
+    what is still waiting — dropping those would leave a fallback that has
+    forgotten most of the job.
     """
     from .dataset import Sample, save_dataset
 
     schema = project.schema
     samples, unlocatable = [], 0
+
+    def source_of(row):
+        # The blob path is addressed by content and means nothing to a
+        # legacy round, which resolves against the data root
+        return (row.metadata or {}).get("source_path")
+
+    for row in catalog.skipped(label_set_id):
+        source = source_of(row)
+        if source is None:
+            unlocatable += 1
+            continue
+        samples.append(Sample(path=source, skipped=True))
+    for row in catalog.unlabelled(label_set_id):
+        source = source_of(row)
+        if source is None:
+            unlocatable += 1
+            continue
+        samples.append(Sample(path=source))
     for row in catalog.labelled(label_set_id):
         # The blob path is addressed by content and means nothing to a
         # legacy round, which resolves against the data root. Only the
         # recorded source path is usable here.
-        source = (row.metadata or {}).get("source_path")
+        source = source_of(row)
         if source is None:
             unlocatable += 1
             continue
