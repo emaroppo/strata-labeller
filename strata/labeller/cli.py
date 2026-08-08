@@ -816,6 +816,7 @@ def push(
 
     from .active_learning import least_confident
     from .adapter import prediction_to_results
+    from .predictions import PredictionCache
     from .sync import load_task_map, rebuild_task_map, save_task_map, tasks_to_push
 
     project = _load_project(project_path)
@@ -855,17 +856,34 @@ def push(
     run = store.get(run_id) if run_id else store.latest(project.dataset_name)
 
     if predictions and run is not None and run.checkpoint:
-        with console.status(f"Predicting with run {run.id}..."):
-            made = run_predict(
-                PredictRequest(
-                    run_id=run.id,
-                    paths=_local_paths(catalog_root, pool),
-                ),
-                store,
+        # Ranking needs a score for every unlabelled sample, not only the
+        # ones about to be shown, so a push costs a full inference pass.
+        # A checkpoint and some bytes give one answer, so the pass a
+        # previous push already made is worth keeping.
+        cache = PredictionCache.local(project.runs_dir)
+        cached = cache.get(run.id, [s.checksum for s in pool])
+        missing = [s for s in pool if s.checksum not in cached]
+
+        if cached:
+            console.print(
+                f"[dim]{len(cached):,} prediction(s) reused from run {run.id}; "
+                f"{len(missing):,} to make[/dim]"
             )
+        if missing:
+            with console.status(f"Predicting with run {run.id}..."):
+                fresh = run_predict(
+                    PredictRequest(
+                        run_id=run.id,
+                        paths=_local_paths(catalog_root, missing),
+                    ),
+                    store,
+                )
+            cache.put(run.id, {s.checksum: p for s, p in zip(missing, fresh, strict=True)})
+            cached.update(dict(zip((s.checksum for s in missing), fresh, strict=True)))
+
         # Keyed by id rather than by the row, which says what the mapping
         # is really on and does not depend on a row being hashable
-        by_sample = {s.id: p for s, p in zip(pool, made, strict=True)}
+        by_sample = {s.id: cached[s.checksum] for s in pool}
         # Least confident first: what the model committed to least is what a
         # human settles fastest
         ranked = sorted(
