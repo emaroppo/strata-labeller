@@ -1036,10 +1036,17 @@ def report(
         # lineage crossed into the catalog from the old layout, where the
         # split was recomputed every round — comparing those produced a
         # +0.10 that measured nothing but a change of validation set.
-        comparable = parent in seen and versions.get(parent, 0) <= version
+        before, now = versions.get(parent), version
+        comparable = (
+            parent in seen
+            and before is not None
+            and now is not None
+            and before <= now
+        )
         delta = f"{value - seen[parent]:+.4f}" if comparable else ""
         lineage = f"from {parent}" if parent else "[yellow]unchained[/yellow]"
-        table.add_row(str(run_num), f"v{version}", f"{value:.4f}", delta, lineage)
+        shown = f"v{version}" if version is not None else "[dim]—[/dim]"
+        table.add_row(str(run_num), shown, f"{value:.4f}", delta, lineage)
         seen[run_num] = value
         versions[run_num] = version
     console.print(table)
@@ -1047,7 +1054,10 @@ def report(
 
 def _print_run(store, run) -> None:
     console.print(f"[bold]Run {run.id}[/bold] — {run.model} v{run.model_version}")
-    console.print(f"  dataset:   {run.dataset} v{run.dataset_version}")
+    version = f"v{run.dataset_version}" if run.dataset_version is not None else (
+        "no dataset version — imported from before the catalog"
+    )
+    console.print(f"  dataset:   {run.dataset} {version}")
     console.print(f"  label set: {run.label_set}")
     console.print(f"  classes:   {', '.join(run.classes)}")
     console.print(f"  params:    {run.params}")

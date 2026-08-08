@@ -12,10 +12,9 @@ predecessor, and nothing on disk says which. Imported runs are therefore
 unchained unless ``chain`` is passed, and a chain asserted that way is the
 caller's claim rather than something read off the files.
 
-*Dataset versions.* An imported round has no dataset in the catalog, so its
-round number stands in. That number is not unique against versions a later
-catalog round creates; ``history`` orders by run id, which is, so the curve
-stays right even where the version column repeats.
+*Dataset versions.* An imported round trained on samples no dataset version
+describes, so it records none. The round number is not lost: rounds are
+imported in order into an empty store, so a run's id is its round number.
 
 *Checkpoints* are referenced where they already sit rather than copied. They
 are the large part of a project, and duplicating gigabytes to change a
@@ -83,7 +82,7 @@ def import_rounds(
                 id=0,
                 parent_run_id=previous.id if (chain and previous) else None,
                 dataset=project.dataset_name,
-                dataset_version=number or 0,
+                dataset_version=None,
                 label_set=project.label_set_name,
                 model=project.model.ref,
                 model_version=model_version,

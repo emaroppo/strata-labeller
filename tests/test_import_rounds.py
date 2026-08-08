@@ -123,11 +123,21 @@ def test_the_checkpoint_is_referenced_where_it_sits(with_rounds, tmp_path):
     assert run.checkpoint.exists()
 
 
-def test_the_round_number_stands_in_for_a_dataset_version(with_rounds, tmp_path):
+def test_an_imported_round_records_no_dataset_version(with_rounds, tmp_path):
     project = with_rounds(2)
     store = RunStore.local(tmp_path / "runs")
     runs = import_rounds(project, store).runs
-    assert [r.dataset_version for r in runs] == [1, 2]
+    # It trained on samples no dataset version describes, and standing a
+    # round number in for one made it read as sharing data with a catalog
+    # dataset that happened to carry the same number
+    assert [r.dataset_version for r in runs] == [None, None]
+
+
+def test_the_round_number_survives_as_the_run_id(with_rounds, tmp_path):
+    # Rounds are imported in order into an empty store, so nothing is lost
+    project = with_rounds(3)
+    store = RunStore.local(tmp_path / "runs")
+    assert [r.id for r in import_rounds(project, store).runs] == [1, 2, 3]
 
 
 # ----------------------------------------------------------------------
