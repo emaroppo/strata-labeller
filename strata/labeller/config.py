@@ -38,6 +38,18 @@ class CatalogConfig:
     #: rows needs — the schema and the queries are the same either way.
     url: str = ""
 
+    #: Where the blobs are. Empty means files under ``root``; an endpoint
+    #: means tar shards in an S3-compatible bucket, which is what lets the
+    #: machine that trains and the machine that labels read the same bytes.
+    s3_endpoint: str = ""
+    s3_bucket: str = "strata"
+    #: Garage and MinIO ignore it, but boto3 insists on one being set.
+    s3_region: str = "garage"
+    #: Kept out of the file by preference — $STRATA_S3_ACCESS_KEY and
+    #: $STRATA_S3_SECRET_KEY override, the same argument as the LS token.
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+
 
 @dataclass
 class Settings:
@@ -64,5 +76,9 @@ class Settings:
         url = os.environ.get("STRATA_CATALOG_URL")
         if url:
             settings.catalog.url = url
+        for name in ("s3_endpoint", "s3_bucket", "s3_access_key", "s3_secret_key"):
+            value = os.environ.get(f"STRATA_{name.upper()}")
+            if value:
+                setattr(settings.catalog, name, value)
 
         return settings

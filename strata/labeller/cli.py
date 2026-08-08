@@ -83,19 +83,51 @@ def _warn_undeclared(project: Project, samples: list) -> list[str]:
     return undeclared
 
 
+def _blobs_for(settings, root: Path):
+    """Where this host reads and writes sample bytes.
+
+    Files under the catalog root when nothing else is configured, which is
+    what keeps a checkout working. An endpoint means tar shards in a bucket,
+    which is what lets the machine that trains and the machine that labels
+    read the same bytes without either owning them.
+    """
+    from strata.catalog import LocalBackend
+
+    if not settings.catalog.s3_endpoint:
+        return LocalBackend(root / "blobs")
+
+    import boto3
+    from botocore.config import Config
+
+    from strata.catalog.s3 import S3Backend
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=settings.catalog.s3_endpoint,
+        aws_access_key_id=settings.catalog.s3_access_key or None,
+        aws_secret_access_key=settings.catalog.s3_secret_key or None,
+        region_name=settings.catalog.s3_region,
+        # Anything that is not AWS serves buckets as a path rather than as a
+        # subdomain, and the default guesses the other way
+        config=Config(s3={"addressing_style": "path"}),
+    )
+    return S3Backend(client, bucket=settings.catalog.s3_bucket)
+
+
 def _catalog_for(settings, config_path: Path, create: bool = False):
     """The catalog this host holds, or an exit with something actionable.
 
     ``create`` for the commands that put data in: refusing to make one would
     leave no way to make the first, and the advice would be circular.
     """
-    from strata.catalog import Catalog, LocalBackend
+    from strata.catalog import Catalog
 
     root = Path(settings.catalog.root)
+    blobs = _blobs_for(settings, root)
     if settings.catalog.url:
         # A shared index: nothing local to check for, and create_all is
         # harmless against one that already exists
-        return Catalog.connect(settings.catalog.url, LocalBackend(root / "blobs")), root
+        return Catalog.connect(settings.catalog.url, blobs), root
 
     if not create and not (root / "catalog.db").exists():
         _error(
@@ -104,7 +136,8 @@ def _catalog_for(settings, config_path: Path, create: bool = False):
             f"in {config_path} at an existing one."
         )
         raise typer.Exit(1)
-    return Catalog.local(root), root
+    root.mkdir(parents=True, exist_ok=True)
+    return Catalog.connect(f"sqlite:///{root / 'catalog.db'}", blobs), root
 
 
 def _label_set_for(catalog, project: Project):
@@ -1117,11 +1150,11 @@ def catalog_copy(
     Label Studio task map are keyed on them, so renumbering would silently
     repoint every task at a different image.
     """
-    from strata.catalog import Catalog, CopyError, LocalBackend, copy_index
+    from strata.catalog import Catalog, CopyError, copy_index
 
     settings = Settings.load(config_path)
     source, root = _catalog_for(settings, config_path)
-    target = Catalog.connect(to_url, LocalBackend(root / "blobs"))
+    target = Catalog.connect(to_url, _blobs_for(settings, root))
 
     try:
         with Progress(
