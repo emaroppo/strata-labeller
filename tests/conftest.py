@@ -5,11 +5,20 @@ pipeline that hold whatever a project labels and whatever trains it, so
 none of them import torch and all of them run on the base install.
 """
 
+import os
 from pathlib import Path
 
 import pytest
 
-from strata.labeller.project import PROJECT_ENV_VAR, Project
+# Rich colourises when $FORCE_COLOR is set, even writing into captured
+# output, and the CLI tests match on substrings that escape codes split
+# apart. Popped at import rather than in a fixture because the CLI builds
+# its Console when the module is imported, which is before any fixture
+# runs — and a developer whose terminal sets FORCE_COLOR would otherwise
+# see failures with nothing to do with what they changed.
+os.environ.pop("FORCE_COLOR", None)
+
+from strata.labeller.project import PROJECT_ENV_VAR, Project  # noqa: E402
 
 
 @pytest.fixture
