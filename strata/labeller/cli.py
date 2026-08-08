@@ -966,9 +966,7 @@ def to_catalog(
 
 @app.command(name="catalog-stats")
 def catalog_stats(
-    catalog_root: Path = typer.Option(
-        Path("catalog"), "--catalog", help="The catalog to read"
-    ),
+    config_path: Path = ConfigOption,
 ) -> None:
     """What is in a catalog: samples, label sets, and the class breakdown.
 
@@ -978,14 +976,10 @@ def catalog_stats(
     """
     from sqlalchemy import func, select
 
-    from strata.catalog import Catalog
     from strata.catalog import tables as t
 
-    if not (catalog_root / "catalog.db").exists():
-        console.print(f"[red]No catalog at {catalog_root}[/red]")
-        raise typer.Exit(1)
-
-    catalog = Catalog.local(catalog_root)
+    settings = Settings.load(config_path)
+    catalog, catalog_root = _catalog_for(settings, config_path)
     with catalog.engine.connect() as conn:
         total = conn.execute(select(func.count()).select_from(t.sample)).scalar()
         groups = conn.execute(
@@ -1007,7 +1001,8 @@ def catalog_stats(
         ]
         label_sets = conn.execute(select(t.label_set.c.id, t.label_set.c.name)).all()
 
-    console.print(f"[bold]{catalog_root}[/bold]: {total} sample(s)")
+    where = settings.catalog.url or catalog_root
+    console.print(f"[bold]{where}[/bold]: {total} sample(s)")
     if groups:
         console.print(f"  {groups} group(s), {ungrouped} sample(s) in no group")
         sizes.sort()
@@ -1105,3 +1100,51 @@ def import_rounds_command(
     report = import_rounds(project, store, chain=chain)
     for line in describe(report, chained=chain):
         console.print(line)
+
+
+@app.command(name="catalog-copy")
+def catalog_copy(
+    to_url: str = typer.Option(..., "--to", help="Index URL to copy into"),
+    config_path: Path = ConfigOption,
+) -> None:
+    """Copy this host's catalog index into another database.
+
+    Only the index moves. Blobs are addressed by content, so the catalog
+    keeps pointing at exactly the same bytes — changing database is six
+    tables, not a data migration.
+
+    Sample ids are preserved. Every annotation, every dataset member and the
+    Label Studio task map are keyed on them, so renumbering would silently
+    repoint every task at a different image.
+    """
+    from strata.catalog import Catalog, CopyError, LocalBackend, copy_index
+
+    settings = Settings.load(config_path)
+    source, root = _catalog_for(settings, config_path)
+    target = Catalog.connect(to_url, LocalBackend(root / "blobs"))
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            bar = progress.add_task("Copying")
+
+            def tick(table: str, count: int) -> None:
+                progress.update(bar, description=f"Copying {table} ({count:,})")
+
+            report = copy_index(source, target, on_progress=tick)
+    except CopyError as e:
+        # Outside the live display, or the message lands under a spinner
+        # that never gets a chance to clear
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+    for name, count in report.copied.items():
+        console.print(f"  {name:<18} {count:>9,}")
+    console.print(f"[green]{report.total:,} row(s) copied[/green]")
+    console.print(
+        "[dim]Blobs were not touched. Point [catalog] url at the new index "
+        "and leave root as it is.[/dim]"
+    )
