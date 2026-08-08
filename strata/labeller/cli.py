@@ -748,7 +748,7 @@ def train(
     from .round import RoundError, describe, run_round
 
     settings = Settings.load(config_path)
-    catalog, _ = _catalog_for(settings, config_path)
+    catalog, catalog_root = _catalog_for(settings, config_path)
 
     try:
         # Materialising used to be a hard link away and over before anyone
@@ -777,7 +777,15 @@ def train(
                     console.print(f"Materialised {total:,} sample(s). Training...")
 
             result = run_round(
-                project, catalog, fresh=fresh, val_ratio=val_ratio, on_progress=tick
+                project,
+                catalog,
+                fresh=fresh,
+                val_ratio=val_ratio,
+                on_progress=tick,
+                # Blobs already on this host, whatever the backend is. Every
+                # version shares almost all its samples with the last, so
+                # without this each one re-fetches a corpus sitting on disk.
+                cache=catalog_root / "blobs",
             )
     except RoundError as e:
         console.print(f"[red]{e}[/red]")

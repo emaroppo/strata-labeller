@@ -45,6 +45,7 @@ def run_round(
     fresh: bool = False,
     val_ratio: float = 0.2,
     on_progress=None,
+    cache: Path | None = None,
 ) -> RoundResult:
     """Freeze a dataset version, materialise it, and train from it."""
     try:
@@ -68,7 +69,7 @@ def run_round(
         collections=project.collections,
         val_ratio=val_ratio,
     )
-    manifest, dataset_dir = _materialise(project, catalog, dataset_id, on_progress)
+    manifest, dataset_dir = _materialise(project, catalog, dataset_id, on_progress, cache)
 
     store = RunStore.local(project.runs_dir)
     # Warm start from the newest run over this dataset unless told otherwise.
@@ -93,7 +94,11 @@ def run_round(
 
 
 def _materialise(
-    project: Project, catalog: Catalog, dataset_id: int, on_progress=None
+    project: Project,
+    catalog: Catalog,
+    dataset_id: int,
+    on_progress=None,
+    cache: Path | None = None,
 ) -> tuple[Manifest, Path]:
     target = project.datasets_dir / project.dataset_name
 
@@ -119,7 +124,7 @@ def _materialise(
         # written, no manifest — and keeping them would let a partial
         # dataset masquerade as a whole one.
         shutil.rmtree(staging)
-    catalog.materialise(dataset_id, staging, on_progress=on_progress)
+    catalog.materialise(dataset_id, staging, on_progress=on_progress, cache=cache)
     manifest = Manifest.model_validate_json((staging / MANIFEST_NAME).read_text())
     staging.rename(final)
     _finished(on_progress, manifest)
