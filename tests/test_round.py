@@ -352,3 +352,37 @@ def test_fresh_params_only_override_what_they_name(ready):
     params = run_round(reloaded, catalog, fresh=True).run.params
     assert params["num_epochs"] == 12
     assert params["batch_size"] == 16
+
+
+def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch):
+    """The OOM case: training died, the dataset directory survived.
+
+    Materialising into staging and then noticing the version was already
+    there cost nothing when blobs were local files a hard link away. Once
+    they are tar members in a bucket it is minutes and gigabytes, thrown
+    away on arrival.
+    """
+    from strata.catalog import MANIFEST_NAME, Manifest
+    from strata.labeller.round import _materialise
+    from strata.labels import ClassificationSchema
+
+    version_dir = project.datasets_dir / project.dataset_name / "v002"
+    (version_dir / "files").mkdir(parents=True)
+    manifest_on_disk = Manifest(
+        dataset=project.dataset_name,
+        version=2,
+        label_set=project.label_set_name,
+        label_schema=ClassificationSchema(classes=["cat"]),
+    )
+    (version_dir / MANIFEST_NAME).write_text(manifest_on_disk.model_dump_json())
+
+    class Refuses:
+        def dataset_version(self, dataset_id):
+            return 2
+
+        def materialise(self, dataset_id, dest):
+            raise AssertionError("refetched a version already on disk")
+
+    manifest, path = _materialise(project, Refuses(), dataset_id=7)
+    assert path == version_dir
+    assert manifest.version == 2

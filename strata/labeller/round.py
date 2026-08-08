@@ -15,7 +15,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from strata.catalog import Catalog, CatalogError, Manifest
+from strata.catalog import MANIFEST_NAME, Catalog, CatalogError, Manifest
 from strata.modelling import Run, RunStore, TrainRequest, train
 from strata.modelling.registry import absolute
 
@@ -93,18 +93,29 @@ def run_round(
 
 def _materialise(project: Project, catalog: Catalog, dataset_id: int) -> tuple[Manifest, Path]:
     target = project.datasets_dir / project.dataset_name
-    # Versions are read off the manifest rather than counted here, so the
-    # directory name and what is inside it cannot disagree
+
+    # Asked before fetching, not after. A round retried after crashing —
+    # which is the ordinary case, since training is the part that runs out of
+    # memory — reuses its version, and materialising into staging only to
+    # discover the directory already existed meant pulling the whole dataset
+    # out of object storage to delete it. Cheap when blobs were local files
+    # and a hard link away; minutes and gigabytes once they are not.
+    final = target / f"v{catalog.dataset_version(dataset_id):03d}"
+    if (final / MANIFEST_NAME).exists():
+        # Membership is what makes a version, and the catalog already
+        # confirmed it matches, so the contents are the same. The manifest
+        # rather than the directory, because only the manifest proves the
+        # rename below completed.
+        return Manifest.model_validate_json((final / MANIFEST_NAME).read_text()), final
+
     staging = target / "pending"
-    catalog.materialise(dataset_id, staging)
-    manifest = Manifest.model_validate_json((staging / "manifest.json").read_text())
-    final = target / f"v{manifest.version:03d}"
-    if final.exists():
-        # Reusing a version, which happens when a round is retried after
-        # crashing. Membership is what makes a version, and the catalog
-        # already confirmed it matches, so the contents are the same.
+    if staging.exists():
+        # An interrupted fetch. Its contents are unknowable — some files
+        # written, no manifest — and keeping them would let a partial
+        # dataset masquerade as a whole one.
         shutil.rmtree(staging)
-        return manifest, final
+    catalog.materialise(dataset_id, staging)
+    manifest = Manifest.model_validate_json((staging / MANIFEST_NAME).read_text())
     staging.rename(final)
     return manifest, final
 
