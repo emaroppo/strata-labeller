@@ -114,6 +114,74 @@ def _blobs_for(settings, root: Path):
     return S3Backend(client, bucket=settings.catalog.s3_bucket)
 
 
+def _addressing(settings):
+    """How this host writes and reads task image URLs.
+
+    One place, because the two directions have to agree: pushing HTTP URLs
+    while reading local ones would orphan every task, and the symptom is an
+    empty export rather than an error.
+    """
+    from .adapter import AdapterError, Addressing
+
+    try:
+        return Addressing(
+            prefix=settings.catalog.blobs_prefix,
+            base_url=settings.catalog.serve_url,
+            secret=settings.catalog.blob_secret,
+        )
+    except AdapterError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+
+def _local_paths(root: Path, samples) -> list[Path]:
+    """Files on this host for ``samples``, for a model that reads paths.
+
+    Deliberately not asked of the blob backend. Once blobs are shards in a
+    bucket there is no path to give — a tar member is not a file — but the
+    local copies stay on the machine that ingested them, and predicting over
+    a review pool is exactly the work that happens there.
+
+    Resolved from the checksum rather than from the sample's location, which
+    is what makes this keep working after a repack points every row at a
+    shard.
+    """
+    from strata.catalog import blob_path
+
+    blobs = root / "blobs"
+    paths = []
+    for sample in samples:
+        suffix = Path((sample.metadata or {}).get("source_path") or "").suffix.lower()
+        path = blobs / blob_path(sample.checksum, suffix)
+        if not path.exists():
+            _error(
+                f"Predicting needs the bytes as files, and {path} is not on "
+                f"this host. Push without --predictions, or run this where the "
+                f"blobs are — fetching a whole review pool out of the bucket "
+                f"to rank it is not something to do by accident."
+            )
+            raise typer.Exit(1)
+        paths.append(path)
+    return paths
+
+
+def _redacted(url: str) -> str:
+    """An index URL safe to print.
+
+    Every command that reports where the catalog is gets run when something
+    is broken, and its output gets pasted into a chat window or an issue.
+    A connection URL carries its password inline, so printing it raw makes
+    routine troubleshooting leak a credential.
+    """
+    from sqlalchemy.engine import make_url
+
+    try:
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        # Not a URL SQLAlchemy recognises. Saying so beats printing it.
+        return "<unparseable url>"
+
+
 def _catalog_for(settings, config_path: Path, create: bool = False):
     """The catalog this host holds, or an exit with something actionable.
 
@@ -498,12 +566,17 @@ def init(
 
     client = _ls_client(settings, project, config_path)
     ls_project_id = client.create_project(project.name)
-    client.setup_local_storage(
-        ls_project_id, path=f"/label-studio/data/{settings.catalog.blobs_prefix}"
-    )
+    if not settings.catalog.serve_url:
+        # Only when Label Studio is the one reading files. Once tasks carry
+        # signed URLs to the serving API, a local storage connection points
+        # at a mount this deployment no longer has, and configuring one
+        # would suggest the mount still matters.
+        client.setup_local_storage(
+            ls_project_id, path=f"/label-studio/data/{settings.catalog.blobs_prefix}"
+        )
 
     tasks, _ = tasks_to_push(
-        samples, catalog, label_set_id, schema, settings.catalog.blobs_prefix, {}
+        samples, catalog, label_set_id, schema, _addressing(settings), {}
     )
     with Progress(
         SpinnerColumn(),
@@ -708,9 +781,9 @@ def push(
 
     project = _load_project(project_path)
     settings = Settings.load(config_path)
-    catalog, _ = _catalog_for(settings, config_path)
+    catalog, catalog_root = _catalog_for(settings, config_path)
     label_set_id, _ = _label_set_for(catalog, project)
-    prefix = settings.catalog.blobs_prefix
+    addressing = _addressing(settings)
     schema = project.schema
 
     try:
@@ -724,7 +797,7 @@ def push(
     if rebuild_map or not task_map:
         with console.status("Listing tasks in Label Studio..."):
             task_map, unrecognised = rebuild_task_map(
-                client.list_tasks(ls_project_id), catalog, prefix, schema.data_key
+                client.list_tasks(ls_project_id), catalog, addressing, schema.data_key
             )
         if unrecognised:
             console.print(
@@ -747,7 +820,7 @@ def push(
             made = run_predict(
                 PredictRequest(
                     run_id=run.id,
-                    paths=[catalog.blobs.path_for(s.location) for s in pool],
+                    paths=_local_paths(catalog_root, pool),
                 ),
                 store,
             )
@@ -763,7 +836,7 @@ def push(
         ranked = ranked[:limit]
 
     tasks, report = tasks_to_push(
-        ranked, catalog, label_set_id, schema, prefix, task_map
+        ranked, catalog, label_set_id, schema, addressing, task_map
     )
     created = client.import_catalog_tasks(ls_project_id, tasks)
     task_map.update(created)
@@ -824,7 +897,7 @@ def export_annotations(
         catalog,
         label_set_id,
         schema,
-        settings.catalog.blobs_prefix,
+        _addressing(settings),
         label_schema.classes,
     )
 
@@ -1060,7 +1133,7 @@ def catalog_stats(
         ).scalar()
         label_sets = conn.execute(select(t.label_set.c.id, t.label_set.c.name)).all()
 
-    where = settings.catalog.url or catalog_root
+    where = _redacted(settings.catalog.url) if settings.catalog.url else catalog_root
     console.print(f"[bold]{where}[/bold]: {total} sample(s)")
     if groups:
         console.print(f"  {groups} group(s), {ungrouped} sample(s) in no group")
@@ -1226,6 +1299,205 @@ def catalog_copy(
     )
 
 
+@app.command()
+def relink(
+    project_path: Path = ProjectOption,
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would change; touch nothing"
+    ),
+    config_path: Path = ConfigOption,
+) -> None:
+    """Repoint a project's Label Studio tasks at their current image URLs.
+
+    Two uses, one operation. It moves existing tasks off the local blob
+    mount and onto the serving API, which is what lets the mount go away.
+    And it re-signs: a signed URL expires, so a task left in a review queue
+    longer than a signature's life stops loading, and this is the fix.
+
+    Tasks whose URL names no sample are left alone and reported. A task made
+    before the catalog points at a real image that nothing here can identify,
+    and rewriting it would destroy the only record of what it showed.
+    """
+    from .sync import relink as plan_relink
+
+    project = _load_project(project_path)
+    settings = Settings.load(config_path)
+    catalog, _ = _catalog_for(settings, config_path)
+    addressing = _addressing(settings)
+    schema = project.schema
+
+    client = _ls_client(settings, project, config_path)
+    try:
+        ls_project_id = project.require_ls_project_id()
+    except ProjectError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+    where = addressing.base_url or f"the {addressing.prefix} mount"
+    console.print(f"[bold]Label Studio project {ls_project_id}[/bold] → {where}\n")
+
+    with console.status("Listing tasks..."):
+        tasks = client.list_tasks(ls_project_id)
+    report = plan_relink(tasks, catalog, addressing, schema.data_key)
+
+    console.print(f"  {report.total:,} task(s): {len(report.changes):,} to repoint, "
+                  f"{report.unchanged:,} already current")
+    if report.unrecognised:
+        console.print(
+            f"  [yellow]{len(report.unrecognised):,} name no sample and are "
+            f"left alone[/yellow]"
+        )
+        for url in report.unrecognised[:3]:
+            console.print(f"    [dim]{escape(url)}[/dim]")
+
+    if dry_run:
+        console.print("\n[dim]Nothing was changed.[/dim]")
+        return
+    if not report.changes:
+        console.print("\n[green]Nothing to do.[/green]")
+        return
+
+    with Progress(
+        SpinnerColumn(),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        bar = progress.add_task("Repointing", total=len(report.changes))
+        done = 0
+        for task_id, data in report.changes:
+            client.update_task_data(task_id, data)
+            done += 1
+            progress.update(bar, advance=1)
+
+    console.print(f"[green]{done:,} task(s) repointed[/green]")
+    if addressing.base_url:
+        console.print(
+            "[dim]These URLs carry an expiry. Run this again if a queue sits "
+            "long enough for images to stop loading.[/dim]"
+        )
+
+
+@app.command(name="catalog-repack")
+def catalog_repack(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would move; write nothing"
+    ),
+    shard_mb: int = typer.Option(
+        512, "--shard-mb", help="Shard size in MB (a shard is held in memory while packed)"
+    ),
+    verify: int = typer.Option(64, help="Members to read back and check afterwards"),
+    config_path: Path = ConfigOption,
+) -> None:
+    """Pack local blobs into tar shards in object storage.
+
+    The cutover to shared storage. Bytes are copied into the bucket and the
+    index is repointed; nothing local is deleted, because those files are
+    still what Label Studio serves images from and they are the way back if
+    this goes wrong.
+
+    Safe to interrupt and re-run: a sample already in a shard is skipped, so
+    a second run resumes rather than packing twice.
+    """
+    from strata.catalog import LocalBackend, RepackError, repack_blobs
+
+    settings = Settings.load(config_path)
+    if not settings.catalog.s3_endpoint:
+        _error(
+            "No object storage configured. Set STRATA_S3_ENDPOINT and "
+            "STRATA_S3_BUCKET (and the credentials) — this packs blobs into a "
+            "bucket, so there is nowhere to put them otherwise."
+        )
+        raise typer.Exit(1)
+
+    catalog, root = _catalog_for(settings, config_path)
+    target = _blobs_for(settings, root)
+    # Before any put, since the size is read when a shard is opened. Larger
+    # shards mean fewer objects and fewer requests; the cost is memory, as a
+    # shard is buffered whole and then read into one bytes object to upload.
+    target.shard_bytes = shard_mb * 1024 * 1024
+    # Explicitly the local one: _blobs_for answers with the bucket once an
+    # endpoint is set, and that is the destination, not the source.
+    source = LocalBackend(root / "blobs")
+
+    console.print(f"[bold]from[/bold]  {source.root}")
+    console.print(
+        f"[bold]to[/bold]    {settings.catalog.s3_endpoint} "
+        f"bucket={settings.catalog.s3_bucket} shards={shard_mb} MB\n"
+    )
+
+    try:
+        if dry_run:
+            report = repack_blobs(catalog, target, source=source, dry_run=True)
+            shards = -(-report.bytes // target.shard_bytes) if report.bytes else 0
+            console.print(
+                f"  {report.samples:,} sample(s) to pack, "
+                f"{report.bytes / 1e9:.1f} GB, about {shards} shard(s)"
+            )
+            if report.already_packed:
+                console.print(f"  [dim]{report.already_packed:,} already packed[/dim]")
+            console.print("\n[dim]Nothing was written.[/dim]")
+            return
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            bar = progress.add_task("Packing")
+
+            def tick(report) -> None:
+                progress.update(
+                    bar,
+                    description=(
+                        f"Packing — {report.samples:,} sample(s), "
+                        f"{report.bytes / 1e9:.1f} GB, "
+                        f"{len(report.shards)} shard(s) uploaded"
+                    ),
+                )
+
+            report = repack_blobs(
+                catalog, target, source=source, verify=verify, on_progress=tick
+            )
+    except RepackError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+    console.print(
+        f"[green]{report.samples:,} sample(s) packed[/green] into "
+        f"{len(report.shards)} shard(s), {report.bytes / 1e9:.1f} GB"
+    )
+    if report.already_packed:
+        console.print(f"  [dim]{report.already_packed:,} were already packed[/dim]")
+
+    if report.failures:
+        console.print(f"\n[red]{len(report.failures)} of {report.verified} "
+                      f"verified member(s) read back wrong[/red]")
+        for line in report.failures[:5]:
+            console.print(f"  {line}")
+        console.print(
+            "\n[dim]The index now points at these shards. Local blobs are "
+            "untouched, so reverting means restoring location/offset/length "
+            "from a backup of the index.[/dim]"
+        )
+        raise typer.Exit(1)
+
+    console.print(f"  [dim]{report.verified} member(s) verified[/dim]")
+    # escape, or Rich reads the TOML section name as a markup tag and drops
+    # it — leaving advice that does not say which section
+    console.print(
+        "\n[bold]" + escape("Set [catalog] s3_endpoint and s3_bucket in "
+                            "config.toml now.") + "[/bold]"
+    )
+    console.print(
+        "[dim]Not optional: the index points at shards, and the local backend "
+        "would look for one as a file and not find it. Keep the local blobs "
+        "even so — Label Studio serves images straight off that mount rather "
+        "than through the catalog, so it is unaffected either way.[/dim]"
+    )
+
+
 @app.command(name="catalog-probe")
 def catalog_probe(
     config_path: Path = ConfigOption,
@@ -1252,7 +1524,11 @@ def catalog_probe(
     ok = True
 
     # -- the index -----------------------------------------------------
-    where = settings.catalog.url or f"sqlite under {settings.catalog.root}"
+    where = (
+        _redacted(settings.catalog.url)
+        if settings.catalog.url
+        else f"sqlite under {settings.catalog.root}"
+    )
     console.print(f"[bold]index[/bold]  {where}")
     try:
         catalog, root = _catalog_for(settings, config_path, create=True)

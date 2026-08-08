@@ -50,6 +50,15 @@ class CatalogConfig:
     s3_access_key: str = ""
     s3_secret_key: str = ""
 
+    #: The sample-serving API, e.g. ``http://minipc:8081``. Empty means Label
+    #: Studio reads images off the local blob mount, which is what every
+    #: task created before the API does.
+    serve_url: str = ""
+    #: Signs blob URLs, and must match what the server was started with. An
+    #: image tag cannot carry a header, so the URL is the credential — which
+    #: is exactly why this belongs in $STRATA_BLOB_SECRET and not in a file.
+    blob_secret: str = ""
+
 
 @dataclass
 class Settings:
@@ -76,6 +85,9 @@ class Settings:
         url = os.environ.get("STRATA_CATALOG_URL")
         if url:
             settings.catalog.url = url
+        secret = os.environ.get("STRATA_BLOB_SECRET")
+        if secret:
+            settings.catalog.blob_secret = secret
         for name in ("s3_endpoint", "s3_bucket", "s3_access_key", "s3_secret_key"):
             value = os.environ.get(f"STRATA_{name.upper()}")
             if value:
