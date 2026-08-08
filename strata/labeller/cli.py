@@ -1181,3 +1181,98 @@ def catalog_copy(
         "[dim]Blobs were not touched. Point [catalog] url at the new index "
         "and leave root as it is.[/dim]"
     )
+
+
+@app.command(name="catalog-probe")
+def catalog_probe(
+    config_path: Path = ConfigOption,
+) -> None:
+    """Check that this host can actually reach its catalog.
+
+    Reports what is configured, then proves it: the index answers a query,
+    and a blob written comes back byte for byte. The round trip is the part
+    worth having — object storage that ignores a Range header returns the
+    start of the shard for every sample, which reads as data rather than as
+    an error.
+
+    Writes into a probe prefix and removes it afterwards, so nothing lands
+    among real shards.
+    """
+    import uuid
+
+    from sqlalchemy import func, select
+
+    from strata.catalog import checksum_of
+    from strata.catalog import tables as t
+
+    settings = Settings.load(config_path)
+    ok = True
+
+    # -- the index -----------------------------------------------------
+    where = settings.catalog.url or f"sqlite under {settings.catalog.root}"
+    console.print(f"[bold]index[/bold]  {where}")
+    try:
+        catalog, root = _catalog_for(settings, config_path, create=True)
+        with catalog.engine.connect() as conn:
+            samples = conn.execute(select(func.count()).select_from(t.sample)).scalar()
+        console.print(f"  [green]reachable[/green] — {samples:,} sample(s)")
+    except Exception as e:
+        console.print(f"  [red]unreachable[/red] — {type(e).__name__}: {e}")
+        raise typer.Exit(1) from None
+
+    # -- the blobs -----------------------------------------------------
+    endpoint = settings.catalog.s3_endpoint
+    console.print(
+        "\n[bold]blobs[/bold]  "
+        + (f"{endpoint} bucket={settings.catalog.s3_bucket}" if endpoint
+           else f"files under {root / 'blobs'}")
+    )
+
+    body = bytes(range(256)) * 64
+    probe = root / f".probe-{uuid.uuid4().hex[:8]}"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe.write_bytes(body)
+    uploaded = None
+    try:
+        blobs = _blobs_for(settings, root)
+        if endpoint:
+            # A prefix of its own, so a probe never lands among real shards
+            blobs.prefix = "probe"
+        location = blobs.put(probe, checksum_of(probe))
+        # put only buffers for a packing backend; flush is what makes an
+        # object exist, so that is what decides whether there is one to
+        # clean up
+        blobs.flush()
+        uploaded = location
+        read = blobs.get(location)
+
+        if read == body:
+            console.print(f"  [green]round trip correct[/green] — {len(read):,} bytes")
+        else:
+            ok = False
+            console.print(
+                f"  [red]wrong bytes back[/red] — asked for {len(body):,} at "
+                f"offset {location.offset}, got {len(read):,}."
+            )
+            if endpoint:
+                console.print(
+                    "  [red]Object storage that ignores Range returns the start "
+                    "of the shard for every sample. Nothing downstream would "
+                    "notice.[/red]"
+                )
+    except Exception as e:
+        ok = False
+        console.print(f"  [red]failed[/red] — {type(e).__name__}: {e}")
+    finally:
+        probe.unlink(missing_ok=True)
+        if endpoint and uploaded is not None:
+            try:
+                blobs.client.delete_object(
+                    Bucket=settings.catalog.s3_bucket, Key=uploaded.container
+                )
+            except Exception:
+                console.print(
+                    f"  [dim]left a probe object behind at {uploaded.container}[/dim]"
+                )
+
+    raise typer.Exit(0 if ok else 1)
