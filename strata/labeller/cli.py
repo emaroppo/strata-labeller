@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import typer
@@ -131,6 +130,39 @@ def _push_with_progress(client, project_id, predictions, task_id_map, **kwargs) 
             on_progress=lambda n: progress.advance(bar, n),
             **kwargs,
         )
+
+
+def _catalog_for(settings, config_path: Path, create: bool = False):
+    """The catalog this host holds, or an exit with something actionable.
+
+    ``create`` for the commands that put data in: refusing to make one would
+    leave no way to make the first, and the advice would be circular.
+    """
+    from strata.catalog import Catalog
+
+    root = Path(settings.catalog.root)
+    if not create and not (root / "catalog.db").exists():
+        _error(
+            f"No catalog at {root}. Run 'auto-labeller ingest' or "
+            f"'auto-labeller to-catalog' to make one, or point [catalog] root "
+            f"in {config_path} at an existing one."
+        )
+        raise typer.Exit(1)
+    return Catalog.local(root), root
+
+
+def _label_set_for(catalog, project: Project):
+    from strata.catalog import CatalogError
+
+    try:
+        return catalog.label_set(project.label_set_name)
+    except CatalogError:
+        _error(
+            f"No label set named '{project.label_set_name}' in the catalog. "
+            f"Run 'auto-labeller ingest' or 'auto-labeller to-catalog', or set "
+            f"[catalog] label_set."
+        )
+        raise typer.Exit(1) from None
 
 
 @app.command()
@@ -367,77 +399,46 @@ def unskip(
 ) -> None:
     """Return skipped samples to the review queue.
 
-    Skipping is how you park an image whose content has no class yet, so
+    Skipping is how you park a sample whose content has no class yet, so
     after adding a class those samples are the best place to find examples
-    of it. In Label Studio a skip is a cancelled annotation, which is
-    deleted here so the task becomes reviewable again.
+    of it. In Label Studio a skip is a cancelled annotation, deleted here so
+    the task becomes reviewable again.
     """
-    from .dataset import load_dataset, save_dataset
+    from .sync import load_task_map
 
     project = _load_project(project_path)
-    dataset = load_dataset(project.dataset_path, project.schema)
-    skipped = [s for s in dataset if s.skipped]
+    settings = Settings.load(config_path)
+    catalog, _ = _catalog_for(settings, config_path)
+    label_set_id, _ = _label_set_for(catalog, project)
+
+    skipped = catalog.skipped(label_set_id)
     if not skipped:
-        console.print("[yellow]No skipped samples.[/yellow]")
-        raise typer.Exit(0)
+        console.print("[yellow]Nothing is skipped.[/yellow]")
+        return
 
     selected = skipped[:limit] if limit is not None else skipped
 
-    if project.label_studio.project_id is not None:
-        settings = Settings.load(config_path)
-        client = _ls_client(settings, project, config_path)
-        project_id = project.label_studio.project_id
-        with console.status("Fetching task list from Label Studio..."):
-            task_id_map = client.get_task_id_map(project_id)
-        task_ids = [task_id_map[s.path] for s in selected if s.path in task_id_map]
+    ls_project_id = project.label_studio.project_id
+    if ls_project_id is not None:
+        task_map = load_task_map(project, ls_project_id)
+        task_ids = [task_map[s.id] for s in selected if s.id in task_map]
         if task_ids:
-            with console.status(f"Clearing skips on {len(task_ids)} tasks..."):
-                client.delete_annotations(project_id, task_ids)
-        console.print(f"Cleared the skip on {len(task_ids)} Label Studio tasks")
+            client = _ls_client(settings, project, config_path)
+            with console.status(f"Clearing the skip on {len(task_ids)} task(s)..."):
+                client.delete_annotations(ls_project_id, task_ids)
+            console.print(f"Cleared the skip on {len(task_ids)} Label Studio task(s)")
+        if len(task_ids) < len(selected):
+            # Ordinary rather than a fault: a skipped sample need never have
+            # reached Label Studio, and push will create its task when it does
+            console.print(
+                f"[dim]{len(selected) - len(task_ids)} had no task there yet.[/dim]"
+            )
 
-    unskipped = {s.path for s in selected}
-    for sample in dataset:
-        if sample.path in unskipped:
-            sample.skipped = False
-    save_dataset(dataset, project.dataset_path)
-
+    moved = catalog.unskip(label_set_id, [s.id for s in selected])
     console.print(
-        f"[green]Returned {len(selected)} samples to the unlabeled pool[/green] "
-        f"({len(skipped) - len(selected)} still skipped)"
+        f"[green]Returned {moved} sample(s) to the queue[/green] "
+        f"({len(skipped) - moved} still skipped)"
     )
-    console.print("Run 'auto-labeller push' to queue them with fresh predictions.")
-
-
-def _catalog_for(settings, config_path: Path, create: bool = False):
-    """The catalog this host holds, or an exit with something actionable.
-
-    ``create`` for the commands that put data in: refusing to make one would
-    leave no way to make the first, and the advice would be circular.
-    """
-    from strata.catalog import Catalog
-
-    root = Path(settings.catalog.root)
-    if not create and not (root / "catalog.db").exists():
-        _error(
-            f"No catalog at {root}. Run 'auto-labeller ingest' or "
-            f"'auto-labeller to-catalog' to make one, or point [catalog] root "
-            f"in {config_path} at an existing one."
-        )
-        raise typer.Exit(1)
-    return Catalog.local(root), root
-
-
-def _label_set_for(catalog, project: Project):
-    from strata.catalog import CatalogError
-
-    try:
-        return catalog.label_set(project.label_set_name)
-    except CatalogError:
-        _error(
-            f"No label set named '{project.label_set_name}' in the catalog. "
-            f"Run 'auto-labeller to-catalog', or set [catalog] label_set."
-        )
-        raise typer.Exit(1) from None
 
 
 @app.command()
@@ -977,73 +978,92 @@ def _mirror_to_dataset_json(project: Project, catalog, label_set_id: int) -> Non
 @app.command()
 def report(
     project_path: Path | None = ProjectOption,
-    round_num: int | None = typer.Option(None, help="Round number (latest if omitted)"),
+    metric: str = typer.Option("val_accuracy", help="Which metric to plot"),
+    run_id: int | None = typer.Option(
+        None, "--run", help="Detail one run instead of the history"
+    ),
 ) -> None:
-    """Show a round summary report."""
+    """Show the training history, or one run in detail.
+
+    Read from the run store rather than from round folders, so a metric
+    across rounds is one query.
+
+    A change is shown only where one run actually continues the one above:
+    a warm-started number means something against its parent and nothing
+    against a run from another lineage. Rows marked unchained continue
+    nothing in the store — either a genuine cold start, or a round imported
+    from before the store existed, whose lineage was never recorded.
+    """
+    from strata.modelling import RunStore
+
     project = _load_project(project_path)
-    rounds_dir = project.rounds_dir
-
-    if not rounds_dir.exists():
-        console.print("[red]No rounds found. Run 'train' first.[/red]")
+    if not (project.runs_dir / "runs.db").exists():
+        _error(f"No runs recorded at {project.runs_dir}. Run 'train' first.")
         raise typer.Exit(1)
 
-    round_dirs = sorted(
-        d for d in rounds_dir.iterdir() if d.is_dir() and d.name.startswith("round_")
-    )
-    if not round_dirs:
-        console.print("[red]No rounds found.[/red]")
+    store = RunStore.local(project.runs_dir)
+
+    if run_id is not None:
+        run = store.get(run_id)
+        if run is None:
+            _error(f"No run with id {run_id}")
+            raise typer.Exit(1)
+        _print_run(store, run)
+        return
+
+    history = store.history(project.dataset_name, metric)
+    if not history:
+        _error(
+            f"No run recorded {metric!r} for '{project.dataset_name}'. "
+            f"Try --metric accuracy, or --run to inspect one."
+        )
         raise typer.Exit(1)
 
-    if round_num is not None:
-        round_dir = rounds_dir / f"round_{round_num:03d}"
-    else:
-        round_dir = round_dirs[-1]
+    table = Table(title=f"{project.dataset_name} — {metric}")
+    table.add_column("Run", justify="right")
+    table.add_column("Dataset", justify="right")
+    table.add_column(metric, justify="right")
+    table.add_column("Δ", justify="right")
+    table.add_column("Lineage")
 
-    meta_path = round_dir / "metadata.json"
-    if not meta_path.exists():
-        console.print(f"[red]No metadata found for {round_dir.name}[/red]")
-        raise typer.Exit(1)
-
-    with open(meta_path) as f:
-        meta = json.load(f)
-
-    table = Table(title=f"Round {meta['round']} Summary")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-
-    table.add_row("Timestamp", meta["timestamp"])
-    table.add_row("Training samples", str(meta["num_train"]))
-    table.add_row("Validation samples", str(meta["num_val"]))
-    table.add_row("Unlabeled samples", str(meta["num_unlabeled"]))
-    if meta.get("num_skipped") is not None:
-        table.add_row("Skipped samples", str(meta["num_skipped"]))
-    table.add_row("Classes", ", ".join(meta["classes"]))
-    table.add_row("Checkpoint", meta["checkpoint"])
-
-    if meta.get("metrics"):
-        for k, v in meta["metrics"].items():
-            table.add_row(k, f"{v:.4f}" if isinstance(v, float) else str(v))
-
+    seen: dict[int, float] = {}
+    versions: dict[int, int] = {}
+    for run_num, version, value in history:
+        run = store.get(run_num)
+        parent = run.parent_run_id
+        # Against its own parent, and only when both were scored on the same
+        # held-out samples. A dataset version going backwards means the
+        # lineage crossed into the catalog from the old layout, where the
+        # split was recomputed every round — comparing those produced a
+        # +0.10 that measured nothing but a change of validation set.
+        comparable = parent in seen and versions.get(parent, 0) <= version
+        delta = f"{value - seen[parent]:+.4f}" if comparable else ""
+        lineage = f"from {parent}" if parent else "[yellow]unchained[/yellow]"
+        table.add_row(str(run_num), f"v{version}", f"{value:.4f}", delta, lineage)
+        seen[run_num] = value
+        versions[run_num] = version
     console.print(table)
 
-    if len(round_dirs) > 1 and round_dir == round_dirs[-1]:
-        prev_meta_path = round_dirs[-2] / "metadata.json"
-        if prev_meta_path.exists():
-            with open(prev_meta_path) as f:
-                prev_meta = json.load(f)
 
-            console.print(f"\n[bold]Delta vs Round {prev_meta['round']}:[/bold]")
-            delta_train = meta["num_train"] - prev_meta["num_train"]
-            console.print(f"  Training samples: {'+' if delta_train >= 0 else ''}{delta_train}")
+def _print_run(store, run) -> None:
+    console.print(f"[bold]Run {run.id}[/bold] — {run.model} v{run.model_version}")
+    console.print(f"  dataset:   {run.dataset} v{run.dataset_version}")
+    console.print(f"  label set: {run.label_set}")
+    console.print(f"  classes:   {', '.join(run.classes)}")
+    console.print(f"  params:    {run.params}")
+    console.print(f"  checkpoint: {run.checkpoint}")
 
-            if meta.get("metrics") and prev_meta.get("metrics"):
-                for k in meta["metrics"]:
-                    if k in prev_meta["metrics"]:
-                        curr = meta["metrics"][k]
-                        prev = prev_meta["metrics"][k]
-                        if isinstance(curr, (int, float)) and isinstance(prev, (int, float)):
-                            delta = curr - prev
-                            console.print(f"  {k}: {'+' if delta >= 0 else ''}{delta:.4f}")
+    chain = store.chain(run.id)
+    if len(chain) > 1:
+        console.print(f"  continues: {' -> '.join(str(r.id) for r in chain)}")
+    else:
+        console.print("  unchained — continues nothing in the store")
+
+    if run.metrics:
+        table = Table("Metric", "Value", box=None, pad_edge=False)
+        for name, value in sorted(run.metrics.items()):
+            table.add_row(name, f"{value:.4f}")
+        console.print(table)
 
 
 @app.command(name="to-catalog")
