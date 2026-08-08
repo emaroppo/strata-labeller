@@ -350,3 +350,38 @@ def test_no_catalog_is_not_an_error(project, tmp_path):
     # create the label set from project.toml when it runs
     settings = Settings(catalog=CatalogConfig(root=str(tmp_path / "nothing-here")))
     _add_to_label_set(project, settings, ["cat", "dog", "bird"])
+
+
+def test_the_source_path_is_recorded(project, catalog, populated):
+    # A blob is addressed by its content, so without this there is no way
+    # back from a catalogued sample to the file it was read from
+    populated(annotated=2, skipped=0, unlabelled=1)
+    report = migrate(project, catalog)
+    sources = {
+        (s.metadata or {}).get("source_path") for s in catalog.unlabelled(report.label_set_id)
+    } | {(s.metadata or {}).get("source_path") for s in catalog.labelled(report.label_set_id)}
+    assert sources == {"img000.jpg", "img001.jpg", "img002.jpg"}
+
+
+def test_re_running_backfills_a_missing_source_path(project, catalog, populated):
+    populated(annotated=2, skipped=0, unlabelled=0)
+    paths = sorted(project.data_dir.glob("*.jpg"))
+    catalog.ingest(paths, media="image")  # as an older build would have
+    assert all(s.metadata is None for s in catalog.unlabelled(
+        catalog.create_label_set("tmp", __import__(
+            "strata.labels", fromlist=["ClassificationSchema"]).ClassificationSchema())))
+
+    report = migrate(project, catalog)
+    assert all(
+        (s.metadata or {}).get("source_path")
+        for s in catalog.labelled(report.label_set_id)
+    )
+
+
+def test_a_frame_keeps_its_folder_in_the_source_path(project, catalog, populated):
+    populated(annotated=2, skipped=0, unlabelled=0, folder="vid1")
+    report = migrate(project, catalog)
+    assert all(
+        (s.metadata or {}).get("source_path", "").startswith("vid1/")
+        for s in catalog.labelled(report.label_set_id)
+    )

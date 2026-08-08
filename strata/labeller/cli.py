@@ -874,16 +874,34 @@ def _mirror_to_dataset_json(project: Project, catalog, label_set_id: int) -> Non
     from .dataset import Sample, save_dataset
 
     schema = project.schema
-    samples = []
+    samples, unlocatable = [], 0
     for row in catalog.labelled(label_set_id):
+        # The blob path is addressed by content and means nothing to a
+        # legacy round, which resolves against the data root. Only the
+        # recorded source path is usable here.
+        source = (row.metadata or {}).get("source_path")
+        if source is None:
+            unlocatable += 1
+            continue
         value = catalog.annotation_of(row.id, label_set_id)
         samples.append(
             Sample(
-                path=row.location.container,
+                path=source,
                 results=schema.encode_target(list(value.values)) if value else [],
                 annotated=True,
             )
         )
+    if unlocatable:
+        console.print(
+            f"[yellow]{unlocatable} sample(s) have no recorded source path and "
+            f"were left out of {project.dataset_path}. Re-run 'to-catalog' to "
+            f"record them.[/yellow]"
+        )
+    if not samples:
+        console.print(
+            f"[yellow]Nothing to mirror; {project.dataset_path} left alone.[/yellow]"
+        )
+        return
     save_dataset(samples, project.dataset_path)
     console.print(f"  mirrored {len(samples)} labelled sample(s) to {project.dataset_path}")
 

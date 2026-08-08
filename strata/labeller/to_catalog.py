@@ -144,11 +144,18 @@ def migrate(
             on_progress(done, total)
 
     for group_id, entries in buckets.items():
+        # Where a sample came from, recorded per sample. A blob is addressed
+        # by its content, so without this there is no way back from a
+        # catalogued sample to the file it was read from — which an export,
+        # or anything handing work to a tool that predates the catalog,
+        # still needs.
+        sources = {path: sample.path for sample, path in entries}
         ids = catalog.ingest(
             [path for _, path in entries],
             media=media,
             subtype=subtype,
             group_id=group_id,
+            metadata_for=lambda p: {"source_path": sources[p]},
             on_sample=tick,
         )
         report.ingested += len(ids)
