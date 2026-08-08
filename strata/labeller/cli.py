@@ -745,9 +745,35 @@ def train(
     settings = Settings.load(config_path)
     catalog, _ = _catalog_for(settings, config_path)
 
-    console.print("Training...")
     try:
-        result = run_round(project, catalog, fresh=fresh, val_ratio=val_ratio)
+        # Materialising used to be a hard link away and over before anyone
+        # looked. Pulling shards out of a bucket is minutes, and minutes of
+        # nothing is indistinguishable from a hang.
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            MofNCompleteColumn(),
+            TimeRemainingColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            bar = progress.add_task("Materialising", total=None)
+            materialising = True
+
+            def tick(done: int, total: int) -> None:
+                nonlocal materialising
+                progress.update(bar, completed=done, total=total)
+                if materialising and done >= total:
+                    # The last blob has landed and training is next, which
+                    # is long, quiet and not this bar's business
+                    materialising = False
+                    progress.stop()
+                    console.print(f"Materialised {total:,} sample(s). Training...")
+
+            result = run_round(
+                project, catalog, fresh=fresh, val_ratio=val_ratio, on_progress=tick
+            )
     except RoundError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1) from None

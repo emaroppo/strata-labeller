@@ -44,6 +44,7 @@ def run_round(
     catalog: Catalog,
     fresh: bool = False,
     val_ratio: float = 0.2,
+    on_progress=None,
 ) -> RoundResult:
     """Freeze a dataset version, materialise it, and train from it."""
     try:
@@ -67,7 +68,7 @@ def run_round(
         collections=project.collections,
         val_ratio=val_ratio,
     )
-    manifest, dataset_dir = _materialise(project, catalog, dataset_id)
+    manifest, dataset_dir = _materialise(project, catalog, dataset_id, on_progress)
 
     store = RunStore.local(project.runs_dir)
     # Warm start from the newest run over this dataset unless told otherwise.
@@ -91,7 +92,9 @@ def run_round(
     return RoundResult(run=run, manifest=manifest, dataset_dir=dataset_dir)
 
 
-def _materialise(project: Project, catalog: Catalog, dataset_id: int) -> tuple[Manifest, Path]:
+def _materialise(
+    project: Project, catalog: Catalog, dataset_id: int, on_progress=None
+) -> tuple[Manifest, Path]:
     target = project.datasets_dir / project.dataset_name
 
     # Asked before fetching, not after. A round retried after crashing —
@@ -106,7 +109,9 @@ def _materialise(project: Project, catalog: Catalog, dataset_id: int) -> tuple[M
         # confirmed it matches, so the contents are the same. The manifest
         # rather than the directory, because only the manifest proves the
         # rename below completed.
-        return Manifest.model_validate_json((final / MANIFEST_NAME).read_text()), final
+        manifest = Manifest.model_validate_json((final / MANIFEST_NAME).read_text())
+        _finished(on_progress, manifest)
+        return manifest, final
 
     staging = target / "pending"
     if staging.exists():
@@ -114,10 +119,22 @@ def _materialise(project: Project, catalog: Catalog, dataset_id: int) -> tuple[M
         # written, no manifest — and keeping them would let a partial
         # dataset masquerade as a whole one.
         shutil.rmtree(staging)
-    catalog.materialise(dataset_id, staging)
+    catalog.materialise(dataset_id, staging, on_progress=on_progress)
     manifest = Manifest.model_validate_json((staging / MANIFEST_NAME).read_text())
     staging.rename(final)
+    _finished(on_progress, manifest)
     return manifest, final
+
+
+def _finished(on_progress, manifest: Manifest) -> None:
+    """One last tick, whichever way the version was obtained.
+
+    A version already on disk fetches nothing, and a local backend links
+    rather than downloads — so a caller watching ticks would never learn
+    that materialising was over, and would keep saying so while the GPU ran.
+    """
+    if on_progress is not None:
+        on_progress(len(manifest.samples), len(manifest.samples))
 
 
 def describe(result: RoundResult) -> list[str]:
