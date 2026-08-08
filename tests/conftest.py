@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from strata.labeller.project import Project
+from strata.labeller.project import PROJECT_ENV_VAR, Project
 
 
 @pytest.fixture
@@ -19,8 +19,13 @@ def make_project(tmp_path, monkeypatch):
     Project resolution reads the working directory (a bare name resolves
     under ``projects/``), so tests run from a scratch directory rather than
     the repo.
+
+    It also reads $AUTO_LABELLER_PROJECT, which the compose environment sets.
+    Left alone, a developer who has sourced .env sees discovery tests fail
+    for a reason that has nothing to do with what they changed.
     """
     monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(PROJECT_ENV_VAR, raising=False)
 
     def _make(name: str = "demo", *, under_projects: bool = True, **kwargs) -> Project:
         root = (tmp_path / "projects" / name) if under_projects else (tmp_path / name)
