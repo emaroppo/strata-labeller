@@ -315,3 +315,40 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
     migrate(reloaded, catalog)
 
     assert "not the 20% asked for" in "\n".join(describe(run_round(reloaded, catalog)))
+
+
+def with_fresh_params(project, block: str):
+    """Give the project a [model.fresh_params] section and reload it."""
+    from strata.labeller.project import Project
+
+    toml = project.root / "project.toml"
+    toml.write_text(
+        toml.read_text().replace(
+            "num_epochs = 4", f"num_epochs = 4\n\n[model.fresh_params]\n{block}"
+        )
+    )
+    return Project.load(project.root)
+
+
+def test_a_cold_round_takes_the_fresh_params(ready):
+    project, catalog = ready()
+    # A run with nothing to inherit has to learn from scratch; the settings
+    # that suit an increment undertrain it
+    reloaded = with_fresh_params(project, 'note = "cold"')
+    assert run_round(reloaded, catalog, fresh=True).run.params["note"] == "cold"
+
+
+def test_a_warm_round_ignores_them(ready):
+    project, catalog = ready()
+    reloaded = with_fresh_params(project, 'note = "cold"')
+    # Not overridden and not defaulted-in: params record what the project
+    # asked for, and a warm round asked for nothing extra
+    assert "note" not in run_round(reloaded, catalog).run.params
+
+
+def test_fresh_params_only_override_what_they_name(ready):
+    project, catalog = ready()
+    reloaded = with_fresh_params(project, "num_epochs = 12")
+    params = run_round(reloaded, catalog, fresh=True).run.params
+    assert params["num_epochs"] == 12
+    assert params["batch_size"] == 16

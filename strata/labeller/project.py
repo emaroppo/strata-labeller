@@ -83,6 +83,14 @@ class ModelSpec:
     # falls back to an installed package
     ref: str = "multilabel"
     params: dict = field(default_factory=dict)
+    # Merged over params when a round starts cold. A run with nothing to
+    # inherit has to learn from scratch, where a warm round is an increment
+    # onto something already trained — so the epoch count that suits one
+    # badly undertrains the other.
+    fresh_params: dict = field(default_factory=dict)
+
+    def params_for(self, fresh: bool) -> dict:
+        return {**self.params, **self.fresh_params} if fresh else dict(self.params)
 
 
 @dataclass
