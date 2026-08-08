@@ -208,6 +208,30 @@ def _catalog_for(settings, config_path: Path, create: bool = False):
     return Catalog.connect(f"sqlite:///{root / 'catalog.db'}", blobs), root
 
 
+def _catalog_if_any(settings):
+    """The configured catalog, or None when this host has none yet.
+
+    For the paths that decorate output with counts, where absence is not an
+    error: a project that has never ingested is still a project. Distinct
+    from :func:`_catalog_for`, which exits — these callers must not.
+
+    What it is not is a shortcut to the local one. Checking for a
+    ``catalog.db`` and opening it regardless of configuration is how five
+    commands ended up reading a stale SQLite index after the catalog moved
+    to Postgres, reporting counts from it as though they were current.
+    """
+    from strata.catalog import Catalog
+
+    root = Path(settings.catalog.root)
+    if settings.catalog.url:
+        return Catalog.connect(settings.catalog.url, _blobs_for(settings, root))
+    if (root / "catalog.db").exists():
+        return Catalog.connect(
+            f"sqlite:///{root / 'catalog.db'}", _blobs_for(settings, root)
+        )
+    return None
+
+
 def _label_set_for(catalog, project: Project):
     from strata.catalog import CatalogError
 
@@ -292,12 +316,8 @@ def list_projects_cmd() -> None:
 
     # Counts live in the catalog now, and a project can be listed without
     # one — a project that has never ingested is still a project
-    catalog = None
     settings = Settings.load()
-    if (Path(settings.catalog.root) / "catalog.db").exists():
-        from strata.catalog import Catalog
-
-        catalog = Catalog.local(Path(settings.catalog.root))
+    catalog = _catalog_if_any(settings)
 
     table = Table(title="Projects")
     table.add_column("Name", style="cyan")
@@ -392,11 +412,8 @@ def class_add(
 
     from strata.catalog import CatalogError
 
-    root = Path(settings.catalog.root)
-    if (root / "catalog.db").exists():
-        from strata.catalog import Catalog
-
-        catalog = Catalog.local(root)
+    catalog = _catalog_if_any(settings)
+    if catalog is not None:
         try:
             label_set_id, _ = catalog.label_set(project.label_set_name)
         except CatalogError:
@@ -423,13 +440,11 @@ def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
     from the label set. A class in one and not the other means a reviewer can
     apply a label the catalog will then refuse.
     """
-    from strata.catalog import Catalog, CatalogError
+    from strata.catalog import CatalogError
 
-    root = Path(settings.catalog.root)
-    if not (root / "catalog.db").exists():
+    catalog = _catalog_if_any(settings)
+    if catalog is None:
         return
-
-    catalog = Catalog.local(root)
     try:
         label_set_id, schema = catalog.label_set(project.label_set_name)
     except CatalogError:
@@ -724,22 +739,15 @@ def train(
     """
     project = _load_project(project_path)
 
-    from strata.catalog import Catalog
 
     from .round import RoundError, describe, run_round
 
     settings = Settings.load(config_path)
-    catalog_root = Path(settings.catalog.root)
-    if not (catalog_root / "catalog.db").exists():
-        console.print(
-            f"[red]No catalog at {catalog_root}.[/red] Run 'auto-labeller to-catalog' "
-            f"first, or set [catalog] root in {config_path}."
-        )
-        raise typer.Exit(1)
+    catalog, _ = _catalog_for(settings, config_path)
 
     console.print("Training...")
     try:
-        result = run_round(project, Catalog.local(catalog_root), fresh=fresh, val_ratio=val_ratio)
+        result = run_round(project, catalog, fresh=fresh, val_ratio=val_ratio)
     except RoundError as e:
         console.print(f"[red]{e}[/red]")
         raise typer.Exit(1) from None

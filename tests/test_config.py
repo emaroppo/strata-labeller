@@ -1,0 +1,46 @@
+"""Which catalog a command actually opens.
+
+Settings decide this, and for a long time several commands did not ask
+them. The tests here exist because the failure is quiet: a command reads a
+real catalog, reports real numbers, and they belong to the wrong index.
+"""
+
+
+def test_a_configured_index_wins_over_a_local_file(tmp_path, monkeypatch):
+    """A stale catalog.db must not shadow the index that is configured.
+
+    Five commands opened SQLite whenever the file existed, regardless of
+    [catalog] url. After the index moved to Postgres they carried on
+    reporting counts from a file nobody was writing to any more, and `train`
+    trained on it.
+    """
+    from strata.labeller.cli import _catalog_if_any
+    from strata.labeller.config import CatalogConfig, Settings
+
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "catalog"
+    root.mkdir()
+    (root / "catalog.db").write_bytes(b"")
+    elsewhere = tmp_path / "elsewhere.db"
+
+    settings = Settings(
+        catalog=CatalogConfig(root=str(root), url=f"sqlite:///{elsewhere}")
+    )
+    catalog = _catalog_if_any(settings)
+    assert str(elsewhere) in str(catalog.engine.url)
+
+
+def test_a_local_file_is_used_when_nothing_is_configured(tmp_path, monkeypatch):
+    from strata.labeller.cli import _catalog_if_any
+    from strata.labeller.config import CatalogConfig, Settings
+
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "catalog"
+    root.mkdir()
+    settings = Settings(catalog=CatalogConfig(root=str(root)))
+    # Nothing there yet: a project that has never ingested is still a
+    # project, so this reports absence rather than failing
+    assert _catalog_if_any(settings) is None
+
+    (root / "catalog.db").write_bytes(b"")
+    assert _catalog_if_any(settings) is not None
