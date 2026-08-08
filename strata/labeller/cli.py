@@ -408,15 +408,20 @@ def unskip(
     console.print("Run 'auto-labeller push' to queue them with fresh predictions.")
 
 
-def _catalog_for(settings, config_path: Path):
-    """The catalog this host holds, or an exit with something actionable."""
+def _catalog_for(settings, config_path: Path, create: bool = False):
+    """The catalog this host holds, or an exit with something actionable.
+
+    ``create`` for the commands that put data in: refusing to make one would
+    leave no way to make the first, and the advice would be circular.
+    """
     from strata.catalog import Catalog
 
     root = Path(settings.catalog.root)
-    if not (root / "catalog.db").exists():
+    if not create and not (root / "catalog.db").exists():
         _error(
-            f"No catalog at {root}. Run 'auto-labeller to-catalog' first, or set "
-            f"[catalog] root in {config_path}."
+            f"No catalog at {root}. Run 'auto-labeller ingest' or "
+            f"'auto-labeller to-catalog' to make one, or point [catalog] root "
+            f"in {config_path} at an existing one."
         )
         raise typer.Exit(1)
     return Catalog.local(root), root
@@ -510,50 +515,91 @@ def init(
 @app.command()
 def ingest(
     project_path: Path | None = ProjectOption,
+    config_path: Path = ConfigOption,
+    batch: int = typer.Option(2000, help="Files per transaction"),
 ) -> None:
-    """Scan the project's data root for new files and add them to the dataset.
+    """Scan the project's data root and register new files in the catalog.
 
-    Which files count comes from the project's media type, so a text
-    project picks up documents where an image project picks up pictures.
-    Label Studio tasks are created on demand by `push`, so new files only
-    need to be registered here.
+    Which files count comes from the project's media type, so a text project
+    picks up documents where an image project picks up pictures. Grouping
+    comes from [data] kind: video frames are grouped by the folder they sit
+    in, so near-duplicates cannot straddle a train/val split.
+
+    Registering is not queueing. The catalog holds the whole pool and `push`
+    sends only what you are about to review, so there is no cost to
+    cataloguing everything.
     """
-    from .dataset import Sample, load_dataset, save_dataset
+    from strata.catalog import CatalogError
+
+    from .to_catalog import group_id_for, schema_for
 
     project = _load_project(project_path)
+    settings = Settings.load(config_path)
     data_dir = project.data_dir
     media = project.schema.media
 
     if not data_dir.exists():
-        console.print(f"[red]Data root does not exist: {data_dir}[/red]")
+        _error(f"Data root does not exist: {data_dir}")
         raise typer.Exit(1)
 
-    # Load existing dataset to find already-tracked paths
-    dataset: list[Sample] = []
-    if project.dataset_path.exists():
-        dataset = load_dataset(project.dataset_path, project.schema)
-    existing_paths = {s.path for s in dataset}
+    catalog, catalog_root = _catalog_for(settings, config_path, create=True)
+    try:
+        label_set_id, _ = catalog.label_set(project.label_set_name)
+    except CatalogError:
+        label_set_id = catalog.create_label_set(project.label_set_name, schema_for(project))
+        console.print(f"Created label set '{project.label_set_name}'")
 
-    # Sample paths are relative to the data root
-    new_samples: list[Sample] = []
-    for path in sorted(data_dir.rglob("*")):
-        if media.matches(path.name):
-            rel = str(path.relative_to(data_dir))
-            if rel not in existing_paths:
-                new_samples.append(Sample(path=rel))
-
-    if not new_samples:
+    found = [p for p in sorted(data_dir.rglob("*")) if media.matches(p.name)]
+    if not found:
         console.print(
-            f"[yellow]No new {media.name} files found "
+            f"[yellow]No {media.name} files under {data_dir} "
             f"({', '.join(sorted(media.extensions))}).[/yellow]"
         )
-        raise typer.Exit(0)
+        return
 
-    updated = dataset + new_samples
-    save_dataset(updated, project.dataset_path)
+    before = len(catalog.unlabelled(label_set_id)) + len(catalog.labelled(label_set_id))
+    subtype = "frames" if project.data.kind == "frames" else "plain"
+
+    # Grouped, because a group is one transaction and one group_id. Ungrouped
+    # files share a bucket, so a plain image project is a handful of batches
+    # rather than one per file.
+    by_group: dict[str | None, list[Path]] = {}
+    for path in found:
+        relative = str(path.relative_to(data_dir))
+        by_group.setdefault(group_id_for(project, relative), []).append(path)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        bar = progress.add_task("Ingesting", total=len(found))
+        for group_id, paths in by_group.items():
+            for i in range(0, len(paths), batch):
+                chunk = paths[i : i + batch]
+                sources = {p: str(p.relative_to(data_dir)) for p in chunk}
+                catalog.ingest(
+                    chunk,
+                    media=media.name,
+                    subtype=subtype,
+                    group_id=group_id,
+                    metadata_for=lambda p: {"source_path": sources[p]},
+                    on_sample=lambda _p: progress.advance(bar),
+                )
+
+    after = len(catalog.unlabelled(label_set_id)) + len(catalog.labelled(label_set_id))
+    skipped_count = len(catalog.skipped(label_set_id))
     console.print(
-        f"[green]Added {len(new_samples)} new {media.name} files "
-        f"({len(updated)} total samples)[/green]"
+        f"[green]{len(found)} file(s) scanned, {after - before} new[/green] "
+        f"into {catalog_root}"
+    )
+    console.print(
+        f"  {after + skipped_count} sample(s) catalogued, "
+        f"{len(by_group)} group(s) touched"
     )
 
 
