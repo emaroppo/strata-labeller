@@ -11,6 +11,7 @@ previous version instead of being recomputed — which is what stopped a
 warm-started model being scored on what it had already trained on.
 """
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -78,7 +79,7 @@ def run_round(
             # rather than to the dataset it happens to be trained on. An
             # absolute ref also resolves from anywhere, which is what a
             # request has to do once it crosses a wire.
-            model=absolute(project.model.ref, project.root),
+            model=absolute(project.model_ref, project.root),
             params=project.model.params,
             parent_run_id=previous.id if previous else None,
         ),
@@ -96,7 +97,11 @@ def _materialise(project: Project, catalog: Catalog, dataset_id: int) -> tuple[M
     manifest = Manifest.model_validate_json((staging / "manifest.json").read_text())
     final = target / f"v{manifest.version:03d}"
     if final.exists():
-        raise RoundError(f"{final} already exists; refusing to overwrite a dataset version")
+        # Reusing a version, which happens when a round is retried after
+        # crashing. Membership is what makes a version, and the catalog
+        # already confirmed it matches, so the contents are the same.
+        shutil.rmtree(staging)
+        return manifest, final
     staging.rename(final)
     return manifest, final
 

@@ -122,6 +122,14 @@ def test_model_params_reach_the_model(ready):
     assert json.loads(result.run.checkpoint.read_text())["note"] == "from params"
 
 
+def test_a_ref_from_before_the_move_reaches_the_model(ready):
+    # The training request carries the reference rather than the model, so it
+    # needs the same translation load_model does — a rule applied in two
+    # places is a rule applied in one of them
+    project, catalog = ready(ref="auto_labeller.models.classifier:PresenceClassifier")
+    assert project.model_ref.startswith("strata.modelling.baselines.classifier")
+
+
 def test_a_registered_name_works_as_a_ref(ready, monkeypatch):
     project, catalog = ready(ref="presence")
     pytest.importorskip("timm", reason="needs the image extra")
@@ -135,17 +143,49 @@ def test_a_registered_name_works_as_a_ref(ready, monkeypatch):
 # ----------------------------------------------------------------------
 
 
-def test_each_round_freezes_a_new_version(ready):
+def test_a_round_over_the_same_data_reuses_the_version(ready):
+    # Two rounds with nothing labelled between them are two attempts at one
+    # selection, and a crashed attempt must not burn a version number
     project, catalog = ready()
     first = run_round(project, catalog)
     second = run_round(project, catalog)
-    assert (first.manifest.version, second.manifest.version) == (1, 2)
+    assert first.manifest.version == second.manifest.version == 1
+
+
+def test_labelling_more_freezes_a_new_version(ready):
+    project, catalog = ready(labelled=12, total=20)
+    first = run_round(project, catalog)
+
+    samples = [
+        Sample(
+            path=f"img{i:03d}.jpg",
+            results=project.schema.encode_target(["cat"]),
+            annotated=True,
+        )
+        for i in range(20)
+    ]
+    save_dataset(samples, project.dataset_path)
+    migrate(project, catalog)
+
+    assert run_round(project, catalog).manifest.version == first.manifest.version + 1
 
 
 def test_versions_are_written_side_by_side(ready):
-    project, catalog = ready()
+    project, catalog = ready(labelled=12, total=20)
     run_round(project, catalog)
+
+    samples = [
+        Sample(
+            path=f"img{i:03d}.jpg",
+            results=project.schema.encode_target(["cat"]),
+            annotated=True,
+        )
+        for i in range(20)
+    ]
+    save_dataset(samples, project.dataset_path)
+    migrate(project, catalog)
     run_round(project, catalog)
+
     versions = sorted(p.name for p in (project.datasets_dir / project.dataset_name).iterdir())
     assert versions == ["v001", "v002"]
 

@@ -320,6 +320,17 @@ class Project:
     # Model
     # ------------------------------------------------------------------
 
+    @property
+    def model_ref(self) -> str:
+        """The model reference, with pre-move spellings translated.
+
+        A property rather than a step inside :meth:`load_model`, because a
+        training request carries the reference instead of the model and would
+        otherwise get the untranslated one — the same rule applied in two
+        places is a rule applied in one of them.
+        """
+        return LEGACY_MODEL_REFS.get(self.model.ref, self.model.ref)
+
     def load_model(self) -> Model:
         """Instantiate the project's model with its configured parameters.
 
@@ -332,9 +343,8 @@ class Project:
         the frameworks are optional dependencies, so this is where a missing
         one surfaces.
         """
-        ref = LEGACY_MODEL_REFS.get(self.model.ref, self.model.ref)
         try:
-            model_cls = resolve(ref, root=self.root)
+            model_cls = resolve(self.model_ref, root=self.root)
         except ModelError as exc:
             raise ProjectError(str(exc)) from exc
         return model_cls(**self.model.params)
