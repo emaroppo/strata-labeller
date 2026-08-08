@@ -750,6 +750,10 @@ def train(
     settings = Settings.load(config_path)
     catalog, catalog_root = _catalog_for(settings, config_path)
 
+    if settings.modelling.url:
+        _remote_round(project, catalog, settings, fresh=fresh, val_ratio=val_ratio)
+        return
+
     try:
         # Materialising used to be a hard link away and over before anyone
         # looked. Pulling shards out of a bucket is minutes, and minutes of
@@ -794,6 +798,63 @@ def train(
     for line in describe(result):
         console.print(line)
     console.print(f"  checkpoint: {result.run.checkpoint}")
+
+
+def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> None:
+    """Freeze a dataset here, and have another host train on it.
+
+    The split is where the knowledge is. Which samples make a dataset is the
+    project's business — its collections, its label set, its val ratio — and
+    the catalog is reachable from both machines. Everything after that needs
+    a GPU and the checkpoints, and both live there.
+    """
+    from .remote import RemoteError, Trainer
+
+    if not settings.modelling.token:
+        _error(
+            "No token for the modelling host. Set $STRATA_MODELLING_TOKEN to "
+            "the same value it was started with."
+        )
+        raise typer.Exit(1)
+
+    label_set_id, _ = _label_set_for(catalog, project)
+    labelled = catalog.labelled(label_set_id, project.collections)
+    if not labelled:
+        _error(
+            f"Nothing is labelled for {project.label_set_name!r} in "
+            f"{', '.join(project.collections)}, so there is nothing to train on."
+        )
+        raise typer.Exit(1)
+
+    dataset_id = catalog.create_dataset(
+        project.dataset_name, label_set_id, collections=project.collections, val_ratio=val_ratio
+    )
+    name, version = catalog.dataset_named(dataset_id)
+    console.print(f"Dataset {name} v{version} → {settings.modelling.url}")
+
+    trainer = Trainer(settings.modelling.url, settings.modelling.token)
+    try:
+        with console.status("Training on the modelling host..."):
+            result = trainer.round(
+                dataset_id, project.model_ref, project.model.params_for(fresh), fresh
+            )
+    except RemoteError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+    run = result["run"]
+    console.print(
+        f"[green]Run {run['id']}[/green]"
+        + (f", continuing run {run['parent_run_id']}" if run.get("parent_run_id") else " (cold)")
+    )
+    if result.get("materialised"):
+        console.print(f"  [dim]{result['materialised']:,} sample(s) materialised there[/dim]")
+    for metric, value in sorted(result.get("metrics", {}).items()):
+        console.print(f"  {metric}: {value}")
+    console.print(
+        "[dim]The run and its checkpoint live on that host, which is where the "
+        "next round will warm-start from.[/dim]"
+    )
 
 
 @app.command()

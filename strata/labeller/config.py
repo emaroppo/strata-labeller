@@ -61,9 +61,26 @@ class CatalogConfig:
 
 
 @dataclass
+class ModellingConfig:
+    """Where training happens.
+
+    Empty means in this process, which is what a single machine wants and
+    what keeps a checkout runnable. A URL sends rounds to a host with the
+    GPU — it materialises the dataset itself, so nothing but a dataset id
+    travels.
+    """
+
+    url: str = ""
+    #: Shared with the host. Out of the file by preference, the same
+    #: argument as every other credential here.
+    token: str = ""
+
+
+@dataclass
 class Settings:
     label_studio: LabelStudioConfig = field(default_factory=LabelStudioConfig)
     catalog: CatalogConfig = field(default_factory=CatalogConfig)
+    modelling: ModellingConfig = field(default_factory=ModellingConfig)
 
     @classmethod
     def load(cls, path: Path = Path("config.toml")) -> "Settings":
@@ -75,6 +92,8 @@ class Settings:
                 settings.label_studio = LabelStudioConfig(**data["label_studio"])
             if "catalog" in data:
                 settings.catalog = CatalogConfig(**data["catalog"])
+            if "modelling" in data:
+                settings.modelling = ModellingConfig(**data["modelling"])
 
         api_key = os.environ.get("LABEL_STUDIO_API_KEY")
         if api_key:
@@ -85,6 +104,11 @@ class Settings:
         url = os.environ.get("STRATA_CATALOG_URL")
         if url:
             settings.catalog.url = url
+        for name in ("url", "token"):
+            value = os.environ.get(f"STRATA_MODELLING_{name.upper()}")
+            if value:
+                setattr(settings.modelling, name, value)
+
         secret = os.environ.get("STRATA_BLOB_SECRET")
         if secret:
             settings.catalog.blob_secret = secret
