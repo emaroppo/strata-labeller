@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 
 import typer
@@ -927,31 +926,6 @@ def _mirror_to_dataset_json(project: Project, catalog, label_set_id: int) -> Non
         return
     save_dataset(samples, project.dataset_path)
     console.print(f"  mirrored {len(samples)} labelled sample(s) to {project.dataset_path}")
-
-
-@app.command()
-def serve(
-    project_path: Path | None = ProjectOption,
-    host: str = typer.Option("0.0.0.0", help="Host to bind"),
-    port: int = typer.Option(9090, help="Port"),
-) -> None:
-    """Start the ML backend server for Label Studio live predictions."""
-    import uvicorn
-
-    project = _load_project(project_path)
-    # uvicorn imports the app in a worker process, so the project travels
-    # through the environment rather than as an argument
-    os.environ[PROJECT_ENV_VAR] = str(project.root.resolve())
-
-    console.print(f"Starting ML backend for '{project.name}' on {host}:{port}")
-    console.print("Add this URL as an ML backend in Label Studio:")
-    console.print(f"  http://host.docker.internal:{port}")
-    uvicorn.run(
-        "strata.labeller.ls_backend:app",
-        host=host,
-        port=port,
-        reload=True,
-    )
 
 
 @app.command()

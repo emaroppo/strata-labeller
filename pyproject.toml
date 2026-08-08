@@ -7,8 +7,6 @@ dependencies = [
     "typer>=0.9",
     "rich>=13.0",
     "label-studio-sdk>=1.0",
-    "fastapi>=0.100",
-    "uvicorn>=0.20",
     # Declared ahead of use so the dependency graph is enforced by the build
     # from the start rather than at the phase that first imports them.
     "strata-labels",
