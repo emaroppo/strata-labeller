@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from strata.catalog import Catalog, SampleRow
 from strata.labels import Choices
 
-from .adapter import Task, build_tasks, from_results, location_from_url
+from .adapter import Addressing, Task, build_tasks, from_results
 from .project import Project
 from .schemas import LabelSchema
 
@@ -62,8 +62,57 @@ def save_task_map(project: Project, ls_project_id: int, mapping: dict[int, int])
     path.write_text(json.dumps({str(k): v for k, v in mapping.items()}))
 
 
+@dataclass
+class RelinkReport:
+    """What repointing a project's tasks did, or would do."""
+
+    #: (task id, new data) for each task whose URL should change.
+    changes: list[tuple[int, dict]] = field(default_factory=list)
+    unchanged: int = 0
+    #: URLs naming no sample. Left alone rather than guessed at — a task
+    #: from before the catalog points at a real image this cannot identify,
+    #: and rewriting it would lose the only record of what it showed.
+    unrecognised: list[str] = field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        return len(self.changes) + self.unchanged + len(self.unrecognised)
+
+
+def relink(
+    tasks: list[dict], catalog: Catalog, addressing: Addressing, data_key: str
+) -> RelinkReport:
+    """Work out how each task's image URL should now read.
+
+    Two jobs, and they are the same operation. It moves tasks from the local
+    mount onto the serving API, which is what lets the mount go away. It also
+    re-signs: a signed URL expires, so a task that sits in a review queue
+    longer than the signature's life stops loading, and running this again
+    is the fix.
+
+    Computed here and applied by the caller, so a dry run costs nothing and
+    an interrupted apply leaves the rest still describable.
+    """
+    report = RelinkReport()
+    for task in tasks:
+        data = task.get("data") or {}
+        url = data.get(data_key, "")
+        checksum = addressing.checksum_from(url)
+        sample = catalog.by_checksum(checksum) if checksum else None
+        if sample is None:
+            report.unrecognised.append(url)
+            continue
+
+        fresh = addressing.url_for(sample)
+        if fresh == url:
+            report.unchanged += 1
+            continue
+        report.changes.append((task["id"], {**data, data_key: fresh}))
+    return report
+
+
 def rebuild_task_map(
-    tasks: list[dict], catalog: Catalog, prefix: str, data_key: str
+    tasks: list[dict], catalog: Catalog, addressing: Addressing, data_key: str
 ) -> tuple[dict[int, int], list[str]]:
     """Recover sample id -> task id from what Label Studio holds.
 
@@ -75,8 +124,8 @@ def rebuild_task_map(
     unrecognised: list[str] = []
     for task in tasks:
         url = (task.get("data") or {}).get(data_key, "")
-        location = location_from_url(url, prefix)
-        sample = catalog.by_location(location) if location else None
+        checksum = addressing.checksum_from(url)
+        sample = catalog.by_checksum(checksum) if checksum else None
         if sample is None:
             unrecognised.append(url)
             continue
@@ -94,7 +143,7 @@ def tasks_to_push(
     catalog: Catalog,
     label_set_id: int,
     schema: LabelSchema,
-    prefix: str,
+    addressing: Addressing,
     existing: dict[int, int],
 ) -> tuple[list[Task], PushReport]:
     """Tasks for samples Label Studio does not have yet.
@@ -104,7 +153,7 @@ def tasks_to_push(
     """
     wanted = [s for s in samples if s.id not in existing]
     report = PushReport(pushed=len(wanted), already_present=len(samples) - len(wanted))
-    return build_tasks(wanted, catalog, label_set_id, schema, prefix), report
+    return build_tasks(wanted, catalog, label_set_id, schema, addressing), report
 
 
 # ----------------------------------------------------------------------
@@ -117,7 +166,7 @@ def pull_annotations(
     catalog: Catalog,
     label_set_id: int,
     schema: LabelSchema,
-    prefix: str,
+    addressing: Addressing,
     declared: list[str],
 ) -> tuple[list[tuple[int, Choices | None]], PullReport]:
     """Turn a Label Studio export into catalog writes.
@@ -132,8 +181,8 @@ def pull_annotations(
 
     for task in exported:
         url = (task.get("data") or {}).get(schema.data_key, "")
-        location = location_from_url(url, prefix)
-        sample = catalog.by_location(location) if location else None
+        checksum = addressing.checksum_from(url)
+        sample = catalog.by_checksum(checksum) if checksum else None
         if sample is None:
             report.unrecognised.append(url)
             continue

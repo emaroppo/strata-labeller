@@ -125,6 +125,15 @@ class LSClient:
             )
         ]
 
+    def update_task_data(self, task_id: int, data: dict) -> None:
+        """Repoint one task at a different image.
+
+        Data is replaced whole rather than merged, which is what the API
+        offers — so callers pass the task's existing data with one key
+        changed, not just the key.
+        """
+        self.client.tasks.update(task_id, data=data)
+
     def export_raw(self, project_id: int) -> list[dict]:
         """The export snapshot, unconverted.
 

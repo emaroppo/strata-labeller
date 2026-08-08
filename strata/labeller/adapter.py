@@ -14,9 +14,11 @@ to exactly one sample rather than to whatever string used to match.
 """
 
 from dataclasses import dataclass
-from urllib.parse import quote, unquote
+from pathlib import Path
+from urllib.parse import quote, unquote, urlparse
 
-from strata.catalog import Catalog, SampleRow
+from strata.catalog import Catalog, SampleRow, blob_path
+from strata.catalog.signing import DEFAULT_TTL, sign, window_expiry
 from strata.labels import Choices, ChoicesPrediction
 
 from .schemas import LabelSchema
@@ -58,21 +60,90 @@ def prediction_to_results(prediction: ChoicesPrediction, schema: LabelSchema) ->
 # ----------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class Addressing:
+    """How a task refers to its image, in both directions.
+
+    One object rather than three parameters because the two directions have
+    to agree: a URL written one way and read another silently orphans every
+    task, and that failure surfaces as an empty export rather than as an
+    error.
+
+    Two forms coexist on purpose. ``/data/local-files/`` is what Label
+    Studio serves off a mount, and every task created before the serving API
+    uses it; an HTTP base URL is what replaces it. Reading accepts both, so
+    the changeover is a setting rather than a migration, and old tasks keep
+    resolving until they are relinked.
+    """
+
+    #: What Label Studio serves the blob mount under. Only used for local
+    #: URLs, and the reason it survives is those existing tasks.
+    prefix: str = "blobs"
+    #: The serving API, e.g. ``http://minipc:8081``. Empty means the mount.
+    base_url: str = ""
+    #: Signs blob URLs. Required once ``base_url`` is set — an image tag
+    #: cannot carry a header, so the URL is the credential.
+    secret: str = ""
+    ttl: int = DEFAULT_TTL
+
+    def __post_init__(self):
+        if self.base_url and not self.secret:
+            raise AdapterError(
+                "Serving blobs over HTTP needs a signing secret, or the URLs "
+                "authorise nothing. Set $STRATA_BLOB_SECRET to the same value "
+                "the server was started with."
+            )
+
+    def url_for(self, sample: SampleRow) -> str:
+        """Where Label Studio fetches this sample's bytes."""
+        if not self.base_url:
+            return blob_url(sample, self.prefix)
+        name = blob_path(sample.checksum, _suffix_of(sample)).rsplit("/", 1)[-1]
+        expires = window_expiry(self.ttl)
+        signature = sign(sample.checksum, self.secret, expires)
+        return f"{self.base_url.rstrip('/')}/blob/{name}?exp={expires}&sig={signature}"
+
+    def checksum_from(self, url: str) -> str | None:
+        """The sample a task's URL names, whichever form it is in."""
+        if LOCAL_FILES in url:
+            return checksum_from_url(url, self.prefix)
+        path = urlparse(url).path
+        if "/blob/" not in path:
+            return None
+        return _digest_or_none(Path(path.rsplit("/blob/", 1)[1]).stem)
+
+
+def _suffix_of(sample: SampleRow) -> str:
+    return Path((sample.metadata or {}).get("source_path") or "").suffix.lower()
+
+
+def _digest_or_none(stem: str) -> str | None:
+    if len(stem) != 64 or any(c not in "0123456789abcdef" for c in stem):
+        return None
+    return stem
+
+
 def blob_url(sample: SampleRow, prefix: str) -> str:
     """Where Label Studio fetches a sample's bytes.
 
-    Percent-encoded, because a location that reaches a query string
-    unescaped breaks on characters a checksum will never contain but a
-    suffix might.
+    Built from the checksum, not from where the sample's bytes currently
+    sit. The two agree while blobs are files — the local layout *is* the
+    checksum — but they part company the moment those files are packed into
+    shards, and a task URL outlives that. Addressing a task by location
+    would mean every task in Label Studio silently stopped resolving on the
+    day the blobs moved.
+
+    Percent-encoded, because a path that reaches a query string unescaped
+    breaks on characters a checksum will never contain but a suffix might.
     """
-    return f"{LOCAL_FILES}{prefix}/{quote(sample.location.container)}"
+    return f"{LOCAL_FILES}{prefix}/{quote(blob_path(sample.checksum, _suffix_of(sample)))}"
 
 
-def location_from_url(url: str, prefix: str) -> str | None:
-    """The blob a task's URL points at, or None if it points elsewhere.
+def checksum_from_url(url: str, prefix: str) -> str | None:
+    """The sample a task's URL names, or None if it names none.
 
     None is the ordinary answer for a task created before the catalog: its
-    URL addresses the old data root, which names no blob.
+    URL addresses the old data root, whose filenames are not checksums.
     """
     if LOCAL_FILES not in url:
         return None
@@ -80,7 +151,11 @@ def location_from_url(url: str, prefix: str) -> str | None:
     marker = f"{prefix}/"
     if not tail.startswith(marker):
         return None
-    return tail[len(marker) :]
+    # The fan-out directories carry no information the name does not, so the
+    # stem is the whole answer — and checking it looks like a digest is what
+    # keeps a path that merely sits under the prefix from being taken for a
+    # sample.
+    return _digest_or_none(Path(tail[len(marker) :]).stem)
 
 
 # ----------------------------------------------------------------------
@@ -113,7 +188,7 @@ def build_tasks(
     catalog: Catalog,
     label_set_id: int,
     schema: LabelSchema,
-    prefix: str,
+    addressing: "Addressing",
 ) -> list[Task]:
     """Tasks for a batch of samples, carrying any annotation they already have.
 
@@ -127,7 +202,7 @@ def build_tasks(
         tasks.append(
             Task(
                 sample_id=sample.id,
-                data={schema.data_key: blob_url(sample, prefix)},
+                data={schema.data_key: addressing.url_for(sample)},
                 annotations=to_results(value, schema) if value is not None else [],
                 answered=value is not None,
             )

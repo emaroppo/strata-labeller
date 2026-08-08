@@ -10,13 +10,16 @@ import pytest
 from strata.catalog import EVERYTHING, Catalog
 from strata.labeller.adapter import (
     LOCAL_FILES,
+    Addressing,
     blob_url,
     build_tasks,
+    checksum_from_url,
     from_results,
-    location_from_url,
     to_results,
 )
 from strata.labels import Choices, ChoicesPrediction
+
+ADDRESSING = Addressing(prefix="blobs")
 
 
 @pytest.fixture
@@ -110,33 +113,58 @@ def test_a_url_addresses_the_blob(catalog, stocked, tmp_path):
     assert url.startswith(LOCAL_FILES)
 
 
-def test_a_url_round_trips_to_its_location(catalog, stocked):
+def test_a_url_round_trips_to_its_sample(catalog, stocked):
     _, label_set_id = stocked
     [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
     url = blob_url(sample, "blobs")
-    assert location_from_url(url, "blobs") == sample.location.container
+    assert checksum_from_url(url, "blobs") == sample.checksum
 
 
-def test_a_url_is_percent_encoded(catalog, tmp_path):
+def test_a_url_survives_the_bytes_moving(catalog, stocked):
+    _, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
+    before = blob_url(sample, "blobs")
+
+    # What repacking into shards does to a row. Every task in Label Studio
+    # was created before this happened, so a URL that stopped resolving here
+    # would strand every annotation in progress.
+    from dataclasses import replace
+
+    from strata.catalog import Location
+
+    moved = replace(sample, location=Location("shards/abc123.tar", 91136, 4096))
+    assert blob_url(moved, "blobs") == before
+    assert checksum_from_url(before, "blobs") == sample.checksum
+
+
+def test_a_url_is_percent_encoded():
     from strata.catalog import Location
 
     class Odd:
-        location = Location("ab/cd/file name&x.jpg", 0, 1)
+        checksum = "ab" * 32
+        location = Location("shards/x.tar", 0, 1)
+        metadata = {"source_path": "/raw/file name&x.jpg"}
 
     url = blob_url(Odd(), "blobs")
     assert " " not in url and "&" not in url.split("?d=", 1)[1]
-    assert location_from_url(url, "blobs") == "ab/cd/file name&x.jpg"
+    assert checksum_from_url(url, "blobs") == "ab" * 32
 
 
 def test_a_url_from_before_the_catalog_names_no_blob():
     # A task created against the old data root: it points somewhere real,
     # just not at a blob, and that has to be distinguishable
     old = f"{LOCAL_FILES}images/vid1/f001.jpg"
-    assert location_from_url(old, "blobs") is None
+    assert checksum_from_url(old, "blobs") is None
 
 
 def test_something_that_is_not_a_local_file_names_no_blob():
-    assert location_from_url("https://example.com/photo.jpg", "blobs") is None
+    assert checksum_from_url("https://example.com/photo.jpg", "blobs") is None
+
+
+def test_a_path_under_the_prefix_that_is_not_a_digest_names_no_blob():
+    # Reading it as a checksum would send it to the catalog as a lookup that
+    # cannot match, reporting "unrecognised" for what is really a bad prefix
+    assert checksum_from_url(f"{LOCAL_FILES}blobs/notes.txt", "blobs") is None
 
 
 # ----------------------------------------------------------------------
@@ -147,14 +175,14 @@ def test_something_that_is_not_a_local_file_names_no_blob():
 def test_a_task_carries_the_sample_it_came_from(catalog, stocked, schema):
     ids, label_set_id = stocked
     samples = catalog.unlabelled(label_set_id, EVERYTHING)
-    tasks = build_tasks(samples, catalog, label_set_id, schema, "blobs")
+    tasks = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
     assert {t.sample_id for t in tasks} == set(ids)
 
 
 def test_a_task_points_at_the_right_key_for_the_media(catalog, stocked, schema):
     _, label_set_id = stocked
     [task] = build_tasks(
-        catalog.unlabelled(label_set_id, EVERYTHING)[:1], catalog, label_set_id, schema, "blobs"
+        catalog.unlabelled(label_set_id, EVERYTHING)[:1], catalog, label_set_id, schema, ADDRESSING
     )
     assert schema.data_key in task.data
 
@@ -162,7 +190,7 @@ def test_a_task_points_at_the_right_key_for_the_media(catalog, stocked, schema):
 def test_an_unannotated_task_carries_no_annotation(catalog, stocked, schema):
     _, label_set_id = stocked
     [task] = build_tasks(
-        catalog.unlabelled(label_set_id, EVERYTHING)[:1], catalog, label_set_id, schema, "blobs"
+        catalog.unlabelled(label_set_id, EVERYTHING)[:1], catalog, label_set_id, schema, ADDRESSING
     )
     assert task.annotations == []
     assert not task.answered
@@ -173,7 +201,7 @@ def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.annotate(ids[0], label_set_id, Choices(values=["cat"]))
     samples = [s for s in catalog.labelled(label_set_id, EVERYTHING)]
-    [task] = build_tasks(samples, catalog, label_set_id, schema, "blobs")
+    [task] = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
 
     # Label Studio is a view of the catalog rather than a second copy, so
     # rebuilding a project must not ask again for what is already answered
@@ -185,7 +213,7 @@ def test_an_empty_annotation_still_arrives_as_answered(catalog, stocked, schema)
     ids, label_set_id = stocked
     catalog.annotate(ids[0], label_set_id, Choices())
     samples = catalog.labelled(label_set_id, EVERYTHING)
-    [task] = build_tasks(samples, catalog, label_set_id, schema, "blobs")
+    [task] = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
 
     # An empty result list is the answer "none of these apply", and it has
     # to arrive as an answer — otherwise rebuilding a project puts every
@@ -199,6 +227,6 @@ def test_a_skipped_sample_has_no_annotation_to_carry(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.skip(ids[0], label_set_id)
     tasks = build_tasks(
-        catalog.unlabelled(label_set_id, EVERYTHING), catalog, label_set_id, schema, "blobs"
+        catalog.unlabelled(label_set_id, EVERYTHING), catalog, label_set_id, schema, ADDRESSING
     )
     assert all(t.sample_id != ids[0] for t in tasks)
