@@ -216,6 +216,23 @@ class Project:
     def label_config_path(self) -> Path:
         return _resolve(self.root, self.label_config.file)
 
+    def schema_with(self, classes: list[str]) -> LabelSchema:
+        """This project's schema, but carrying someone else's class list.
+
+        The label set is what an export is validated against and what a
+        checkpoint maps its output neurons to, so it is authoritative for
+        which classes exist. project.toml still says what kind of job this
+        is — template, media, control names — and seeds the list when the
+        label set is first created.
+
+        Keeping the two in step by hand was the alternative, and a
+        hand-edited file or a class added in the Label Studio UI silently
+        put a reviewer's answer beyond what the catalog would accept.
+        """
+        schema = self.schema
+        schema.classes = list(classes)
+        return schema
+
     @property
     def schema(self) -> LabelSchema:
         """The schema this project labels with.

@@ -65,29 +65,6 @@ def _ls_client(settings: Settings, project: Project, config_path: Path):
     return LSClient(settings, project)
 
 
-def _warn_undeclared(project: Project, samples: list) -> list[str]:
-    """Warn about classes present in the data but missing from the schema.
-
-    A class added in the Label Studio UI only trains as nothing: the model's
-    head is built from the declared list, so targets outside it are dropped
-    without a word.
-    """
-    from .dataset import get_classes
-
-    schema = project.schema
-    declared = set(schema.classes)
-    if not declared:
-        return []
-    undeclared = [c for c in get_classes(samples, schema) if c not in declared]
-    if undeclared:
-        console.print(
-            f"[yellow]Not in project.toml: {', '.join(undeclared)} — "
-            f"these labels are ignored during training until declared:[/yellow]"
-        )
-        console.print(f"  auto-labeller class add {' '.join(undeclared)}")
-    return undeclared
-
-
 def _blobs_for(settings, root: Path):
     """Where this host reads and writes sample bytes.
 
@@ -235,6 +212,23 @@ def _catalog_if_any(settings):
             f"sqlite:///{root / 'catalog.db'}", _blobs_for(settings, root)
         )
     return None
+
+
+def _schema_for(project: Project, catalog):
+    """The project's schema, with the classes the label set actually holds.
+
+    Read from the catalog rather than from project.toml, so the list a
+    reviewer is offered and the list an export is validated against cannot
+    disagree. Falls back to the project's own when no label set exists yet —
+    which is the case that creates one.
+    """
+    from strata.catalog import CatalogError
+
+    try:
+        _, label_set = catalog.label_set(project.label_set_name)
+    except CatalogError:
+        return project.schema
+    return project.schema_with(label_set.classes)
 
 
 def _label_set_for(catalog, project: Project):
@@ -575,7 +569,7 @@ def init(
         _error("The label set declares no classes; add some before labelling.")
         raise typer.Exit(1)
 
-    schema = project.schema
+    schema = _schema_for(project, catalog)
     # Answered first: with a limit, the point is to carry what is already
     # known rather than to fill the project with unreviewed samples
     samples = catalog.labelled(label_set_id, project.collections) + catalog.unlabelled(
@@ -1055,7 +1049,7 @@ def push(
     catalog, catalog_root = _catalog_for(settings, config_path)
     label_set_id, _ = _label_set_for(catalog, project)
     addressing = _addressing(settings)
-    schema = project.schema
+    schema = _schema_for(project, catalog)
 
     try:
         ls_project_id = project.require_ls_project_id(settings.label_studio.url)
@@ -1175,7 +1169,7 @@ def export_annotations(
     settings = Settings.load(config_path)
     catalog, _ = _catalog_for(settings, config_path)
     label_set_id, label_schema = _label_set_for(catalog, project)
-    schema = project.schema
+    schema = _schema_for(project, catalog)
 
     try:
         ls_project_id = project.require_ls_project_id(settings.label_studio.url)
@@ -1619,7 +1613,7 @@ def relink(
     settings = Settings.load(config_path)
     catalog, _ = _catalog_for(settings, config_path)
     addressing = _addressing(settings)
-    schema = project.schema
+    schema = _schema_for(project, catalog)
 
     client = _ls_client(settings, project, config_path)
     try:
