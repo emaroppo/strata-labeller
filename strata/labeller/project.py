@@ -23,7 +23,6 @@ import json
 import os
 import re
 import tomllib
-from collections.abc import Callable
 from dataclasses import dataclass, field, fields
 from pathlib import Path, PurePosixPath
 
@@ -31,7 +30,6 @@ from strata.modelling import ModelError, resolve
 from strata.modelling.model import Model
 
 from . import schemas
-from .dataset import Sample
 from .schemas import LabelSchema
 
 PROJECT_FILE = "project.toml"
@@ -345,19 +343,6 @@ class Project:
             return resolve(name)()
         except SampleTypeError as e:
             raise ProjectError(f"[data] type: {e}") from None
-
-    @property
-    def group_key(self) -> Callable[[Sample], str] | None:
-        """What keeps related samples on one side of the train/val split.
-
-        ``None`` for independent samples. For ``kind = "frames"`` it is the
-        containing folder, one per video: frames a fraction of a second apart
-        are near-duplicates, and letting them straddle the split would score
-        the model on images it effectively trained on.
-        """
-        if self.data.kind == "frames":
-            return lambda s: str(PurePosixPath(s.path).parent)
-        return None
 
     # -- Label Studio local-files URL mapping --------------------------
 

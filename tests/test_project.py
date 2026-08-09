@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from strata.labeller.dataset import Sample
 from strata.labeller.project import (
     PROJECT_ENV_VAR,
     Project,
@@ -72,21 +71,6 @@ def test_data_kind_defaults_to_images(project):
 def test_an_unknown_data_kind_is_refused(project):
     with pytest.raises(ProjectError, match="\\[data\\] kind must be one of"):
         set_kind(project, "videos")
-
-
-def test_independent_images_have_no_group_key(project):
-    assert project.group_key is None
-
-
-def test_frames_are_grouped_by_their_folder(project):
-    key = set_kind(project, "frames").group_key
-    assert key is not None
-    assert key(Sample(path="vid1/frame0007.jpg")) == "vid1"
-
-
-def test_frames_in_a_nested_folder_group_on_the_containing_one(project):
-    key = set_kind(project, "frames").group_key
-    assert key(Sample(path="shoot-a/vid1/frame0007.jpg")) == "shoot-a/vid1"
 
 
 def test_a_custom_project_must_not_declare_classes_twice(make_project):
