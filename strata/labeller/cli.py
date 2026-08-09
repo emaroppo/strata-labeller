@@ -836,6 +836,9 @@ def _follow(trainer, job_id: str) -> dict:
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        # Elapsed, because every stage looks identical while it is running
+        # and the long one looks identical to a stalled one
+        TimeElapsedColumn(),
         console=console,
         transient=True,
     ) as progress:
