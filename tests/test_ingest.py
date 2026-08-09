@@ -138,8 +138,23 @@ def test_a_missing_data_root_is_an_error(project, tmp_path, monkeypatch):
 def test_an_empty_data_root_says_so_rather_than_failing(workspace, tmp_path):
     project = workspace(0)
     result = run(project)
+    # A project exists before its data does, and this is what someone runs
+    # to find out whether it has arrived
     assert result.exit_code == 0
-    assert "No image files" in result.stdout
+    assert "No files" in result.stdout
+
+
+def test_files_that_are_all_the_wrong_kind_are_an_error(workspace, tmp_path):
+    project = workspace(0)
+    for name in ("notes.md", "readme.txt"):
+        (project.data_dir / name).write_text("x")
+
+    result = run(project)
+
+    # Files, and none admitted: the wrong folder or the wrong type. Saying
+    # nothing here reports an empty corpus as a success.
+    assert result.exit_code == 1
+    assert "None of the 2" in result.stdout
 
 
 def test_registering_is_not_queueing(workspace, tmp_path):

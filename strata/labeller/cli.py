@@ -329,16 +329,47 @@ def templates() -> None:
 
     table = Table(title="Label config templates")
     table.add_column("Template", style="cyan")
-    table.add_column("Files", style="magenta")
+    table.add_column("Media", style="magenta")
     table.add_column("Annotations", style="green")
     for name in schemas.available_templates():
         if name == schemas.CUSTOM_TEMPLATE:
             table.add_row(name, "-", "whatever label_config.xml declares")
             continue
         spec = schemas.TEMPLATES[name]
-        extensions = ", ".join(f".{e}" for e in sorted(spec.media.extensions))
-        table.add_row(name, extensions, spec.control_tag)
+        table.add_row(name, spec.media.name, spec.control_tag)
     console.print(table)
+    # Which files count is the catalog's answer, not a template's
+    console.print("[dim]Which files a project ingests comes from its "
+                  "[data] type — see 'auto-labeller types'.[/dim]")
+
+
+@app.command(name="types")
+def sample_types() -> None:
+    """List the sample types this catalog can ingest."""
+    from strata.catalog.sample_types import SampleType, available, resolve
+
+    table = Table(title="Sample types")
+    table.add_column("Type", style="cyan")
+    table.add_column("Media", style="magenta")
+    table.add_column("Subtype", style="green")
+    table.add_column("Files", style="yellow")
+    table.add_column("Groups", style="blue")
+    for name in sorted(available()):
+        cls = resolve(name)
+        table.add_row(
+            name,
+            cls.media,
+            cls.subtype(),
+            ", ".join(f".{e}" for e in sorted(cls.extensions)) or "-",
+            # Whether it overrides grouping, which is the difference between
+            # frames staying together and each one being its own group
+            "yes" if cls.group_id_for is not SampleType.group_id_for else "-",
+        )
+    console.print(table)
+    console.print(
+        "[dim]Read from what is installed. A plugin registers here too, and "
+        "cannot replace a built-in name.[/dim]"
+    )
 
 
 @app.command(name="projects")
@@ -684,12 +715,17 @@ def ingest(
     """
     from strata.catalog import CatalogError
 
-    from .to_catalog import group_id_for, schema_for
+    from .to_catalog import schema_for
 
     project = _load_project(project_path)
     settings = Settings.load(config_path)
     data_dir = project.data_dir
-    media = project.schema.media
+
+    try:
+        sample_type = project.sample_type()
+    except ProjectError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
 
     if not data_dir.exists():
         _error(f"Data root does not exist: {data_dir}")
@@ -702,27 +738,46 @@ def ingest(
         label_set_id = catalog.create_label_set(project.label_set_name, schema_for(project))
         console.print(f"Created label set '{project.label_set_name}'")
 
-    found = [p for p in sorted(data_dir.rglob("*")) if media.matches(p.name)]
-    if not found:
+    # Everything under the root, then checked. Filtering on the way in is how
+    # a corpus ends up quietly smaller than the directory it came from.
+    everything = [p for p in sorted(data_dir.rglob("*")) if p.is_file()]
+    found = [p for p in everything if sample_type.allows(p)]
+    skipped = [p for p in everything if p not in set(found)]
+
+    if skipped:
+        kinds = sorted({p.suffix.lower() or "(none)" for p in skipped})
         console.print(
-            f"[yellow]No {media.name} files under {data_dir} "
-            f"({', '.join(sorted(media.extensions))}).[/yellow]"
+            f"[yellow]{len(skipped):,} file(s) skipped — "
+            f"{project.sample_type_name} does not admit {', '.join(kinds)}[/yellow]"
         )
+    if not everything:
+        # Nothing there yet is not a mistake: a project exists before its
+        # data does, and this is what someone runs to find out.
+        console.print(f"[yellow]No files under {data_dir} yet.[/yellow]")
         return
+    if not found:
+        # Files, and none of them admitted. Something is wrong — the wrong
+        # folder, or a type that does not describe what is in it — and
+        # returning quietly would report an empty corpus as a success.
+        _error(
+            f"None of the {len(everything):,} file(s) under {data_dir} are "
+            f"{project.sample_type_name} "
+            f"({', '.join('.' + e for e in sorted(sample_type.extensions))}). "
+            f"Either the data is elsewhere, or [data] type names the wrong "
+            f"thing for it."
+        )
+        raise typer.Exit(1)
 
     where = project.collections
     before = len(catalog.unlabelled(label_set_id, where)) + len(
         catalog.labelled(label_set_id, where)
     )
-    subtype = "frames" if project.data.kind == "frames" else "plain"
-
     # Grouped, because a group is one transaction and one group_id. Ungrouped
     # files share a bucket, so a plain image project is a handful of batches
     # rather than one per file.
     by_group: dict[str | None, list[Path]] = {}
     for path in found:
-        relative = str(path.relative_to(data_dir))
-        by_group.setdefault(group_id_for(project, relative), []).append(path)
+        by_group.setdefault(sample_type.group_id_for(path, data_dir), []).append(path)
 
     with Progress(
         SpinnerColumn(),
@@ -740,10 +795,14 @@ def ingest(
                 sources = {p: str(p.relative_to(data_dir)) for p in chunk}
                 catalog.ingest(
                     chunk,
-                    media=media.name,
-                    subtype=subtype,
+                    media=sample_type.media,
+                    subtype=type(sample_type).subtype(),
                     group_id=group_id,
-                    metadata_for=lambda p: {"source_path": sources[p]},
+                    # What only the type knows, plus where it came from
+                    metadata_for=lambda p: {
+                        "source_path": sources[p],
+                        **sample_type.metadata_for(p),
+                    },
                     collections=project.collections,
                     on_sample=lambda _p: progress.advance(bar),
                 )

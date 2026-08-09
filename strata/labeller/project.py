@@ -119,6 +119,11 @@ class CatalogSpec:
 @dataclass
 class DataSpec:
     root: str = "data/raw"
+    #: A registered sample type: what these files are, which decides which
+    #: extensions are allowed, what is recorded about each one, and how they
+    #: group. Empty falls back to ``kind``, which said two of those three
+    #: things at once and is what this replaces.
+    type: str = ""
     # How the samples relate to each other. "images": independent samples.
     # "frames": video frames, one folder per video — near-duplicate frames
     # must not straddle the train/val split, so whole videos move together.
@@ -315,6 +320,31 @@ class Project:
     def relative_sample_path(self, path: Path) -> str:
         """Inverse of :meth:`sample_file` — an absolute path to a sample path."""
         return str(path.resolve().relative_to(self.data_dir.resolve()))
+
+    @property
+    def sample_type_name(self) -> str:
+        """Which registered type this project's files are.
+
+        Falls back to ``kind`` for a project written before types existed.
+        That setting fused two questions — what a sample is, and how it
+        groups — so the fallback has to consult the schema for the first and
+        ``kind`` only for the second.
+        """
+        if self.data.type:
+            return self.data.type
+        if self.data.kind == "frames":
+            return "frames"
+        return self.schema.media.name
+
+    def sample_type(self):
+        """The type itself, resolved from what is installed."""
+        from strata.catalog.sample_types import SampleTypeError, resolve
+
+        name = self.sample_type_name
+        try:
+            return resolve(name)()
+        except SampleTypeError as e:
+            raise ProjectError(f"[data] type: {e}") from None
 
     @property
     def group_key(self) -> Callable[[Sample], str] | None:

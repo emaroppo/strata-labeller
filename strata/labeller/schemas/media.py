@@ -1,4 +1,9 @@
-"""What kind of file a project labels.
+"""How Label Studio addresses a sample.
+
+Not what a file *is* — that is a sample type, and it lives in the catalog
+because it is a fact about the data rather than about the tool collecting
+it. What is left here is Label Studio's wire format: the key its config
+reads a task from, and the name that selects a template.
 
 Media is orthogonal to the task: classification applies to an image or a
 document alike, while boxes only make sense on images and character spans
@@ -15,27 +20,13 @@ class Media:
     name: str
     #: Key under task["data"] that Label Studio reads the sample from
     data_key: str
-    #: File extensions ``ingest`` picks up, lowercase and without the dot
-    extensions: frozenset[str]
-
-    def matches(self, filename: str) -> bool:
-        suffix = filename.rsplit(".", 1)
-        return len(suffix) == 2 and suffix[1].lower() in self.extensions
 
 
-IMAGE = Media(
-    name="image",
-    data_key="image",
-    extensions=frozenset({"jpg", "jpeg", "png", "webp", "bmp", "tiff", "gif"}),
-)
+IMAGE = Media(name="image", data_key="image")
 
 # Documents are served from the same local-files mount as images; the
 # templates ask Label Studio to fetch them with valueType="url", so a text
 # project keeps every path, cache and export mechanism images use.
-TEXT = Media(
-    name="text",
-    data_key="text",
-    extensions=frozenset({"txt", "md"}),
-)
+TEXT = Media(name="text", data_key="text")
 
 MEDIA: dict[str, Media] = {m.name: m for m in (IMAGE, TEXT)}
