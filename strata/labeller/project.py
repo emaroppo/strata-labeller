@@ -94,12 +94,22 @@ class ModelSpec:
 
 @dataclass
 class CatalogSpec:
-    """Which label set in the catalog this job annotates against.
+    """Which catalog, and which label set inside it, this job uses.
 
-    Where the catalog is lives in config.toml — it describes the machine.
-    This says what the job is, so it travels with the project.
+    Where each catalog *is* lives in config.toml — that describes the
+    machine. Which one this job draws from is part of what the job is, so
+    it travels with the project.
     """
 
+    #: Which catalog on this host, by the name it has in config.toml. Empty
+    #: means the host's default, which is the only catalog on a host with
+    #: one — so a project written before any of this still loads.
+    #:
+    #: Naming it is a statement about the data, not about a machine: a
+    #: project moved to another host expects a catalog of the same name
+    #: there, and gets an error rather than someone else's corpus if there
+    #: is none.
+    name: str = ""
     #: Defaults to the project's own name, which is the label set `ingest`
     #: creates.
     label_set: str = ""

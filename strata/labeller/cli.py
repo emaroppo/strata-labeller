@@ -37,6 +37,11 @@ ProjectOption = typer.Option(
 ConfigOption = typer.Option(
     "config.toml", "--config", help="Host settings: Label Studio URL and API key"
 )
+#: For the commands with no project to ask. A project names its catalog in
+#: project.toml; these operate on the host, so the operator names it.
+CatalogOption = typer.Option(
+    "", "--catalog", help="Which catalog on this host (default: the host's own)"
+)
 
 
 def _error(message: str) -> None:
@@ -65,17 +70,22 @@ def _ls_client(settings: Settings, project: Project, config_path: Path):
     return LSClient(settings, project)
 
 
-def _blobs_for(settings, root: Path):
+def _blobs_for(settings, root: Path, config=None):
     """Where this host reads and writes sample bytes.
 
     Files under the catalog root when nothing else is configured, which is
     what keeps a checkout working. An endpoint means tar shards in a bucket,
     which is what lets the machine that trains and the machine that labels
     read the same bytes without either owning them.
+
+    ``config`` is the catalog whose storage this is; the host's default when
+    it is not given. Two catalogs can sit in one bucket or in different
+    ones, so this cannot read the default's endpoint and hope.
     """
     from strata.catalog import LocalBackend
 
-    if not settings.catalog.s3_endpoint:
+    config = config or settings.catalog
+    if not config.s3_endpoint:
         return LocalBackend(root / "blobs")
 
     import boto3
@@ -85,18 +95,18 @@ def _blobs_for(settings, root: Path):
 
     client = boto3.client(
         "s3",
-        endpoint_url=settings.catalog.s3_endpoint,
-        aws_access_key_id=settings.catalog.s3_access_key or None,
-        aws_secret_access_key=settings.catalog.s3_secret_key or None,
-        region_name=settings.catalog.s3_region,
+        endpoint_url=config.s3_endpoint,
+        aws_access_key_id=config.s3_access_key or None,
+        aws_secret_access_key=config.s3_secret_key or None,
+        region_name=config.s3_region,
         # Anything that is not AWS serves buckets as a path rather than as a
         # subdomain, and the default guesses the other way
         config=Config(s3={"addressing_style": "path"}),
     )
-    return S3Backend(client, bucket=settings.catalog.s3_bucket)
+    return S3Backend(client, bucket=config.s3_bucket)
 
 
-def _addressing(settings):
+def _addressing(settings, config=None):
     """How this host writes and reads task image URLs.
 
     One place, because the two directions have to agree: pushing HTTP URLs
@@ -105,11 +115,12 @@ def _addressing(settings):
     """
     from .adapter import AdapterError, Addressing
 
+    config = config or settings.catalog
     try:
         return Addressing(
-            prefix=settings.catalog.blobs_prefix,
-            base_url=settings.catalog.serve_url,
-            secret=settings.catalog.blob_secret,
+            prefix=config.blobs_prefix,
+            base_url=config.serve_url,
+            secret=config.blob_secret,
         )
     except AdapterError as e:
         _error(str(e))
@@ -166,20 +177,22 @@ def _redacted(url: str) -> str:
         return "<unparseable url>"
 
 
-def _catalog_for(settings, config_path: Path, create: bool = False):
-    """The catalog this host holds, or an exit with something actionable.
+def _catalog_for(settings, config_path: Path, create: bool = False, name: str = ""):
+    """One of this host's catalogs, or an exit with something actionable.
 
+    ``name`` is the one a project asks for; empty means the host's default.
     ``create`` for the commands that put data in: refusing to make one would
     leave no way to make the first, and the advice would be circular.
     """
     from strata.catalog import Catalog
 
-    root = Path(settings.catalog.root)
-    blobs = _blobs_for(settings, root)
-    if settings.catalog.url:
+    config = _catalog_config(settings, name)
+    root = Path(config.root)
+    blobs = _blobs_for(settings, root, config)
+    if config.url:
         # A shared index: nothing local to check for, and create_all is
         # harmless against one that already exists
-        return Catalog.connect(settings.catalog.url, blobs), root
+        return Catalog.connect(config.url, blobs), root
 
     if not create and not (root / "catalog.db").exists():
         _error(
@@ -191,7 +204,39 @@ def _catalog_for(settings, config_path: Path, create: bool = False):
     return Catalog.connect(f"sqlite:///{root / 'catalog.db'}", blobs), root
 
 
-def _catalog_if_any(settings):
+def _settings(config_path: Path = Path("config.toml")):
+    """Host settings, or an exit saying what the file gets wrong.
+
+    Loading can now fail on its own: a host with several catalogs and
+    nothing saying which is the default is refused rather than guessed at.
+    A traceback would be a poor way to say so.
+    """
+    from .config import ConfigError
+
+    try:
+        return Settings.load(config_path)
+    except ConfigError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+
+def _catalog_config(settings, name: str = ""):
+    """Look up a named catalog, or exit saying which names exist.
+
+    A name that resolves to nothing must not fall back to the default. The
+    ids in a catalog mean nothing outside it, so a job quietly reading the
+    wrong one is the failure this naming exists to prevent.
+    """
+    from .config import ConfigError
+
+    try:
+        return settings.catalog_named(name)
+    except ConfigError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+
+def _catalog_if_any(settings, name: str = ""):
     """The configured catalog, or None when this host has none yet.
 
     For the paths that decorate output with counts, where absence is not an
@@ -205,12 +250,13 @@ def _catalog_if_any(settings):
     """
     from strata.catalog import Catalog
 
-    root = Path(settings.catalog.root)
-    if settings.catalog.url:
-        return Catalog.connect(settings.catalog.url, _blobs_for(settings, root))
+    config = _catalog_config(settings, name)
+    root = Path(config.root)
+    if config.url:
+        return Catalog.connect(config.url, _blobs_for(settings, root, config))
     if (root / "catalog.db").exists():
         return Catalog.connect(
-            f"sqlite:///{root / 'catalog.db'}", _blobs_for(settings, root)
+            f"sqlite:///{root / 'catalog.db'}", _blobs_for(settings, root, config)
         )
     return None
 
@@ -343,6 +389,41 @@ def templates() -> None:
                   "[data] type — see 'auto-labeller types'.[/dim]")
 
 
+@app.command(name="catalogs")
+def catalogs_cmd(config_path: Path = ConfigOption) -> None:
+    """List the catalogs this host is configured for.
+
+    A host with one has one, called 'default', whether or not the file says
+    so. Which one a project draws from is in its own [catalog] name.
+    """
+    settings = _settings(config_path)
+
+    table = Table(title="Catalogs")
+    table.add_column("Name", style="cyan")
+    table.add_column("Index", style="magenta")
+    table.add_column("Blobs", style="green")
+    table.add_column("Identity", style="yellow")
+    for name in settings.catalog_names():
+        config = settings.catalog_named("" if name == settings.default_catalog else name)
+        index = _redacted(config.url) if config.url else f"sqlite under {config.root}"
+        blobs = (
+            f"{config.s3_endpoint}/{config.s3_bucket}"
+            if config.s3_endpoint
+            else f"files under {config.root}/blobs"
+        )
+        # Asked of the catalog rather than read from the file: two names
+        # pointing at one database is the mistake this makes visible, and
+        # only the catalog itself can say.
+        try:
+            catalog = _catalog_if_any(settings, "" if name == settings.default_catalog else name)
+            identity = catalog.id if catalog is not None else "[dim]not created yet[/dim]"
+        except Exception as e:  # a catalog that cannot be reached is not fatal here
+            identity = f"[red]{escape(str(e).splitlines()[0])}[/red]"
+        label = f"{name} [dim](default)[/dim]" if name == settings.default_catalog else name
+        table.add_row(label, index, blobs, identity)
+    console.print(table)
+
+
 @app.command(name="types")
 def sample_types() -> None:
     """List the sample types this catalog can ingest."""
@@ -387,9 +468,20 @@ def list_projects_cmd() -> None:
         return
 
     # Counts live in the catalog now, and a project can be listed without
-    # one — a project that has never ingested is still a project
-    settings = Settings.load()
-    catalog = _catalog_if_any(settings)
+    # one — a project that has never ingested is still a project.
+    #
+    # Opened per project rather than once: two projects on one host need
+    # not draw from the same catalog, and counting both against whichever
+    # happens to be the default is how a listing reports numbers that
+    # belong to another corpus.
+    settings = _settings()
+    catalogs: dict[str, object] = {}
+
+    def catalog_for_project(project):
+        name = project.catalog.name
+        if name not in catalogs:
+            catalogs[name] = _catalog_if_any(settings, name)
+        return catalogs[name]
 
     table = Table(title="Projects")
     table.add_column("Name", style="cyan")
@@ -406,6 +498,7 @@ def list_projects_cmd() -> None:
             table.add_row(directory.name, "-", f"[red]{escape(str(e))}[/red]", "-", "-", "-")
             continue
         total, labeled = "-", "-"
+        catalog = catalog_for_project(project)
         if catalog is not None:
             try:
                 label_set_id, _ = catalog.label_set(project.label_set_name)
@@ -451,7 +544,7 @@ def class_add(
     from .label_config import LabelConfigError
 
     project = _load_project(project_path)
-    settings = Settings.load(config_path)
+    settings = _settings(config_path)
 
     try:
         # No inference from what is in use: the label set holds the class
@@ -484,7 +577,7 @@ def class_add(
 
     from strata.catalog import CatalogError
 
-    catalog = _catalog_if_any(settings)
+    catalog = _catalog_if_any(settings, project.catalog.name)
     if catalog is not None:
         try:
             label_set_id, _ = catalog.label_set(project.label_set_name)
@@ -514,7 +607,7 @@ def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
     """
     from strata.catalog import CatalogError
 
-    catalog = _catalog_if_any(settings)
+    catalog = _catalog_if_any(settings, project.catalog.name)
     if catalog is None:
         return
     try:
@@ -540,8 +633,8 @@ def class_list(
 ) -> None:
     """List the label set's classes with how many samples carry each."""
     project = _load_project(project_path)
-    settings = Settings.load(config_path)
-    catalog, _ = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     label_set_id, schema = _label_set_for(catalog, project)
 
     table = Table(title=f"Classes — {project.label_set_name}")
@@ -583,8 +676,8 @@ def unskip(
     from .sync import load_task_map
 
     project = _load_project(project_path)
-    settings = Settings.load(config_path)
-    catalog, _ = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     label_set_id, _ = _label_set_for(catalog, project)
 
     skipped = catalog.skipped(label_set_id, project.collections)
@@ -634,8 +727,9 @@ def init(
     from .sync import save_task_map, tasks_to_push
 
     project = _load_project(project_path)
-    settings = Settings.load(config_path)
-    catalog, _ = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    config = _catalog_config(settings, project.catalog.name)
+    catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     label_set_id, label_schema = _label_set_for(catalog, project)
 
     if not label_schema.classes:
@@ -653,17 +747,17 @@ def init(
 
     client = _ls_client(settings, project, config_path)
     ls_project_id = client.create_project(project.name)
-    if not settings.catalog.serve_url:
+    if not config.serve_url:
         # Only when Label Studio is the one reading files. Once tasks carry
         # signed URLs to the serving API, a local storage connection points
         # at a mount this deployment no longer has, and configuring one
         # would suggest the mount still matters.
         client.setup_local_storage(
-            ls_project_id, path=f"/label-studio/data/{settings.catalog.blobs_prefix}"
+            ls_project_id, path=f"/label-studio/data/{config.blobs_prefix}"
         )
 
     tasks, _ = tasks_to_push(
-        samples, catalog, label_set_id, schema, _addressing(settings), {}
+        samples, catalog, label_set_id, schema, _addressing(settings, config), {}
     )
     with Progress(
         SpinnerColumn(),
@@ -716,7 +810,7 @@ def ingest(
     from strata.catalog import CatalogError
 
     project = _load_project(project_path)
-    settings = Settings.load(config_path)
+    settings = _settings(config_path)
     data_dir = project.data_dir
 
     try:
@@ -729,7 +823,9 @@ def ingest(
         _error(f"Data root does not exist: {data_dir}")
         raise typer.Exit(1)
 
-    catalog, catalog_root = _catalog_for(settings, config_path, create=True)
+    catalog, catalog_root = _catalog_for(
+        settings, config_path, create=True, name=project.catalog.name
+    )
     try:
         label_set_id, _ = catalog.label_set(project.label_set_name)
     except CatalogError:
@@ -845,8 +941,8 @@ def train(
 
     from .round import RoundError, describe, run_round
 
-    settings = Settings.load(config_path)
-    catalog, catalog_root = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    catalog, catalog_root = _catalog_for(settings, config_path, name=project.catalog.name)
 
     if job is not None:
         _reattach(settings, job)
@@ -1165,8 +1261,8 @@ def push(
         raise typer.Exit(1)
 
     project = _load_project(project_path)
-    settings = Settings.load(config_path)
-    catalog, catalog_root = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    catalog, catalog_root = _catalog_for(settings, config_path, name=project.catalog.name)
     label_set_id, _ = _label_set_for(catalog, project)
     addressing = _addressing(settings)
     schema = _schema_for(project, catalog)
@@ -1307,8 +1403,8 @@ def export_annotations(
     from .sync import pull_annotations
 
     project = _load_project(project_path)
-    settings = Settings.load(config_path)
-    catalog, _ = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     label_set_id, label_schema = _label_set_for(catalog, project)
     schema = _schema_for(project, catalog)
 
@@ -1327,7 +1423,7 @@ def export_annotations(
         catalog,
         label_set_id,
         schema,
-        _addressing(settings),
+        _addressing(settings, _catalog_config(settings, project.catalog.name)),
         label_schema.classes,
     )
 
@@ -1468,6 +1564,7 @@ def _print_run(store, run) -> None:
 
 @app.command(name="catalog-stats")
 def catalog_stats(
+    catalog_name: str = CatalogOption,
     config_path: Path = ConfigOption,
 ) -> None:
     """What is in a catalog: samples, label sets, and the class breakdown.
@@ -1481,8 +1578,9 @@ def catalog_stats(
     from strata.catalog import EVERYTHING
     from strata.catalog import tables as t
 
-    settings = Settings.load(config_path)
-    catalog, catalog_root = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    catalog, catalog_root = _catalog_for(settings, config_path, name=catalog_name)
+    config = _catalog_config(settings, catalog_name)
     with catalog.engine.connect() as conn:
         total = conn.execute(select(func.count()).select_from(t.sample)).scalar()
         groups = conn.execute(
@@ -1518,7 +1616,7 @@ def catalog_stats(
         ).scalar()
         label_sets = conn.execute(select(t.label_set.c.id, t.label_set.c.name)).all()
 
-    where = _redacted(settings.catalog.url) if settings.catalog.url else catalog_root
+    where = _redacted(config.url) if config.url else catalog_root
     console.print(f"[bold]{where}[/bold]: {total} sample(s)")
     if groups:
         console.print(f"  {groups} group(s), {ungrouped} sample(s) in no group")
@@ -1716,6 +1814,7 @@ def catalog_merge(
     apply: bool = typer.Option(
         False, "--apply", help="Write. Without this, the merge is only reported."
     ),
+    catalog_name: str = CatalogOption,
     config_path: Path = ConfigOption,
 ) -> None:
     """Fold a copy's annotations back into this host's catalog.
@@ -1734,8 +1833,8 @@ def catalog_merge(
     """
     from strata.catalog import Catalog, MergeError, merge_annotations
 
-    settings = Settings.load(config_path)
-    target, root = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    target, root = _catalog_for(settings, config_path, name=catalog_name)
     source = Catalog.connect(from_url, _blobs_for(settings, root))
 
     try:
@@ -1783,6 +1882,7 @@ def catalog_merge(
 @app.command(name="catalog-copy")
 def catalog_copy(
     to_url: str = typer.Option(..., "--to", help="Index URL to copy into"),
+    catalog_name: str = CatalogOption,
     config_path: Path = ConfigOption,
 ) -> None:
     """Copy this host's catalog index into another database.
@@ -1797,8 +1897,8 @@ def catalog_copy(
     """
     from strata.catalog import Catalog, CopyError, copy_index
 
-    settings = Settings.load(config_path)
-    source, root = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    source, root = _catalog_for(settings, config_path, name=catalog_name)
     target = Catalog.connect(to_url, _blobs_for(settings, root))
 
     try:
@@ -1850,8 +1950,8 @@ def relink(
     from .sync import relink as plan_relink
 
     project = _load_project(project_path)
-    settings = Settings.load(config_path)
-    catalog, _ = _catalog_for(settings, config_path)
+    settings = _settings(config_path)
+    catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     addressing = _addressing(settings)
     schema = _schema_for(project, catalog)
 
@@ -1917,6 +2017,7 @@ def catalog_repack(
         512, "--shard-mb", help="Shard size in MB (a shard is held in memory while packed)"
     ),
     verify: int = typer.Option(64, help="Members to read back and check afterwards"),
+    catalog_name: str = CatalogOption,
     config_path: Path = ConfigOption,
 ) -> None:
     """Pack local blobs into tar shards in object storage.
@@ -1931,8 +2032,9 @@ def catalog_repack(
     """
     from strata.catalog import LocalBackend, RepackError, repack_blobs
 
-    settings = Settings.load(config_path)
-    if not settings.catalog.s3_endpoint:
+    settings = _settings(config_path)
+    config = _catalog_config(settings, catalog_name)
+    if not config.s3_endpoint:
         _error(
             "No object storage configured. Set STRATA_S3_ENDPOINT and "
             "STRATA_S3_BUCKET (and the credentials) — this packs blobs into a "
@@ -1940,7 +2042,8 @@ def catalog_repack(
         )
         raise typer.Exit(1)
 
-    catalog, root = _catalog_for(settings, config_path)
+    catalog, root = _catalog_for(settings, config_path, name=catalog_name)
+    config = _catalog_config(settings, catalog_name)
     target = _blobs_for(settings, root)
     # Before any put, since the size is read when a shard is opened. Larger
     # shards mean fewer objects and fewer requests; the cost is memory, as a
@@ -1952,8 +2055,8 @@ def catalog_repack(
 
     console.print(f"[bold]from[/bold]  {source.root}")
     console.print(
-        f"[bold]to[/bold]    {settings.catalog.s3_endpoint} "
-        f"bucket={settings.catalog.s3_bucket} shards={shard_mb} MB\n"
+        f"[bold]to[/bold]    {config.s3_endpoint} "
+        f"bucket={config.s3_bucket} shards={shard_mb} MB\n"
     )
 
     try:
@@ -2029,6 +2132,7 @@ def catalog_repack(
 
 @app.command(name="catalog-probe")
 def catalog_probe(
+    catalog_name: str = CatalogOption,
     config_path: Path = ConfigOption,
 ) -> None:
     """Check that this host can actually reach its catalog.
@@ -2049,18 +2153,20 @@ def catalog_probe(
     from strata.catalog import checksum_of
     from strata.catalog import tables as t
 
-    settings = Settings.load(config_path)
+    settings = _settings(config_path)
+    config = _catalog_config(settings, catalog_name)
     ok = True
 
     # -- the index -----------------------------------------------------
     where = (
-        _redacted(settings.catalog.url)
-        if settings.catalog.url
-        else f"sqlite under {settings.catalog.root}"
+        _redacted(config.url)
+        if config.url
+        else f"sqlite under {config.root}"
     )
     console.print(f"[bold]index[/bold]  {where}")
     try:
-        catalog, root = _catalog_for(settings, config_path, create=True)
+        catalog, root = _catalog_for(settings, config_path, create=True, name=catalog_name)
+        config = _catalog_config(settings, catalog_name)
         with catalog.engine.connect() as conn:
             samples = conn.execute(select(func.count()).select_from(t.sample)).scalar()
         console.print(f"  [green]reachable[/green] — {samples:,} sample(s)")
@@ -2069,10 +2175,10 @@ def catalog_probe(
         raise typer.Exit(1) from None
 
     # -- the blobs -----------------------------------------------------
-    endpoint = settings.catalog.s3_endpoint
+    endpoint = config.s3_endpoint
     console.print(
         "\n[bold]blobs[/bold]  "
-        + (f"{endpoint} bucket={settings.catalog.s3_bucket}" if endpoint
+        + (f"{endpoint} bucket={config.s3_bucket}" if endpoint
            else f"files under {root / 'blobs'}")
     )
 
@@ -2116,7 +2222,7 @@ def catalog_probe(
         if endpoint and uploaded is not None:
             try:
                 blobs.client.delete_object(
-                    Bucket=settings.catalog.s3_bucket, Key=uploaded.container
+                    Bucket=config.s3_bucket, Key=uploaded.container
                 )
             except Exception:
                 console.print(
