@@ -236,3 +236,27 @@ def test_an_unknown_strategy_says_what_there_is(stage):
     assert "least-confident" in result.stdout
     # Refused before anything was created, not halfway through a queue
     assert fake.tasks == {}
+
+
+def test_a_disputed_sample_is_pushed_first(stage):
+    """Ahead of the uncertainty ranking, not within it.
+
+    Two people answered it differently, so one is wrong and only a person
+    settles which. Where it lands in an uncertainty ordering depends on the
+    model's opinion, which has no bearing on the disagreement — and the
+    model is confident about this one.
+    """
+    from strata.labels import Choices
+
+    project, config, fake, by_name, catalog, label_set_id = stage
+    settled = by_name["confident"]
+    catalog.annotate(settled.id, label_set_id, Choices(values=["cat"]))
+    catalog.record_conflict(
+        settled.id, label_set_id, Choices(values=["cat"]), Choices(values=["dog"])
+    )
+
+    result = push(project, config, "--limit", "1")
+
+    assert "answered two ways" in result.stdout
+    [task] = fake.tasks.values()
+    assert settled.checksum in task["data"]["image"]

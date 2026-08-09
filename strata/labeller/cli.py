@@ -1236,6 +1236,29 @@ def push(
     elif predictions:
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
 
+    # Added to the queue rather than reordered within it. A disputed sample
+    # has an answer, so it is not unlabelled and would never appear — which
+    # is the whole reason a conflict needs recording rather than leaving the
+    # two answers to settle themselves.
+    #
+    # And first, ahead of the uncertainty ranking: where it would land there
+    # depends on the model's opinion, which has no bearing on two people
+    # disagreeing.
+    conflicts = catalog.conflicts(label_set_id, project.collections)
+    if conflicts:
+        already = {s.id for s in ranked}
+        disputed = [
+            row
+            for row in (catalog.by_checksum(c["checksum"]) for c in conflicts)
+            if row is not None and row.id not in already
+        ]
+        if disputed:
+            ranked = disputed + ranked
+            console.print(
+                f"[yellow]{len(disputed)} sample(s) were answered two ways — "
+                f"pushed first so they are looked at again[/yellow]"
+            )
+
     if limit is not None:
         ranked = ranked[:limit]
 
