@@ -214,6 +214,46 @@ def _catalog_if_any(settings):
     return None
 
 
+def _warn_on_composition_drift(project: Project, catalog, schema) -> None:
+    """Say so when a project's declarations do not match what it draws from.
+
+    Both are declared because ``ingest`` needs them before anything is
+    catalogued: media picks which files count, and kind decides whether they
+    are grouped. Afterwards the samples are the truth.
+
+    Warnings rather than refusals. A mixed collection is legitimate — one
+    catalog holding standalone images and video frames at once was the point
+    of putting grouping on the sample — so the useful thing is to say what is
+    there, not to stop.
+    """
+    declared_media = schema.media.name
+    declared_subtype = "frames" if project.data.kind == "frames" else "plain"
+    held = catalog.composition(project.collections)
+    where = ", ".join(project.collections)
+
+    other_media = {m: n for (m, _), n in held.items() if m != declared_media}
+    if other_media:
+        summary = ", ".join(f"{n:,} {m}" for m, n in sorted(other_media.items()))
+        console.print(
+            f"[yellow]This project labels {declared_media}, but {where} also "
+            f"holds {summary}. Label Studio renders every task with the "
+            f"{declared_media} tag, so those will not display.[/yellow]"
+        )
+
+    other_subtype = {
+        sub: n for (m, sub), n in held.items()
+        if m == declared_media and sub != declared_subtype
+    }
+    if other_subtype:
+        summary = ", ".join(f"{n:,} {sub}" for sub, n in sorted(other_subtype.items()))
+        console.print(
+            f"[yellow]This project ingests as '{declared_subtype}', but {where} "
+            f"holds {summary}. Grouping is recorded per sample, so what is "
+            f"already there keeps its own — but anything ingested from here on "
+            f"is grouped the way this project declares.[/yellow]"
+        )
+
+
 def _schema_for(project: Project, catalog):
     """The project's schema, with the classes the label set actually holds.
 
@@ -228,7 +268,9 @@ def _schema_for(project: Project, catalog):
         _, label_set = catalog.label_set(project.label_set_name)
     except CatalogError:
         return project.schema
-    return project.schema_with(label_set.classes)
+    schema = project.schema_with(label_set.classes)
+    _warn_on_composition_drift(project, catalog, schema)
+    return schema
 
 
 def _label_set_for(catalog, project: Project):
