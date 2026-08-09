@@ -44,22 +44,81 @@ class PullReport:
 # ----------------------------------------------------------------------
 
 
+class TaskMapError(Exception):
+    """The cached map belongs to a different catalog."""
+
+
 def task_map_path(project: Project, ls_project_id: int):
     return project.state_dir / f"tasks_{ls_project_id}.json"
 
 
-def load_task_map(project: Project, ls_project_id: int) -> dict[int, int]:
+def task_map_catalog(project: Project, ls_project_id: int) -> str | None:
+    """Which catalog the cached map was written against, if it says.
+
+    ``None`` for a map written before it recorded one, which is not the
+    same as a map that disagrees — see :func:`load_task_map`.
+    """
+    path = task_map_path(project, ls_project_id)
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text())
+    return payload.get("catalog") if isinstance(payload, dict) else None
+
+
+def load_task_map(
+    project: Project, ls_project_id: int, catalog_id: str | None = None
+) -> dict[int, int]:
+    """The cached sample id -> task id map, refusing another catalog's.
+
+    Sample ids are per-catalog integers. A map written against one catalog
+    and read against another is not wrong in any way a computer can see:
+    every id exists on both sides and names a different sample. Pushing
+    from it attaches a prediction to the wrong image; exporting through it
+    files a reviewer's answer against the wrong sample. Nothing raises, at
+    any layer, and the only symptom is accuracy that stops improving.
+
+    So a recorded identity that disagrees is refused. A map from before
+    this recorded one is adopted, because it was written by the same
+    project against whatever it was pointed at then — the caller says so
+    rather than hiding it, and ``push --rebuild-map`` settles any doubt by
+    matching tasks to samples by blob.
+    """
     path = task_map_path(project, ls_project_id)
     if not path.exists():
         return {}
+    payload = json.loads(path.read_text())
+
+    tasks = payload
+    if isinstance(payload, dict) and "tasks" in payload:
+        stored = payload.get("catalog")
+        tasks = payload["tasks"]
+        if stored and catalog_id and stored != catalog_id:
+            raise TaskMapError(
+                f"{path} was written against catalog {stored}, and this "
+                f"project now reads {catalog_id}. Sample ids mean different "
+                f"things in each, so every task in it points somewhere else. "
+                f"Point the project back at {stored}, or delete the file and "
+                f"let 'push --rebuild-map' rebuild it from Label Studio."
+            )
     # JSON keys are strings; sample ids are not
-    return {int(k): v for k, v in json.loads(path.read_text()).items()}
+    return {int(k): v for k, v in tasks.items()}
 
 
-def save_task_map(project: Project, ls_project_id: int, mapping: dict[int, int]) -> None:
+def save_task_map(
+    project: Project,
+    ls_project_id: int,
+    mapping: dict[int, int],
+    catalog_id: str | None = None,
+) -> None:
     path = task_map_path(project, ls_project_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({str(k): v for k, v in mapping.items()}))
+    payload = {
+        # Stamped on every write, so a map adopted from before this becomes
+        # a guarded one the first time anything touches it
+        "catalog": catalog_id or "",
+        "tasks": {str(k): v for k, v in mapping.items()},
+    }
+    path.write_text(json.dumps(payload))
 
 
 @dataclass

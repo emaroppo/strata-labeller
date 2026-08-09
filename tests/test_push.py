@@ -176,7 +176,7 @@ def test_a_second_push_creates_nothing_new(stage):
 
 
 def test_the_task_map_survives_the_command(stage):
-    project, config, fake, _, _, _ = stage
+    project, config, fake, _, catalog, _ = stage
 
     push(project, config)
 
@@ -184,8 +184,11 @@ def test_the_task_map_survives_the_command(stage):
         next((project.state_dir).glob("tasks_*.json")).read_text()
     )
     # Keyed on sample id; losing it means every task is re-created next time
-    assert len(saved) == 3
-    assert set(saved.values()) == set(fake.tasks)
+    assert len(saved["tasks"]) == 3
+    assert set(saved["tasks"].values()) == set(fake.tasks)
+    # And which catalog those ids belong to. Without it the map is a set of
+    # integers that mean something different in every other catalog.
+    assert saved["catalog"] == catalog.id
 
 
 def test_pushing_without_predictions_still_creates_tasks(stage):

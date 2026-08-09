@@ -220,6 +220,31 @@ def _settings(config_path: Path = Path("config.toml")):
         raise typer.Exit(1) from None
 
 
+def _task_map(project, ls_project_id: int, catalog):
+    """The cached task map for this project, or an exit explaining itself.
+
+    Loaded through here rather than directly so that the refusal — a map
+    written against another catalog — reads the same wherever it happens,
+    and so that adopting a map from before identities were recorded is
+    said out loud rather than assumed.
+    """
+    from .sync import TaskMapError, load_task_map, task_map_catalog
+
+    try:
+        mapping = load_task_map(project, ls_project_id, catalog.id)
+    except TaskMapError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+    if mapping and task_map_catalog(project, ls_project_id) is None:
+        console.print(
+            f"[dim]Task map has no catalog recorded; adopting it into "
+            f"{catalog.id}. If this project has ever been pointed at another "
+            f"catalog, run 'push --rebuild-map' instead.[/dim]"
+        )
+    return mapping
+
+
 def _catalog_config(settings, name: str = ""):
     """Look up a named catalog, or exit saying which names exist.
 
@@ -673,7 +698,6 @@ def unskip(
     of it. In Label Studio a skip is a cancelled annotation, deleted here so
     the task becomes reviewable again.
     """
-    from .sync import load_task_map
 
     project = _load_project(project_path)
     settings = _settings(config_path)
@@ -689,7 +713,7 @@ def unskip(
 
     ls_project_id = project.label_studio.project_id
     if ls_project_id is not None:
-        task_map = load_task_map(project, ls_project_id)
+        task_map = _task_map(project, ls_project_id, catalog)
         task_ids = [task_map[s.id] for s in selected if s.id in task_map]
         if task_ids:
             client = _ls_client(settings, project, config_path)
@@ -771,7 +795,7 @@ def init(
         mapping = client.import_catalog_tasks(
             ls_project_id, tasks, on_progress=lambda n: progress.advance(bar, n)
         )
-    save_task_map(project, ls_project_id, mapping)
+    save_task_map(project, ls_project_id, mapping, catalog.id)
     project.save_ls_project_id(settings.label_studio.url, ls_project_id)
 
     if len(mapping) != len(tasks):
@@ -1251,7 +1275,7 @@ def push(
 
     from .active_learning import STRATEGIES, certainty, rank
     from .adapter import prediction_to_results
-    from .sync import load_task_map, rebuild_task_map, save_task_map, tasks_to_push
+    from .sync import rebuild_task_map, save_task_map, tasks_to_push
 
     if strategy not in STRATEGIES:
         _error(
@@ -1274,7 +1298,7 @@ def push(
         raise typer.Exit(1) from None
 
     client = _ls_client(settings, project, config_path)
-    task_map = load_task_map(project, ls_project_id)
+    task_map = _task_map(project, ls_project_id, catalog)
     if rebuild_map or not task_map:
         with console.status("Listing tasks in Label Studio..."):
             task_map, unrecognised = rebuild_task_map(
@@ -1285,7 +1309,7 @@ def push(
                 f"[yellow]{len(unrecognised)} task(s) point at nothing this catalog "
                 f"knows — from before the cutover, or since removed.[/yellow]"
             )
-        save_task_map(project, ls_project_id, task_map)
+        save_task_map(project, ls_project_id, task_map, catalog.id)
 
     pool = catalog.unlabelled(label_set_id, project.collections)
     if not pool:
@@ -1368,7 +1392,7 @@ def push(
     )
     created = client.import_catalog_tasks(ls_project_id, tasks)
     task_map.update(created)
-    save_task_map(project, ls_project_id, task_map)
+    save_task_map(project, ls_project_id, task_map, catalog.id)
 
     console.print(
         f"[green]{report.pushed} task(s) created[/green]"
