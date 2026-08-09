@@ -19,6 +19,7 @@ Sample paths in ``dataset.json`` are relative to ``[data] root``, so moving
 the files or the project never rewrites the dataset.
 """
 
+import json
 import os
 import re
 import tomllib
@@ -380,26 +381,43 @@ class Project:
     # Mutation
     # ------------------------------------------------------------------
 
-    def save_ls_project_id(self, project_id: int) -> None:
-        """Write the Label Studio project id back into project.toml.
+    #: Where each Label Studio instance's project id is kept, keyed by the
+    #: instance's URL.
+    LS_PROJECTS = "label_studio.json"
 
-        A targeted text edit rather than a TOML round-trip, so comments and
-        formatting in a hand-written project.toml survive.
+    def _ls_projects(self) -> dict:
+        path = self.state_dir / self.LS_PROJECTS
+        if not path.exists():
+            return {}
+        return json.loads(path.read_text())
+
+    def ls_project_id(self, ls_url: str) -> int | None:
+        """This project's queue on one Label Studio, if it has one.
+
+        Per instance, and kept in the project's state rather than in
+        project.toml, because a project.toml is copied between machines and
+        a Label Studio project id means nothing on another install. One
+        catalog project can have a queue on a desktop and another on a
+        laptop; they reconcile through the annotations, not through the
+        task ids.
+
+        Falls back to a project.toml written before this existed. That value
+        belongs to whichever instance created it, so a copied project.toml
+        carrying one is exactly the confusion this replaces — delete the
+        line once the machine that owns it has run init.
         """
-        self.label_studio.project_id = project_id
-        toml_path = self.root / PROJECT_FILE
-        text = toml_path.read_text()
-        line = f"project_id = {project_id}"
+        found = self._ls_projects().get(ls_url.rstrip("/"))
+        if found is not None:
+            return found
+        return self.label_studio.project_id
 
-        if re.search(r"^\s*project_id\s*=.*$", text, flags=re.MULTILINE):
-            text = re.sub(r"^\s*project_id\s*=.*$", line, text, count=1, flags=re.MULTILINE)
-        elif re.search(r"^\[label_studio\]\s*$", text, flags=re.MULTILINE):
-            text = re.sub(
-                r"^(\[label_studio\]\s*)$", rf"\1\n{line}", text, count=1, flags=re.MULTILINE
-            )
-        else:
-            text = text.rstrip("\n") + f"\n\n[label_studio]\n{line}\n"
-        toml_path.write_text(text)
+    def save_ls_project_id(self, ls_url: str, project_id: int) -> None:
+        """Record which project on ``ls_url`` belongs to this job."""
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        known = self._ls_projects()
+        known[ls_url.rstrip("/")] = project_id
+        (self.state_dir / self.LS_PROJECTS).write_text(json.dumps(known, indent=2))
+        self.label_studio.project_id = project_id
 
     def add_classes(self, names: list[str], known: list[str] | None = None) -> list[str]:
         """Append classes to project.toml and return the new full list.
@@ -443,13 +461,15 @@ class Project:
         self.label_config.classes = classes
         return classes
 
-    def require_ls_project_id(self) -> int:
-        if self.label_studio.project_id is None:
+    def require_ls_project_id(self, ls_url: str) -> int:
+        found = self.ls_project_id(ls_url)
+        if found is None:
             raise ProjectError(
-                "No Label Studio project yet. Run 'auto-labeller init' first, or set "
-                "[label_studio] project_id in project.toml."
+                f"No Label Studio project on {ls_url} for this job. Run "
+                f"'auto-labeller init' — each instance keeps its own queue, so a "
+                f"project set up elsewhere does not carry over."
             )
-        return self.label_studio.project_id
+        return found
 
     # ------------------------------------------------------------------
     # Scaffolding

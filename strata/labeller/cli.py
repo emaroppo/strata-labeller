@@ -611,7 +611,7 @@ def init(
             ls_project_id, tasks, on_progress=lambda n: progress.advance(bar, n)
         )
     save_task_map(project, ls_project_id, mapping)
-    project.save_ls_project_id(ls_project_id)
+    project.save_ls_project_id(settings.label_studio.url, ls_project_id)
 
     if len(mapping) != len(tasks):
         console.print(
@@ -1055,7 +1055,7 @@ def push(
     schema = project.schema
 
     try:
-        ls_project_id = project.require_ls_project_id()
+        ls_project_id = project.require_ls_project_id(settings.label_studio.url)
     except ProjectError as e:
         _error(str(e))
         raise typer.Exit(1) from None
@@ -1174,7 +1174,7 @@ def export_annotations(
     schema = project.schema
 
     try:
-        ls_project_id = project.require_ls_project_id()
+        ls_project_id = project.require_ls_project_id(settings.label_studio.url)
     except ProjectError as e:
         _error(str(e))
         raise typer.Exit(1) from None
@@ -1619,7 +1619,7 @@ def relink(
 
     client = _ls_client(settings, project, config_path)
     try:
-        ls_project_id = project.require_ls_project_id()
+        ls_project_id = project.require_ls_project_id(settings.label_studio.url)
     except ProjectError as e:
         _error(str(e))
         raise typer.Exit(1) from None

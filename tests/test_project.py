@@ -237,20 +237,45 @@ def test_add_classes_leaves_the_rest_of_the_file_alone(project):
     assert changed == [('classes = ["cat", "dog"]', 'classes = ["cat", "dog", "bird"]')]
 
 
-def test_save_ls_project_id_writes_into_the_existing_section(project):
-    project.save_ls_project_id(42)
-    assert Project.load(project.root).label_studio.project_id == 42
-    # Written once, and updated in place on a second call
-    project.save_ls_project_id(43)
-    text = (project.root / "project.toml").read_text()
-    assert text.count("project_id") == 1
-    assert Project.load(project.root).label_studio.project_id == 43
+def test_each_label_studio_keeps_its_own_project(project):
+    """A project.toml is copied between machines; a queue is not.
+
+    A Label Studio project id means nothing on another install, so one job
+    can have a queue on a desktop and another on a laptop. They reconcile
+    through the annotations, never through task ids.
+    """
+    project.save_ls_project_id("http://desktop:8080", 42)
+    project.save_ls_project_id("http://laptop:8080", 7)
+
+    reloaded = Project.load(project.root)
+    assert reloaded.ls_project_id("http://desktop:8080") == 42
+    assert reloaded.ls_project_id("http://laptop:8080") == 7
 
 
-def test_require_ls_project_id_points_at_init(project):
-    with pytest.raises(ProjectError, match="auto-labeller init"):
-        project.require_ls_project_id()
+def test_a_trailing_slash_is_the_same_instance(project):
+    project.save_ls_project_id("http://desktop:8080", 42)
+    assert Project.load(project.root).ls_project_id("http://desktop:8080/") == 42
 
+
+def test_an_instance_with_no_queue_points_at_init(project):
+    with pytest.raises(ProjectError, match="init"):
+        project.require_ls_project_id("http://elsewhere:8080")
+
+
+def test_a_project_id_written_before_this_is_still_read(project):
+    # A project.toml from before queues were per instance. It belongs to
+    # whichever install created it, which is the confusion this replaces —
+    # but silently ignoring it would strand a live project.
+    # The scaffold already writes a [label_studio] section, so add the key
+    # to it rather than declaring the table twice
+    toml_path = project.root / "project.toml"
+    text = toml_path.read_text()
+    if "[label_studio]" in text:
+        text = text.replace("[label_studio]", "[label_studio]\nproject_id = 3", 1)
+    else:
+        text += "\n[label_studio]\nproject_id = 3\n"
+    toml_path.write_text(text)
+    assert Project.load(project.root).ls_project_id("http://anywhere:8080") == 3
 
 def test_create_refuses_to_overwrite_an_existing_project(project):
     with pytest.raises(ProjectError, match="already exists"):
