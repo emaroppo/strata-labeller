@@ -1640,6 +1640,78 @@ def import_rounds_command(
         console.print(line)
 
 
+@app.command(name="runs-merge")
+def runs_merge(
+    from_dir: Path = typer.Option(
+        ..., "--from", help="A runs directory: runs.db and its checkpoints"
+    ),
+    checkpoints: bool = typer.Option(
+        False, "--checkpoints", help="Copy the checkpoint files too. They are large."
+    ),
+    apply: bool = typer.Option(
+        False, "--apply", help="Write. Without this, the merge is only reported."
+    ),
+    project_path: Path | None = ProjectOption,
+) -> None:
+    """Fold another run store into this project's.
+
+    A project keeps runs beside its own checkpoints and a modelling host
+    keeps its own, so a project trained on both has its history split in
+    two. This puts it back together, which is what `report` needs to draw
+    one curve.
+
+    Run ids carry the time and the host that made them, so nothing
+    collides and a run already here is skipped rather than duplicated —
+    run this twice and the second one does nothing.
+
+    Checkpoints stay where they are unless --checkpoints is given: they are
+    the large half, and a merge is usually about reading a history rather
+    than training from it. A run whose checkpoint did not come is recorded
+    as having none, so nothing later tries to warm-start from a file that
+    is not there.
+    """
+    from strata.modelling import RunStore, StoreMergeError, merge_stores
+
+    project = _load_project(project_path)
+    source_dir = Path(from_dir)
+    if not (source_dir / "runs.db").exists():
+        _error(f"No runs.db under {source_dir}.")
+        raise typer.Exit(1)
+
+    source = RunStore.local(source_dir)
+    target = RunStore.local(project.runs_dir)
+
+    try:
+        report = merge_stores(
+            source, target, checkpoints=checkpoints, dry_run=not apply
+        )
+    except StoreMergeError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+    if not report.runs and not report.already_present:
+        console.print(f"No runs in {source_dir}.")
+        return
+
+    for line in report.lines():
+        console.print(f"  {line}")
+    if report.orphaned:
+        console.print(
+            "[yellow]Some runs continued from a run in neither store. They "
+            "were copied without the link, so they read as cold.[/yellow]"
+        )
+    if not apply:
+        console.print("[yellow]Nothing was written. Re-run with --apply.[/yellow]")
+        return
+    console.print(f"[green]{report.runs} run(s) merged[/green]")
+    if not checkpoints and report.runs:
+        console.print(
+            "[dim]Checkpoints were left behind, so the merged runs cannot be "
+            "trained or predicted from here. Pass --checkpoints if you need "
+            "them.[/dim]"
+        )
+
+
 @app.command(name="catalog-copy")
 def catalog_copy(
     to_url: str = typer.Option(..., "--to", help="Index URL to copy into"),
