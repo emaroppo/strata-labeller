@@ -33,7 +33,7 @@ class ToyModel(Model):
         self.note = note
         self.classes: list[str] = []
 
-    def finetune(self, train, classes, val=None):
+    def finetune(self, train, classes, val=None, on_epoch=None):
         self.classes = classes
         return {"loss": 0.0}
 

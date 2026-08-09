@@ -855,8 +855,8 @@ def _follow(trainer, job_id: str) -> dict:
                 )
                 return
             stage = job.get("stage", job.get("state", ""))
-            if stage == "materialising" and job.get("total"):
-                stage = f"materialising {job['done']:,}/{job['total']:,}"
+            if job.get("total"):
+                stage = f"{stage} {job['done']:,}/{job['total']:,}"
             progress.update(bar, description=f"Host: {stage}")
 
         try:

@@ -35,7 +35,7 @@ class Toy(Model):
     def __init__(self):
         self.classes = []
 
-    def finetune(self, train, classes, val=None):
+    def finetune(self, train, classes, val=None, on_epoch=None):
         self.classes = list(classes)
         return {"accuracy": 0.5, "n_train": float(len(train)), "n_val": float(len(val or []))}
 
