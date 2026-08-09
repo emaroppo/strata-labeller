@@ -1162,8 +1162,9 @@ def export_annotations(
     """Pull corrected annotations out of Label Studio into the catalog.
 
     The catalog is what remembers; Label Studio is where the answering
-    happens. dataset.json is written alongside for as long as the legacy
-    training path is worth keeping.
+    happens. Nothing is mirrored to dataset.json any more — the only thing
+    that still reads one is to-catalog, migrating a project that predates
+    the catalog.
     """
     from .sync import pull_annotations
 
