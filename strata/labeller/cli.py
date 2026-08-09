@@ -823,13 +823,23 @@ def _run_for_push(settings, project, store, run_id, remote: bool):
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     try:
-        if run_id:
-            return {"id": run_id}
-        found = trainer.latest_run(project.dataset_name)
+        # Asked for by id or not, the host is the one that knows. Checking
+        # now costs one request; not checking costs a pool fetched and
+        # scored before anything notices.
+        found = trainer.run(run_id) if run_id else trainer.latest_run(project.dataset_name)
     except RemoteError as e:
         _error(str(e))
         raise typer.Exit(1) from None
-    return {"id": found["run"]["id"]} if found else None
+
+    if found is None:
+        return None
+    if not found["run"].get("checkpoint"):
+        _error(
+            f"Run {found['run']['id']} on {settings.modelling.url} has no "
+            f"checkpoint, so there is nothing to predict with."
+        )
+        raise typer.Exit(1)
+    return {"id": found["run"]["id"]}
 
 
 def _remote_predictions(settings, run_id: int, checksums: list[str]) -> dict:
@@ -1032,7 +1042,7 @@ def push(
     from strata.modelling import PredictRequest, RunStore
     from strata.modelling import predict as run_predict
 
-    from .active_learning import rank
+    from .active_learning import certainty, rank
     from .adapter import prediction_to_results
     from .predictions import PredictionCache
     from .sync import load_task_map, rebuild_task_map, save_task_map, tasks_to_push
@@ -1131,8 +1141,7 @@ def push(
 
     if scored:
         payload = [
-            (s.id, prediction_to_results(scored[s.id], schema), scored[s.id].confidences[0]
-             if scored[s.id].confidences else 0.0)
+            (s.id, prediction_to_results(scored[s.id], schema), certainty(scored[s.id]))
             for s in ranked
         ]
         pushed = client.push_catalog_predictions(

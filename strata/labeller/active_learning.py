@@ -77,3 +77,16 @@ def rank(samples, scores, strategy=None):
     strategy = strategy or least_confident
     scored = [s for s in samples if s.checksum in scores]
     return sorted(scored, key=lambda s: strategy(scores[s.checksum]), reverse=True)
+
+
+def certainty(prediction: Value) -> float:
+    """How sure the model was of its best assertion.
+
+    What a reviewer is shown beside a pre-annotation, and the inverse of
+    :func:`least_confident` — so the number on a task and the order it
+    arrives in cannot tell different stories. Positional confidences make
+    the first one meaningless on its own: for multi-label choices it is
+    whichever class came first, and for boxes whichever box did.
+    """
+    scores = _confidences(prediction)
+    return max(scores) if scores else 0.0

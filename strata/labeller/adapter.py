@@ -19,7 +19,7 @@ from urllib.parse import quote, unquote, urlparse
 
 from strata.catalog import Catalog, SampleRow, blob_path
 from strata.catalog.signing import DEFAULT_TTL, sign, window_expiry
-from strata.labels import Choices, ChoicesPrediction
+from strata.labels import Choices, Prediction
 
 from .schemas import LabelSchema
 
@@ -51,7 +51,14 @@ def from_results(results: list[dict], schema: LabelSchema) -> Choices:
     return Choices(values=list(schema.decode_target(results)))
 
 
-def prediction_to_results(prediction: ChoicesPrediction, schema: LabelSchema) -> list[dict]:
+def prediction_to_results(prediction: Prediction, schema: LabelSchema) -> list[dict]:
+    """A model's output as Label Studio results.
+
+    Delegated to the schema, so this is only as general as the schemas are —
+    and today only classification is implemented, which encodes class names.
+    A boxes prediction reaching here would hand it Box objects; the schema
+    refuses them rather than encoding something meaningless.
+    """
     return schema.encode_target(list(prediction.values))
 
 

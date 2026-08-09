@@ -50,3 +50,28 @@ def test_nothing_scored_ranks_nothing():
     from strata.labeller.active_learning import rank
 
     assert rank([Sample(1, "a" * 64)], {}) == []
+
+
+def test_certainty_is_the_inverse_of_least_confident():
+    from strata.labeller.active_learning import certainty, least_confident
+
+    p = scored(0.3, 0.85, 0.6)
+    # The number shown beside a pre-annotation and the order it arrives in
+    # have to tell the same story
+    assert certainty(p) == 0.85
+    assert abs(certainty(p) - (1.0 - least_confident(p))) < 1e-9
+
+
+def test_certainty_is_not_the_first_confidence():
+    from strata.labeller.active_learning import certainty
+
+    # Confidences are positional against values, so the first one is
+    # whichever class or box happened to come first — meaningless alone
+    assert certainty(scored(0.1, 0.9)) == 0.9
+
+
+def test_nothing_asserted_is_no_certainty():
+    from strata.labeller.active_learning import certainty
+    from strata.labels import ChoicesPrediction
+
+    assert certainty(ChoicesPrediction()) == 0.0
