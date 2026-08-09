@@ -1264,7 +1264,7 @@ def push(
     settings = _settings(config_path)
     catalog, catalog_root = _catalog_for(settings, config_path, name=project.catalog.name)
     label_set_id, _ = _label_set_for(catalog, project)
-    addressing = _addressing(settings)
+    addressing = _addressing(settings, _catalog_config(settings, project.catalog.name))
     schema = _schema_for(project, catalog)
 
     try:
@@ -1952,7 +1952,7 @@ def relink(
     project = _load_project(project_path)
     settings = _settings(config_path)
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
-    addressing = _addressing(settings)
+    addressing = _addressing(settings, _catalog_config(settings, project.catalog.name))
     schema = _schema_for(project, catalog)
 
     client = _ls_client(settings, project, config_path)
