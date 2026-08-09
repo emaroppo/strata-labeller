@@ -939,7 +939,7 @@ def _run_for_push(settings, project, store, run_id, remote: bool) -> int | None:
     return found["run"]["id"]
 
 
-def _remote_predictions(settings, run_id: int, checksums: list[str]) -> dict:
+def _remote_predictions(settings, run_id: str, checksums: list[str]) -> dict:
     """Score a review pool on the host that has the GPU and the blobs.
 
     The same job machinery as a round, for the same reason: this is minutes
@@ -1124,7 +1124,7 @@ def push(
     limit: int | None = typer.Option(
         None, help="Review only the top-N, most uncertain first"
     ),
-    run_id: int | None = typer.Option(None, help="Predict with this run (default: latest)"),
+    run_id: str | None = typer.Option(None, help="Predict with this run (default: latest)"),
     predictions: bool = typer.Option(
         True, "--predictions/--no-predictions", help="Attach pre-annotations"
     ),
@@ -1352,7 +1352,7 @@ def export_annotations(
 def report(
     project_path: Path | None = ProjectOption,
     metric: str = typer.Option("val_accuracy", help="Which metric to plot"),
-    run_id: int | None = typer.Option(
+    run_id: str | None = typer.Option(
         None, "--run", help="Detail one run instead of the history"
     ),
 ) -> None:
@@ -1417,16 +1417,30 @@ def report(
             and before <= now
         )
         delta = f"{value - seen[parent]:+.4f}" if comparable else ""
-        lineage = f"from {parent}" if parent else "[yellow]unchained[/yellow]"
+        # Whether it continued, not what from. An id is a timestamp and a
+        # host now, and two of them in one row of a table is a row of
+        # ellipses — the chain itself is what `report --run` is for.
+        lineage = "warm" if parent else "[yellow]unchained[/yellow]"
         shown = f"v{version}" if version is not None else "[dim]—[/dim]"
-        table.add_row(str(run_num), shown, f"{value:.4f}", delta, lineage)
+        table.add_row(_short(run_num), shown, f"{value:.4f}", delta, lineage)
         seen[run_num] = value
         versions[run_num] = version
     console.print(table)
 
 
+def _short(run_id) -> str:
+    """A run id without its microseconds, for showing a person.
+
+    Full ids are what everything keys on; the microseconds are the part
+    nobody reads, and a table of thirty-character strings is a table nobody
+    reads either.
+    """
+    stamp, _, host = str(run_id).partition("-")
+    return f"{stamp[:15]}-{host}" if host else str(run_id)
+
+
 def _print_run(store, run) -> None:
-    console.print(f"[bold]Run {run.id}[/bold] — {run.model} v{run.model_version}")
+    console.print(f"[bold]Run {run.short}[/bold] — {run.model} v{run.model_version}")
     version = f"v{run.dataset_version}" if run.dataset_version is not None else (
         "no dataset version — imported from before the catalog"
     )
@@ -1438,7 +1452,7 @@ def _print_run(store, run) -> None:
 
     chain = store.chain(run.id)
     if len(chain) > 1:
-        console.print(f"  continues: {' -> '.join(str(r.id) for r in chain)}")
+        console.print(f"  continues: {' -> '.join(r.short for r in chain)}")
     else:
         console.print("  unchained — continues nothing in the store")
 

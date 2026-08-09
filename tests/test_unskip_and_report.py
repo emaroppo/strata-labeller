@@ -99,7 +99,7 @@ def test_unskip_with_nothing_skipped_says_so(workspace):
 
 def a_run(store, **overrides) -> Run:
     base = dict(
-        id=0,
+        id="",
         dataset="demo",
         dataset_version=1,
         label_set="demo",
@@ -132,8 +132,8 @@ def test_report_needs_a_run_store(project, tmp_path, monkeypatch):
 
 def test_report_lists_the_history(runs):
     project, store = runs
-    a_run(store, dataset_version=1, metrics={"val_accuracy": 0.80})
-    a_run(store, dataset_version=2, parent_run_id=1, metrics={"val_accuracy": 0.85})
+    first = a_run(store, dataset_version=1, metrics={"val_accuracy": 0.80})
+    a_run(store, dataset_version=2, parent_run_id=first.id, metrics={"val_accuracy": 0.85})
     result = report_cmd(project)
     assert result.exit_code == 0
     assert "0.8000" in result.stdout and "0.8500" in result.stdout
@@ -141,8 +141,8 @@ def test_report_lists_the_history(runs):
 
 def test_a_change_is_shown_only_against_a_run_s_own_parent(runs):
     project, store = runs
-    a_run(store, dataset_version=1, metrics={"val_accuracy": 0.80})
-    a_run(store, dataset_version=2, parent_run_id=1, metrics={"val_accuracy": 0.85})
+    first = a_run(store, dataset_version=1, metrics={"val_accuracy": 0.80})
+    a_run(store, dataset_version=2, parent_run_id=first.id, metrics={"val_accuracy": 0.85})
     a_run(store, dataset_version=2, metrics={"val_accuracy": 0.60})  # cold
     result = report_cmd(project)
     # One delta, for the one pair that continues each other
@@ -154,17 +154,18 @@ def test_no_change_across_a_version_going_backwards(runs):
     project, store = runs
     # An imported round, then the first trained on the catalog: the lineage
     # is real but the two were scored on different held-out samples
-    a_run(store, dataset_version=33, metrics={"val_accuracy": 0.877})
-    a_run(store, dataset_version=2, parent_run_id=1, metrics={"val_accuracy": 0.978})
+    first = a_run(store, dataset_version=33, metrics={"val_accuracy": 0.877})
+    a_run(store, dataset_version=2, parent_run_id=first.id,
+          metrics={"val_accuracy": 0.978})
     result = report_cmd(project)
     assert "+0.1010" not in result.stdout
-    assert "from 1" in result.stdout
+    assert "warm" in result.stdout
 
 
 def test_report_details_one_run(runs):
     project, store = runs
-    a_run(store, dataset_version=1, metrics={"val_accuracy": 0.9, "loss": 0.1})
-    result = report_cmd(project, "--run", "1")
+    run = a_run(store, dataset_version=1, metrics={"val_accuracy": 0.9, "loss": 0.1})
+    result = report_cmd(project, "--run", run.id)
     assert result.exit_code == 0
     assert "unchained" in result.stdout
     assert "0.9000" in result.stdout
@@ -172,10 +173,10 @@ def test_report_details_one_run(runs):
 
 def test_detailing_a_run_shows_its_chain(runs):
     project, store = runs
-    a_run(store, dataset_version=1)
-    a_run(store, dataset_version=2, parent_run_id=1)
-    result = report_cmd(project, "--run", "2")
-    assert "1 -> 2" in result.stdout
+    first = a_run(store, dataset_version=1)
+    second = a_run(store, dataset_version=2, parent_run_id=first.id)
+    result = report_cmd(project, "--run", second.id)
+    assert f"{first.short} -> {second.short}" in result.stdout
 
 
 def test_an_unknown_metric_suggests_another(runs):

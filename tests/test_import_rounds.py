@@ -133,11 +133,17 @@ def test_an_imported_round_records_no_dataset_version(with_rounds, tmp_path):
     assert [r.dataset_version for r in runs] == [None, None]
 
 
-def test_the_round_number_survives_as_the_run_id(with_rounds, tmp_path):
-    # Rounds are imported in order into an empty store, so nothing is lost
+def test_rounds_are_imported_in_order(with_rounds, tmp_path):
+    # A round number was never a run id — it lined up only because ids
+    # autoincremented. What has to survive is the order they happened in.
     project = with_rounds(3)
     store = RunStore.local(tmp_path / "runs")
-    assert [r.id for r in import_rounds(project, store).runs] == [1, 2, 3]
+
+    ids = [r.id for r in import_rounds(project, store).runs]
+
+    assert len(ids) == 3
+    assert ids == sorted(ids)
+    assert len(set(ids)) == 3
 
 
 # ----------------------------------------------------------------------

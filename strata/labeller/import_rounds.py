@@ -79,7 +79,7 @@ def import_rounds(
 
         run = store.record(
             Run(
-                id=0,
+                id="",
                 parent_run_id=previous.id if (chain and previous) else None,
                 dataset=project.dataset_name,
                 dataset_version=None,

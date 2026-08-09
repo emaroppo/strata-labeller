@@ -89,7 +89,7 @@ def ready(project, tmp_path):
 def test_a_round_trains_and_records_a_run(ready):
     project, catalog = ready()
     result = run_round(project, catalog)
-    assert result.run.id > 0
+    assert result.run.id
     assert result.run.checkpoint.exists()
 
 

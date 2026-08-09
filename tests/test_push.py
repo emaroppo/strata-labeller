@@ -67,7 +67,7 @@ def stage(make_project, tmp_path, monkeypatch):
     store = RunStore.local(project.runs_dir)
     run = store.record(
         Run(
-            id=0, dataset="demo", dataset_version=1, label_set="demo",
+            id="", dataset="demo", dataset_version=1, label_set="demo",
             model="multilabel", model_version="1", classes=["cat", "dog"],
         ),
         {"val_accuracy": 0.9},
