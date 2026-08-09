@@ -80,3 +80,20 @@ def select_for_review(
     if n is not None:
         ranked = ranked[:n]
     return ranked
+
+
+def rank(samples, scores, strategy=None):
+    """Order a review pool, least confident first, dropping the unscored.
+
+    Separate from the command because this is where the wiring meets: three
+    producers of predictions — a cache, a local handler, a remote host — and
+    a ranking that sorts on whatever they agree to hand over. They have to
+    agree, and nothing here can tell whether they do.
+
+    A sample nobody scored is left out rather than sorted on a default. Its
+    place in a queue that claims to be least-confident-first would be a
+    fiction, and the sample is still unlabelled, so it comes back next time.
+    """
+    strategy = strategy or least_confident
+    scored = [s for s in samples if s.checksum in scores]
+    return sorted(scored, key=lambda s: strategy(scores[s.checksum]), reverse=True)

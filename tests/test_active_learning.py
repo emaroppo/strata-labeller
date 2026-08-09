@@ -67,3 +67,50 @@ def test_the_threshold_and_the_limit_compose():
         prediction("c.jpg", 0.95, 0.05),
     ]
     assert [p.path for p in select_for_review(predictions, n=1, threshold=0.5)] == ["a.jpg"]
+
+
+# ----------------------------------------------------------------------
+# Ranking a pool
+# ----------------------------------------------------------------------
+
+
+class Sample:
+    def __init__(self, sample_id, checksum):
+        self.id = sample_id
+        self.checksum = checksum
+
+
+def scored(*confidences):
+    from strata.labels import ChoicesPrediction
+
+    return ChoicesPrediction(
+        values=["a"] * len(confidences), confidences=list(confidences)
+    )
+
+
+def test_least_confident_comes_first():
+    from strata.labeller.active_learning import rank
+
+    pool = [Sample(1, "a" * 64), Sample(2, "b" * 64), Sample(3, "c" * 64)]
+    order = rank(
+        pool,
+        {"a" * 64: scored(0.99), "b" * 64: scored(0.51), "c" * 64: scored(0.80)},
+    )
+    # What the model committed to least is what a human settles fastest
+    assert [s.id for s in order] == [2, 3, 1]
+
+
+def test_an_unscored_sample_is_left_out():
+    from strata.labeller.active_learning import rank
+
+    pool = [Sample(1, "a" * 64), Sample(2, "b" * 64)]
+    order = rank(pool, {"a" * 64: scored(0.9)})
+    # Its place in a queue claiming to be least-confident-first would be a
+    # fiction; it is still unlabelled, so it comes back next time
+    assert [s.id for s in order] == [1]
+
+
+def test_nothing_scored_ranks_nothing():
+    from strata.labeller.active_learning import rank
+
+    assert rank([Sample(1, "a" * 64)], {}) == []

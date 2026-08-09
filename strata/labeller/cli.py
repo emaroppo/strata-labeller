@@ -806,6 +806,32 @@ def train(
     console.print(f"  checkpoint: {result.run.checkpoint}")
 
 
+def _run_for_push(settings, project, store, run_id, remote: bool):
+    """Which run scores this push, in the numbering of whoever will score it.
+
+    Run ids belong to the store that issued them. Asking a modelling host to
+    predict with a local run id names a different model there, or none —
+    silently, since both stores number from one.
+    """
+    if not remote:
+        run = store.get(run_id) if run_id else store.latest(project.dataset_name)
+        if run is None or not run.checkpoint:
+            return None
+        return {"id": run.id}
+
+    from .remote import RemoteError, Trainer
+
+    trainer = Trainer(settings.modelling.url, settings.modelling.token)
+    try:
+        if run_id:
+            return {"id": run_id}
+        found = trainer.latest_run(project.dataset_name)
+    except RemoteError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+    return {"id": found["run"]["id"]} if found else None
+
+
 def _remote_predictions(settings, run_id: int, checksums: list[str]) -> dict:
     """Score a review pool on the host that has the GPU and the blobs.
 
@@ -1006,7 +1032,7 @@ def push(
     from strata.modelling import PredictRequest, RunStore
     from strata.modelling import predict as run_predict
 
-    from .active_learning import least_confident
+    from .active_learning import rank
     from .adapter import prediction_to_results
     from .predictions import PredictionCache
     from .sync import load_task_map, rebuild_task_map, save_task_map, tasks_to_push
@@ -1045,53 +1071,46 @@ def push(
 
     ranked, scored = pool, {}
     store = RunStore.local(project.runs_dir)
-    run = store.get(run_id) if run_id else store.latest(project.dataset_name)
+    remote = bool(settings.modelling.url)
 
-    if predictions and run is not None and run.checkpoint:
-        # Ranking needs a score for every unlabelled sample, not only the
-        # ones about to be shown, so a push costs a full inference pass.
-        # A checkpoint and some bytes give one answer, so the pass a
-        # previous push already made is worth keeping.
-        cache = PredictionCache.local(project.runs_dir)
-        cached = cache.get(run.id, [s.checksum for s in pool])
-        missing = [s for s in pool if s.checksum not in cached]
+    # Everything below deals in checksum -> ChoicesPrediction. The local
+    # handler returns a Prediction wrapping one, and unwrapping it in some
+    # places but not others is how a cache came to hold values that read
+    # back empty.
+    scores: dict[str, object] = {}
+    run = _run_for_push(settings, project, store, run_id, remote)
 
-        if cached:
-            console.print(
-                f"[dim]{len(cached):,} prediction(s) reused from run {run.id}; "
-                f"{len(missing):,} to make[/dim]"
-            )
-        if missing and settings.modelling.url:
-            made = _remote_predictions(settings, run.id, [s.checksum for s in missing])
-        elif missing:
-            with console.status(f"Predicting with run {run.id}..."):
-                fresh = run_predict(
-                    PredictRequest(
-                        run_id=run.id,
-                        paths=_local_paths(catalog_root, missing),
-                    ),
-                    store,
-                )
-            made = dict(zip((s.checksum for s in missing), fresh, strict=True))
+    if predictions and run is not None:
+        checksums = [s.checksum for s in pool]
+        if remote:
+            # The host keeps its own cache, keyed on its own run ids — which
+            # is the only place that key means anything.
+            scores = _remote_predictions(settings, run["id"], checksums)
         else:
-            made = {}
+            from strata.modelling import PredictionCache
 
-        if made:
-            cache.put(run.id, made)
-            cached.update(made)
-        # A sample the host could not score has no place in a ranking that
-        # claims to be least-confident-first
-        pool = [s for s in pool if s.checksum in cached]
+            cache = PredictionCache.local(project.runs_dir)
+            scores = cache.get(run["id"], checksums)
+            missing = [s for s in pool if s.checksum not in scores]
+            if scores:
+                console.print(
+                    f"[dim]{len(scores):,} prediction(s) reused from run "
+                    f"{run['id']}; {len(missing):,} to make[/dim]"
+                )
+            if missing:
+                with console.status(f"Predicting with run {run['id']}..."):
+                    fresh = run_predict(
+                        PredictRequest(
+                            run_id=run["id"], paths=_local_paths(catalog_root, missing)
+                        ),
+                        store,
+                    )
+                made = {s.checksum: p.value for s, p in zip(missing, fresh, strict=True)}
+                cache.put(run["id"], made)
+                scores.update(made)
 
-        # Keyed by id rather than by the row, which says what the mapping
-        # is really on and does not depend on a row being hashable
-        by_sample = {s.id: cached[s.checksum] for s in pool}
-        # Least confident first: what the model committed to least is what a
-        # human settles fastest
-        ranked = sorted(
-            pool, key=lambda s: least_confident(by_sample[s.id].value), reverse=True
-        )
-        scored = {s.id: by_sample[s.id].value for s in pool}
+        ranked = rank(pool, scores)
+        scored = {s.id: scores[s.checksum] for s in ranked}
     elif predictions:
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
 

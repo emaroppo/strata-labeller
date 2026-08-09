@@ -100,6 +100,17 @@ class Trainer:
             "/predict", {"run_id": run_id, "checksums": checksums}, timeout=120
         )
 
+    def latest_run(self, dataset: str) -> dict | None:
+        """The newest run there, or None. Its numbering, not this machine's."""
+        from urllib.parse import quote
+
+        try:
+            return self._call(f"/runs/latest?dataset={quote(dataset)}", timeout=30)
+        except Refused as e:
+            if "No runs over" in str(e):
+                return None
+            raise
+
     def job(self, job_id: str) -> dict:
         """How a round is getting on."""
         return self._call(f"/jobs/{job_id}", timeout=30)
