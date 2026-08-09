@@ -1044,7 +1044,6 @@ def push(
 
     from .active_learning import certainty, rank
     from .adapter import prediction_to_results
-    from .predictions import PredictionCache
     from .sync import load_task_map, rebuild_task_map, save_task_map, tasks_to_push
 
     project = _load_project(project_path)
