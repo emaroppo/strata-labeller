@@ -64,14 +64,20 @@ def set_kind(project, kind: str) -> Project:
     return Project.load(project.root)
 
 
-def test_data_kind_defaults_to_images(project):
-    assert project.data.kind == "images"
+def test_a_project_names_its_sample_type(project):
+    assert project.data.type == "image"
+    assert project.sample_type_name == "image"
 
 
-def test_an_unknown_data_kind_is_refused(project):
-    with pytest.raises(ProjectError, match="\\[data\\] kind must be one of"):
-        set_kind(project, "videos")
+def test_a_project_from_before_types_says_how_to_migrate(project):
+    toml = project.root / "project.toml"
+    toml.write_text(toml.read_text().replace('type = "image"', 'kind = "frames"'))
 
+    reloaded = Project.load(project.root)
+    # kind named both what a sample was and how it grouped; there is no
+    # sensible default for the first, so it says so rather than guessing
+    with pytest.raises(ProjectError, match="migrate_project_type"):
+        reloaded.sample_type_name
 
 def test_a_custom_project_must_not_declare_classes_twice(make_project):
     project = make_project("custom", template="custom", classes=[])

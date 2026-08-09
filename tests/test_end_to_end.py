@@ -11,8 +11,6 @@ It needs no ML framework: the model is nine lines and imports nothing.
 import json
 
 from strata.catalog import EVERYTHING, Catalog
-from strata.labeller.dataset import Sample, save_dataset
-from strata.labeller.to_catalog import migrate
 from strata.modelling import PredictRequest, RunStore, TrainRequest, predict, train
 
 
@@ -52,24 +50,33 @@ class Toy(Model):
 
 def test_a_project_becomes_a_trained_run(project, tmp_path):
     # 20 files, 16 of them labelled — the shape of a project a few rounds in
-    samples = []
+    from strata.labels import Choices
+
+    paths = []
     for i in range(20):
-        relative = f"img{i:03d}.jpg"
-        (project.data_dir / relative).write_bytes(f"image {i}".encode())
-        samples.append(
-            Sample(
-                path=relative,
-                results=project.schema.encode_target(["cat" if i % 2 else "dog"]),
-                annotated=i < 16,
-            )
-        )
-    save_dataset(samples, project.dataset_path)
+        path = project.data_dir / f"img{i:03d}.jpg"
+        path.write_bytes(f"image {i}".encode())
+        paths.append(path)
 
     catalog = Catalog.local(tmp_path / "catalog")
-    report = migrate(project, catalog)
-    assert (report.ingested, report.annotated, report.unlabelled) == (20, 16, 4)
+    ids = catalog.ingest(
+        paths, media="image", metadata_for=lambda p: {"source_path": p.name}
+    )
+    label_set_id = catalog.create_label_set(
+        "demo", project.schema.catalog_schema()
+    )
+    catalog.annotate_many(
+        label_set_id,
+        [
+            (sample_id, Choices(values=["cat" if i % 2 else "dog"]))
+            for i, sample_id in enumerate(ids[:16])
+        ],
+    )
+    # Sixteen answered, four still awaiting review
+    assert len(catalog.labelled(label_set_id, EVERYTHING)) == 16
+    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 4
 
-    dataset_id = catalog.create_dataset("demo", report.label_set_id, collections=EVERYTHING)
+    dataset_id = catalog.create_dataset("demo", label_set_id, collections=EVERYTHING)
     materialised = catalog.materialise(dataset_id, tmp_path / "materialised")
     manifest = json.loads((materialised / "manifest.json").read_text())
 
@@ -86,45 +93,44 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
     # The split the catalog decided is the split the model was handed
     assert run.metrics["n_train"] + run.metrics["n_val"] == 16
 
-    queue = catalog.unlabelled(report.label_set_id, EVERYTHING)
+    queue = catalog.unlabelled(label_set_id, EVERYTHING)
     pool = [catalog.blobs.path_for(s.location) for s in queue]
     assert len(predict(PredictRequest(run_id=run.id, paths=pool), store)) == 4
 
 
 def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
-    samples = []
+    from strata.labels import Choices
+
+    paths = []
     for i in range(20):
-        relative = f"img{i:03d}.jpg"
-        (project.data_dir / relative).write_bytes(f"image {i}".encode())
-        samples.append(
-            Sample(
-                path=relative,
-                results=project.schema.encode_target(["cat"]),
-                annotated=i < 12,
-            )
-        )
-    save_dataset(samples, project.dataset_path)
+        path = project.data_dir / f"img{i:03d}.jpg"
+        path.write_bytes(f"image {i}".encode())
+        paths.append(path)
 
     catalog = Catalog.local(tmp_path / "catalog")
-    report = migrate(project, catalog)
+    ids = catalog.ingest(
+        paths, media="image", metadata_for=lambda p: {"source_path": p.name}
+    )
+    label_set_id = catalog.create_label_set("demo", project.schema.catalog_schema())
+    catalog.annotate_many(
+        label_set_id, [(i, Choices(values=["cat"])) for i in ids[:12]]
+    )
     store = RunStore.local(tmp_path / "runs")
 
     first_dir = catalog.materialise(
-        catalog.create_dataset("demo", report.label_set_id, collections=EVERYTHING), tmp_path / "v1"
+        catalog.create_dataset("demo", label_set_id, collections=EVERYTHING), tmp_path / "v1"
     )
     (first_dir / "toy.py").write_text(TOY_MODEL)
     first = train(TrainRequest(dataset_dir=first_dir, model="toy.py:Toy"), store)
     before = split_of(first_dir)
 
     # Label the rest and go round again
-    for sample in samples[12:]:
-        sample.results = project.schema.encode_target(["dog"])
-        sample.annotated = True
-    save_dataset(samples, project.dataset_path)
-    migrate(project, catalog)
+    catalog.annotate_many(
+        label_set_id, [(i, Choices(values=["dog"])) for i in ids[12:]]
+    )
 
     second_dir = catalog.materialise(
-        catalog.create_dataset("demo", report.label_set_id, collections=EVERYTHING), tmp_path / "v2"
+        catalog.create_dataset("demo", label_set_id, collections=EVERYTHING), tmp_path / "v2"
     )
     (second_dir / "toy.py").write_text(TOY_MODEL)
     second = train(

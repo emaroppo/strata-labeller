@@ -22,15 +22,17 @@ def workspace(project, tmp_path, monkeypatch):
         f'[catalog]\nroot = "{tmp_path / "catalog"}"\n'
     )
 
-    def _make(n: int = 6, folder: str = "", kind: str | None = None):
+    def _make(n: int = 6, folder: str = "", sample_type: str | None = None):
         for i in range(n):
             relative = f"{folder}/img{i:03d}.jpg" if folder else f"img{i:03d}.jpg"
             path = project.data_dir / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(f"image {i}".encode())
-        if kind:
+        if sample_type:
             toml = project.root / "project.toml"
-            toml.write_text(toml.read_text().replace('kind = "images"', f'kind = "{kind}"'))
+            toml.write_text(
+                toml.read_text().replace('type = "image"', f'type = "{sample_type}"')
+            )
         return project
 
     return _make
@@ -81,7 +83,7 @@ def test_new_files_are_picked_up_on_a_second_run(workspace, tmp_path):
 
 
 def test_frames_are_grouped_by_folder(workspace, tmp_path):
-    project = workspace(4, folder="vid1", kind="frames")
+    project = workspace(4, folder="vid1", sample_type="frames")
     run(project)
 
     catalog = catalog_at(tmp_path)
@@ -101,7 +103,7 @@ def test_plain_images_get_no_group(workspace, tmp_path):
 def test_the_source_path_is_recorded(workspace, tmp_path):
     # A blob is addressed by content, so this is the only way back to the
     # file it was read from
-    project = workspace(2, folder="vid1", kind="frames")
+    project = workspace(2, folder="vid1", sample_type="frames")
     run(project)
 
     catalog = catalog_at(tmp_path)

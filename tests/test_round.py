@@ -9,10 +9,8 @@ import json
 
 import pytest
 
-from strata.catalog import Catalog
-from strata.labeller.dataset import Sample, save_dataset
+from strata.catalog import Catalog, CatalogError
 from strata.labeller.round import RoundError, describe, run_round
-from strata.labeller.to_catalog import migrate
 
 TOY_MODEL = '''
 import json
@@ -49,23 +47,41 @@ class Toy(Model):
 '''
 
 
+def stock(project, catalog, labelled: int, total: int):
+    """Ingest files and answer some, the way a project fills a catalog."""
+    from strata.labels import Choices
+
+    paths = []
+    for i in range(total):
+        path = project.data_dir / f"img{i:03d}.jpg"
+        path.write_bytes(f"image {i}".encode())
+        paths.append(path)
+
+    ids = catalog.ingest(
+        paths, media="image", collections=project.collections,
+        metadata_for=lambda p: {"source_path": p.name},
+    )
+    try:
+        label_set_id, _ = catalog.label_set(project.label_set_name)
+    except CatalogError:
+        label_set_id = catalog.create_label_set(
+            project.label_set_name, project.schema.catalog_schema()
+        )
+    catalog.annotate_many(
+        label_set_id,
+        [
+            (sample_id, Choices(values=["cat" if i % 2 else "dog"]))
+            for i, sample_id in enumerate(ids[:labelled])
+        ],
+    )
+    return label_set_id
+
+
 @pytest.fixture
 def ready(project, tmp_path):
-    """A project migrated into a catalog, with a model it can reach."""
+    """A project with a stocked catalog and a model it can reach."""
 
     def _make(labelled: int = 16, total: int = 20, ref: str = "toy.py:Toy"):
-        samples = []
-        for i in range(total):
-            relative = f"img{i:03d}.jpg"
-            (project.data_dir / relative).write_bytes(f"image {i}".encode())
-            samples.append(
-                Sample(
-                    path=relative,
-                    results=project.schema.encode_target(["cat" if i % 2 else "dog"]),
-                    annotated=i < labelled,
-                )
-            )
-        save_dataset(samples, project.dataset_path)
         (project.root / "toy.py").write_text(TOY_MODEL)
 
         toml = project.root / "project.toml"
@@ -75,7 +91,7 @@ def ready(project, tmp_path):
 
         reloaded = Project.load(project.root)
         catalog = Catalog.local(tmp_path / "catalog")
-        migrate(reloaded, catalog)
+        stock(reloaded, catalog, labelled, total)
         return reloaded, catalog
 
     return _make
@@ -156,16 +172,8 @@ def test_labelling_more_freezes_a_new_version(ready):
     project, catalog = ready(labelled=12, total=20)
     first = run_round(project, catalog)
 
-    samples = [
-        Sample(
-            path=f"img{i:03d}.jpg",
-            results=project.schema.encode_target(["cat"]),
-            annotated=True,
-        )
-        for i in range(20)
-    ]
-    save_dataset(samples, project.dataset_path)
-    migrate(project, catalog)
+    # Everything answered, so membership changes and a new version is due
+    stock(project, catalog, labelled=20, total=20)
 
     assert run_round(project, catalog).manifest.version == first.manifest.version + 1
 
@@ -174,16 +182,8 @@ def test_versions_are_written_side_by_side(ready):
     project, catalog = ready(labelled=12, total=20)
     run_round(project, catalog)
 
-    samples = [
-        Sample(
-            path=f"img{i:03d}.jpg",
-            results=project.schema.encode_target(["cat"]),
-            annotated=True,
-        )
-        for i in range(20)
-    ]
-    save_dataset(samples, project.dataset_path)
-    migrate(project, catalog)
+    # Everything answered, so membership changes and a new version is due
+    stock(project, catalog, labelled=20, total=20)
     run_round(project, catalog)
 
     versions = sorted(p.name for p in (project.datasets_dir / project.dataset_name).iterdir())
@@ -205,17 +205,7 @@ def test_the_split_survives_a_second_round(ready):
     before = {s.id: s.val for s in first.manifest.samples}
 
     # label the rest and go again
-    samples = []
-    for i in range(20):
-        samples.append(
-            Sample(
-                path=f"img{i:03d}.jpg",
-                results=project.schema.encode_target(["cat"]),
-                annotated=True,
-            )
-        )
-    save_dataset(samples, project.dataset_path)
-    migrate(project, catalog)
+    stock(project, catalog, labelled=20, total=20)
 
     second = run_round(project, catalog)
     after = {s.id: s.val for s in second.manifest.samples}
@@ -286,33 +276,48 @@ def test_the_summary_names_the_run_it_continued(ready):
 
 
 def test_an_unreachable_ratio_is_called_out(project, tmp_path):
-    # Two videos cannot hold out 20% of themselves, and a val figure read
-    # without knowing that is misleading
-    samples = []
-    for i in range(20):
-        relative = f"vid{i // 10}/f{i:03d}.jpg"
-        (project.data_dir / relative).parent.mkdir(parents=True, exist_ok=True)
-        (project.data_dir / relative).write_bytes(f"image {i}".encode())
-        samples.append(
-            Sample(
-                path=relative,
-                results=project.schema.encode_target(["cat"]),
-                annotated=True,
-            )
-        )
-    save_dataset(samples, project.dataset_path)
+    """Two videos cannot hold out 20% of themselves.
+
+    A val figure read without knowing that is misleading, so the round says
+    what grouping actually allowed.
+    """
+    from strata.labels import Choices
+
     (project.root / "toy.py").write_text(TOY_MODEL)
     toml = project.root / "project.toml"
     toml.write_text(
         toml.read_text()
         .replace('ref = "multilabel"', 'ref = "toy.py:Toy"')
-        .replace('kind = "images"', 'kind = "frames"')
+        .replace('type = "image"', 'type = "frames"')
     )
     from strata.labeller.project import Project
 
     reloaded = Project.load(project.root)
     catalog = Catalog.local(tmp_path / "catalog")
-    migrate(reloaded, catalog)
+
+    # Two folders, ten frames each: a group is indivisible, so the split can
+    # only ever be half and half
+    ids = []
+    for video in range(2):
+        paths = []
+        for i in range(video * 10, video * 10 + 10):
+            path = project.data_dir / f"vid{video}" / f"f{i:03d}.jpg"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"image {i}".encode())
+            paths.append(path)
+        # One group per video: a group is one call, because it is one
+        # transaction and one group_id
+        ids += catalog.ingest(
+            paths, media="image", subtype="frames",
+            group_id=f"vid{video}", collections=reloaded.collections,
+            metadata_for=lambda p: {"source_path": p.name},
+        )
+    label_set_id = catalog.create_label_set(
+        reloaded.label_set_name, reloaded.schema.catalog_schema()
+    )
+    catalog.annotate_many(
+        label_set_id, [(i, Choices(values=["cat"])) for i in ids]
+    )
 
     assert "not the 20% asked for" in "\n".join(describe(run_round(reloaded, catalog)))
 

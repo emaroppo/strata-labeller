@@ -229,7 +229,7 @@ def _warn_on_composition_drift(project: Project, catalog, schema) -> None:
     there, not to stop.
     """
     declared_media = schema.media.name
-    declared_subtype = "frames" if project.data.kind == "frames" else "plain"
+    declared_subtype = type(project.sample_type()).subtype()
     held = catalog.composition(project.collections)
     where = ", ".join(project.collections)
 
@@ -717,8 +717,6 @@ def ingest(
     """
     from strata.catalog import CatalogError
 
-    from .to_catalog import schema_for
-
     project = _load_project(project_path)
     settings = Settings.load(config_path)
     data_dir = project.data_dir
@@ -737,7 +735,9 @@ def ingest(
     try:
         label_set_id, _ = catalog.label_set(project.label_set_name)
     except CatalogError:
-        label_set_id = catalog.create_label_set(project.label_set_name, schema_for(project))
+        label_set_id = catalog.create_label_set(
+            project.label_set_name, project.schema.catalog_schema()
+        )
         console.print(f"Created label set '{project.label_set_name}'")
 
     # Everything under the root, then checked. Filtering on the way in is how
@@ -1461,65 +1461,6 @@ def _print_run(store, run) -> None:
         for name, value in sorted(run.metrics.items()):
             table.add_row(name, f"{value:.4f}")
         console.print(table)
-
-
-@app.command(name="to-catalog")
-def to_catalog(
-    project_path: Path | None = ProjectOption,
-    catalog_root: Path = typer.Option(
-        Path("catalog"), "--catalog", help="Where the catalog lives (created if absent)"
-    ),
-    label_set: str | None = typer.Option(
-        None, "--label-set", help="Name for the label set (default: the project's name)"
-    ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Report without writing anything"),
-) -> None:
-    """Move this project's dataset.json into a catalog.
-
-    One direction, and safe to repeat: samples are addressed by content and
-    annotations are upserted, so a run that stopped halfway can just be run
-    again. Nothing about the project is modified.
-    """
-    from strata.catalog import Catalog
-
-    from .to_catalog import MigrationError, describe, migrate
-
-    project = _load_project(project_path)
-    if not project.dataset_path.exists():
-        console.print(f"[red]No dataset at {project.dataset_path}[/red]")
-        raise typer.Exit(1)
-
-    catalog = None if dry_run else Catalog.local(catalog_root)
-    try:
-        if dry_run:
-            report = migrate(project, catalog, label_set=label_set, dry_run=True)
-        else:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                MofNCompleteColumn(),
-                TimeElapsedColumn(),
-                TimeRemainingColumn(),
-                console=console,
-            ) as progress:
-                task = progress.add_task("Migrating", total=None)
-
-                def advance(done: int, total: int) -> None:
-                    # Total is only known once the files have been resolved,
-                    # so the bar starts indeterminate and settles
-                    progress.update(task, completed=done, total=total)
-
-                report = migrate(
-                    project, catalog, label_set=label_set, on_progress=advance
-                )
-    except MigrationError as e:
-        console.print(f"[red]{e}[/red]")
-        raise typer.Exit(1) from None
-
-    if dry_run:
-        console.print("[yellow]Dry run — nothing was written.[/yellow]")
-    console.print(describe(report, catalog_root))
 
 
 @app.command(name="catalog-stats")

@@ -128,7 +128,6 @@ class DataSpec:
     kind: str = "images"
 
 
-DATA_KINDS = ("images", "frames")
 
 
 @dataclass
@@ -195,11 +194,7 @@ class Project:
                 f"[label_config] choice must be 'single' or 'multiple', "
                 f"got '{self.label_config.choice}'"
             )
-        if self.data.kind not in DATA_KINDS:
-            raise ProjectError(
-                f"[data] kind must be one of {', '.join(DATA_KINDS)}, "
-                f"got '{self.data.kind}'"
-            )
+
         if self.label_config.template == schemas.CUSTOM_TEMPLATE:
             if self.label_config.classes:
                 raise ProjectError(
@@ -321,18 +316,16 @@ class Project:
 
     @property
     def sample_type_name(self) -> str:
-        """Which registered type this project's files are.
-
-        Falls back to ``kind`` for a project written before types existed.
-        That setting fused two questions — what a sample is, and how it
-        groups — so the fallback has to consult the schema for the first and
-        ``kind`` only for the second.
-        """
-        if self.data.type:
-            return self.data.type
-        if self.data.kind == "frames":
-            return "frames"
-        return self.schema.media.name
+        """Which registered type this project's files are."""
+        if not self.data.type:
+            raise ProjectError(
+                "[data] type is not set. It replaces [data] kind, which named "
+                "both what a sample was and how it grouped — the reason a "
+                "satellite scene had nowhere to go. For a project written "
+                "before types:\n"
+                "  uv run python scripts/migrate_project_type.py <project>"
+            )
+        return self.data.type
 
     def sample_type(self):
         """The type itself, resolved from what is installed."""
@@ -551,8 +544,9 @@ class Project:
             +
             "\n"
             "[data]\n"
-            'root = "data/raw"  # images live here; may be an absolute path\n'
-            'kind = "images"  # "frames" for video frames, one folder per video\n'
+            'root = "data/raw"  # files live here; may be an absolute path\n'
+            f'type = "{_scaffold_type(template)}"'
+            "  # a registered sample type; see 'auto-labeller types'\n"
             "\n"
             "[model]\n"
             '# "model.py:MyModel" to use a model carried by this project\n'
@@ -572,6 +566,17 @@ class Project:
             "[label_studio]\n"
         )
         return cls.load(root)
+
+
+def _scaffold_type(template: str) -> str:
+    """Which sample type a new project starts with.
+
+    From the template's media, because that is what the person choosing a
+    template was saying. Anything more specific — frames, satellite scenes —
+    is a change they make deliberately, since it decides how samples group.
+    """
+    spec = schemas.TEMPLATES.get(template)
+    return spec.media.name if spec is not None else "image"
 
 
 def _resolve(root: Path, value: str) -> Path:

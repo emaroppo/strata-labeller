@@ -51,6 +51,16 @@ class LabelSchema(Protocol):
     from_name: str
     to_name: str
 
+    def catalog_schema(self):
+        """This schema as the catalog stores it, with Label Studio left behind.
+
+        Media does not survive the crossing: ``image_classification`` and
+        ``text_classification`` were template names, and classifying a
+        photograph and classifying a document are the same task. What a
+        sample is made of is the catalog's business, on the sample.
+        """
+        raise NotImplementedError
+
     def label_config(self) -> str:
         """The Label Studio labeling config for this schema."""
         ...

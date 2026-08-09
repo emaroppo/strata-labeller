@@ -43,6 +43,11 @@ class BBoxSchema(LabelSchema):
     def data_key(self) -> str:
         return self.media.data_key
 
+    def catalog_schema(self):
+        from strata.labels import BBoxSchema as Stored
+
+        return Stored(classes=list(self.classes))
+
     def label_config(self) -> str:
         return render_template(
             self.type,

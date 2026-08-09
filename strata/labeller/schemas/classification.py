@@ -42,6 +42,11 @@ class ClassificationSchema(LabelSchema):
     # Label Studio config
     # ------------------------------------------------------------------
 
+    def catalog_schema(self):
+        from strata.labels import ClassificationSchema as Stored
+
+        return Stored(classes=list(self.classes), multiple=self.choice != "single")
+
     def label_config(self) -> str:
         return render_template(
             self.type,
