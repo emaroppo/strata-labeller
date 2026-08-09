@@ -100,7 +100,8 @@ class CatalogSpec:
     This says what the job is, so it travels with the project.
     """
 
-    #: Defaults to the project's own name, which is what `to-catalog` writes.
+    #: Defaults to the project's own name, which is the label set `ingest`
+    #: creates.
     label_set: str = ""
     #: The dataset name versions accumulate under; defaults to the label set.
     dataset: str = ""

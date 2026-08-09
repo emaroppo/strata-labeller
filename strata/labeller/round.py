@@ -53,7 +53,7 @@ def run_round(
     except CatalogError as exc:
         raise RoundError(
             f"No label set named {project.label_set_name!r} in the catalog. "
-            f"Run 'auto-labeller to-catalog' first, or set [catalog] label_set."
+            f"Run 'auto-labeller ingest' first, or set [catalog] label_set."
         ) from exc
 
     labelled = catalog.labelled(label_set_id, project.collections)

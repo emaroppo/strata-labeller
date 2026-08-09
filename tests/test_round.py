@@ -243,7 +243,7 @@ def test_fresh_refuses_to_continue(ready):
 
 def test_a_missing_label_set_says_what_to_run(project, tmp_path):
     catalog = Catalog.local(tmp_path / "catalog")
-    with pytest.raises(RoundError, match="to-catalog"):
+    with pytest.raises(RoundError, match="ingest"):
         run_round(project, catalog)
 
 

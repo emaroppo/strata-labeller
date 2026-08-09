@@ -183,9 +183,8 @@ def _catalog_for(settings, config_path: Path, create: bool = False):
 
     if not create and not (root / "catalog.db").exists():
         _error(
-            f"No catalog at {root}. Run 'auto-labeller ingest' or "
-            f"'auto-labeller to-catalog' to make one, or point [catalog] root "
-            f"in {config_path} at an existing one."
+            f"No catalog at {root}. Run 'auto-labeller ingest' to make one, "
+            f"or point [catalog] root in {config_path} at an existing one."
         )
         raise typer.Exit(1)
     root.mkdir(parents=True, exist_ok=True)
@@ -283,8 +282,7 @@ def _label_set_for(catalog, project: Project):
     except CatalogError:
         _error(
             f"No label set named '{project.label_set_name}' in the catalog. "
-            f"Run 'auto-labeller ingest' or 'auto-labeller to-catalog', or set "
-            f"[catalog] label_set."
+            f"Run 'auto-labeller ingest', or set [catalog] label_set."
         )
         raise typer.Exit(1) from None
 
@@ -522,7 +520,7 @@ def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
     try:
         label_set_id, schema = catalog.label_set(project.label_set_name)
     except CatalogError:
-        # No label set yet: to-catalog creates it from project.toml, so the
+        # No label set yet: ingest creates it from project.toml, so the
         # classes arrive with it
         return
 
@@ -1304,9 +1302,7 @@ def export_annotations(
     """Pull corrected annotations out of Label Studio into the catalog.
 
     The catalog is what remembers; Label Studio is where the answering
-    happens. Nothing is mirrored to dataset.json any more — the only thing
-    that still reads one is to-catalog, migrating a project that predates
-    the catalog.
+    happens.
     """
     from .sync import pull_annotations
 
