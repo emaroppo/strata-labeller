@@ -1074,7 +1074,7 @@ def push(
     remote = bool(settings.modelling.url)
 
     # Everything below deals in checksum -> ChoicesPrediction. The local
-    # handler returns a Prediction wrapping one, and unwrapping it in some
+    # handler returns a ScoredPath wrapping one, and unwrapping it in some
     # places but not others is how a cache came to hold values that read
     # back empty.
     scores: dict[str, object] = {}

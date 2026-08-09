@@ -9,7 +9,7 @@ parsing it, so a config tuned by hand stays authoritative.
 import re
 from dataclasses import dataclass
 
-from .base import LabelSchema, Prediction, Result, strip_volatile
+from .base import LabelSchema, Result, strip_volatile
 from .bbox import BBoxSchema, Box, BoxOutput
 from .classification import ChoiceOutput, ClassificationSchema
 from .media import IMAGE, MEDIA, TEXT, Media
@@ -129,7 +129,6 @@ __all__ = [
     "ClassificationSchema",
     "LabelSchema",
     "Media",
-    "Prediction",
     "Span",
     "SpanOutput",
     "SpanSchema",

@@ -11,7 +11,6 @@ keeps predictions and annotations one shape and makes conversion tools
 (label-studio-converter and friends) apply directly.
 """
 
-from dataclasses import dataclass
 from string import Template
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
@@ -28,7 +27,6 @@ class TemplateSyntax(Template):
     delimiter = "@"
 
 
-@dataclass
 class Prediction:
     """A model's output for one sample, in storage form."""
 
