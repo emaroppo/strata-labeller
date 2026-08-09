@@ -138,9 +138,11 @@ def _local_paths(root: Path, samples) -> list[Path]:
         if not path.exists():
             _error(
                 f"Predicting needs the bytes as files, and {path} is not on "
-                f"this host. Push without --predictions, or run this where the "
-                f"blobs are — fetching a whole review pool out of the bucket "
-                f"to rank it is not something to do by accident."
+                f"this host. Three ways forward: set [modelling] url so a host "
+                f"that has them scores the pool, run this where the blobs are, "
+                f"or push without --predictions. Fetching a whole review pool "
+                f"out of the bucket to rank it here is not something to do by "
+                f"accident."
             )
             raise typer.Exit(1)
         paths.append(path)
