@@ -1,26 +1,16 @@
 """Classification: one or more classes for a whole sample."""
 
 import math
-from dataclasses import dataclass, field
+
+from strata.labels import Choices
 
 from .base import LabelSchema, Result, strip_volatile
 from .media import IMAGE, Media
 from .render import render_template
 
 
-@dataclass
-class ChoiceOutput:
-    """What a classifier hands back: its chosen labels and their confidence.
-
-    The model owns the decision (threshold, argmax, negative class); the
-    schema owns turning that decision into Label Studio's wire format.
-    """
-
-    labels: list[str] = field(default_factory=list)
-    confidences: list[float] = field(default_factory=list)
-
-
 class ClassificationSchema(LabelSchema):
+    value_type = Choices
     """Classes for a whole sample, whatever the sample is made of."""
 
     task = "classification"
@@ -91,19 +81,16 @@ class ClassificationSchema(LabelSchema):
         ]
 
     def encode_output(self, output) -> list[Result]:
-        # A model speaks strata.labels now, so `values`; the legacy
-        # ChoiceOutput dataclass says `labels`. Both are accepted while the
-        # adapter is being built out.
-        return self.encode_target(getattr(output, "values", None) or output.labels)
+        return self.encode_target(list(output.values))
 
     # ------------------------------------------------------------------
     # Active learning
     # ------------------------------------------------------------------
 
-    def score(self, output: ChoiceOutput) -> float:
+    def score(self, output) -> float:
         return max(output.confidences, default=0.0)
 
-    def uncertainty(self, output: ChoiceOutput) -> float:
+    def uncertainty(self, output) -> float:
         """Least-confident: the lower the top confidence, the sooner to review."""
         return 1.0 - self.score(output)
 

@@ -5,30 +5,16 @@ carries the covered substring alongside. Offsets are what matter; the text
 is kept because it makes a stored annotation readable on its own.
 """
 
-from dataclasses import dataclass, field
+from strata.labels import Span, Spans
 
 from .base import LabelSchema, Result, _confidences, strip_volatile
 from .media import TEXT, Media
 from .render import render_template
 
 
-@dataclass
-class Span:
-    label: str
-    # Character offsets into the document, end-exclusive
-    start: int
-    end: int
-    text: str = ""
-    score: float = 1.0
-
-
-@dataclass
-class SpanOutput:
-    spans: list[Span] = field(default_factory=list)
-
-
 class SpanSchema(LabelSchema):
     task = "span"
+    value_type = Spans
     control_tag = "Labels"
 
     def __init__(
@@ -97,11 +83,11 @@ class SpanSchema(LabelSchema):
         ]
 
     def encode_output(self, output) -> list[Result]:
-        return self.encode_target(getattr(output, "values", None) or output.spans)
+        return self.encode_target(list(output.values))
 
     def score(self, output) -> float:
         # As trustworthy as its least certain span; claiming nothing scores zero
-        return min(_confidences(output, "spans"), default=0.0)
+        return min(_confidences(output), default=0.0)
 
     def uncertainty(self, output) -> float:
         """Spans near the decision threshold are the informative ones.
@@ -110,7 +96,7 @@ class SpanSchema(LabelSchema):
         either contains nothing or the model missed everything, and only a
         reader settles which.
         """
-        scores = _confidences(output, "spans")
+        scores = _confidences(output)
         if not scores:
             return 1.0
         return max(1.0 - abs(s - 0.5) * 2.0 for s in scores)

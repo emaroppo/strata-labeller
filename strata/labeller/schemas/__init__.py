@@ -10,10 +10,10 @@ import re
 from dataclasses import dataclass
 
 from .base import LabelSchema, Result, strip_volatile
-from .bbox import BBoxSchema, Box, BoxOutput
-from .classification import ChoiceOutput, ClassificationSchema
+from .bbox import BBoxSchema
+from .classification import ClassificationSchema
 from .media import IMAGE, MEDIA, TEXT, Media
-from .span import Span, SpanOutput, SpanSchema
+from .span import SpanSchema
 
 CUSTOM_TEMPLATE = "custom"
 
@@ -123,14 +123,9 @@ __all__ = [
     "MEDIA",
     "TEXT",
     "BBoxSchema",
-    "Box",
-    "BoxOutput",
-    "ChoiceOutput",
     "ClassificationSchema",
     "LabelSchema",
     "Media",
-    "Span",
-    "SpanOutput",
     "SpanSchema",
     "Result",
     "SchemaError",

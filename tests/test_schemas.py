@@ -10,16 +10,18 @@ import pytest
 from strata.labeller import schemas
 from strata.labeller.schemas import (
     BBoxSchema,
-    Box,
-    BoxOutput,
-    ChoiceOutput,
     ClassificationSchema,
-    Span,
-    SpanOutput,
     SpanSchema,
     strip_volatile,
 )
 from strata.labeller.schemas.media import IMAGE, TEXT
+from strata.labels import (
+    Box,
+    BoxesPrediction,
+    ChoicesPrediction,
+    Span,
+    SpansPrediction,
+)
 
 # ----------------------------------------------------------------------
 # Classification
@@ -67,15 +69,15 @@ def test_classification_canonicalize_drops_volatile_and_foreign_results():
 
 def test_classification_score_and_uncertainty_track_the_top_confidence():
     schema = ClassificationSchema(["cat", "dog"])
-    output = ChoiceOutput(labels=["cat"], confidences=[0.7, 0.2])
+    output = ChoicesPrediction(values=["cat", "dog"], confidences=[0.7, 0.2])
     assert schema.score(output) == pytest.approx(0.7)
     assert schema.uncertainty(output) == pytest.approx(0.3)
 
 
 def test_classification_empty_output_scores_zero():
     schema = ClassificationSchema(["cat"])
-    assert schema.score(ChoiceOutput()) == 0.0
-    assert schema.uncertainty(ChoiceOutput()) == 1.0
+    assert schema.score(ChoicesPrediction()) == 0.0
+    assert schema.uncertainty(ChoicesPrediction()) == 1.0
 
 
 def test_classes_in_use_reports_only_what_appears():
@@ -135,20 +137,25 @@ def test_bbox_canonicalize_keeps_the_geometry_fields():
 
 def test_bbox_uncertainty_peaks_at_the_threshold_and_on_an_empty_prediction():
     schema = BBoxSchema(["cat"])
-    assert schema.uncertainty(BoxOutput()) == 1.0
-    borderline = BoxOutput(boxes=[Box("cat", 0, 0, 1, 1, score=0.5)])
+    assert schema.uncertainty(BoxesPrediction()) == 1.0
+    whole = Box(label="cat", x=0, y=0, width=1, height=1)
+    borderline = BoxesPrediction(values=[whole], confidences=[0.5])
     assert schema.uncertainty(borderline) == pytest.approx(1.0)
-    confident = BoxOutput(boxes=[Box("cat", 0, 0, 1, 1, score=1.0)])
+    confident = BoxesPrediction(values=[whole], confidences=[1.0])
     assert schema.uncertainty(confident) == pytest.approx(0.0)
 
 
 def test_bbox_scores_as_its_weakest_box():
     schema = BBoxSchema(["cat"])
-    output = BoxOutput(
-        boxes=[Box("cat", 0, 0, 1, 1, score=0.9), Box("dog", 0, 0, 1, 1, score=0.4)]
+    output = BoxesPrediction(
+        values=[
+            Box(label="cat", x=0, y=0, width=1, height=1),
+            Box(label="dog", x=0, y=0, width=1, height=1),
+        ],
+        confidences=[0.9, 0.4],
     )
     assert schema.score(output) == pytest.approx(0.4)
-    assert schema.score(BoxOutput()) == 0.0
+    assert schema.score(BoxesPrediction()) == 0.0
 
 
 # ----------------------------------------------------------------------
@@ -172,7 +179,11 @@ def test_span_offsets_recover_the_source_text():
 def test_span_decode_sorts_into_reading_order():
     schema = SpanSchema(["X"])
     encoded = schema.encode_target(
-        [Span("X", 10, 12, "th"), Span("X", 0, 3, "Ada"), Span("X", 10, 11, "t")]
+        [
+            Span(label="X", start=10, end=12, text="th"),
+            Span(label="X", start=0, end=3, text="Ada"),
+            Span(label="X", start=10, end=11, text="t"),
+        ]
     )
     decoded = schema.decode_target(encoded)
     assert [(s.start, s.end) for s in decoded] == [(0, 3), (10, 11), (10, 12)]
@@ -182,13 +193,16 @@ def test_span_uncertainty_treats_finding_nothing_as_maximally_uncertain():
     schema = SpanSchema(["X"])
     # Either the document contains nothing or the model missed everything,
     # and only a reader settles which
-    assert schema.uncertainty(SpanOutput()) == 1.0
-    assert schema.score(SpanOutput()) == 0.0
+    assert schema.uncertainty(SpansPrediction()) == 1.0
+    assert schema.score(SpansPrediction()) == 0.0
 
 
 def test_span_classes_in_use_ignores_unlabelled_spans():
     schema = SpanSchema(["PERSON", "PLACE"])
-    stored = schema.encode_target([Span("PERSON", 0, 3, "Ada"), Span("", 4, 7, "met")])
+    stored = schema.encode_target([
+            Span(label="PERSON", start=0, end=3, text="Ada"),
+            Span(label="", start=4, end=7, text="met"),
+        ])
     assert schema.classes_in_use([stored]) == ["PERSON"]
 
 

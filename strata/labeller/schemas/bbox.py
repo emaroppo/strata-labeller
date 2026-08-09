@@ -6,7 +6,7 @@ the original pixel dimensions. Models work in fractions of the image
 else.
 """
 
-from dataclasses import dataclass, field
+from strata.labels import Box, Boxes
 
 from .base import LabelSchema, Result, _confidences, strip_volatile
 from .media import IMAGE, Media
@@ -16,25 +16,11 @@ from .render import render_template
 GEOMETRY_FIELDS = ("original_width", "original_height", "image_rotation")
 
 
-@dataclass
-class Box:
-    label: str
-    # Fractions of the image, top-left origin
-    x: float
-    y: float
-    width: float
-    height: float
-    rotation: float = 0.0
-    score: float = 1.0
-
-
-@dataclass
-class BoxOutput:
-    boxes: list[Box] = field(default_factory=list)
-
-
 class BBoxSchema(LabelSchema):
     task = "bbox"
+    #: What an annotation of this type is, so the boundary builds the value
+    #: the catalog stores rather than one of its own.
+    value_type = Boxes
     control_tag = "RectangleLabels"
 
     def __init__(
@@ -109,12 +95,12 @@ class BBoxSchema(LabelSchema):
         ]
 
     def encode_output(self, output) -> list[Result]:
-        return self.encode_target(getattr(output, "values", None) or output.boxes)
+        return self.encode_target(list(output.values))
 
     def score(self, output) -> float:
         # A detection is only as trustworthy as its weakest box; an empty
         # prediction claims nothing, so it scores zero
-        return min(_confidences(output, "boxes"), default=0.0)
+        return min(_confidences(output), default=0.0)
 
     def uncertainty(self, output) -> float:
         """Boxes sitting near the decision threshold are the informative ones.
@@ -123,7 +109,7 @@ class BBoxSchema(LabelSchema):
         model found nothing, or it missed everything, and only a human
         settles which.
         """
-        scores = _confidences(output, "boxes")
+        scores = _confidences(output)
         if not scores:
             return 1.0
         return max(1.0 - abs(s - 0.5) * 2.0 for s in scores)

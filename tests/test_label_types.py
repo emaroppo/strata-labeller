@@ -25,21 +25,6 @@ from strata.labels import (
     SpansPrediction,
 )
 
-#: Spans and boxes do not round trip through Label Studio yet, and the
-#: reason is structural rather than a bug to patch: `strata.labels` and
-#: `strata.labeller.schemas` each define their own Box and Span — the second
-#: a dataclass predating the first. Encoding works by duck typing on
-#: matching attribute names; decoding returns the schema's own type, which
-#: the catalog cannot store. `adapter.from_results` then builds a Choices
-#: whatever the schema was.
-#:
-#: strict, so these turn into failures the day the types are unified rather
-#: than sitting green and forgotten.
-UNUNIFIED = pytest.mark.xfail(
-    strict=True,
-    reason="labels and the Label Studio schemas define separate Box/Span types",
-)
-
 
 class TestChoices(LabelTypeConformance):
     @pytest.fixture
@@ -60,14 +45,6 @@ class TestChoices(LabelTypeConformance):
 
 
 class TestSpans(LabelTypeConformance):
-    @UNUNIFIED
-    def test_an_annotation_round_trips_through_label_studio(self, ls_schema, value):
-        super().test_an_annotation_round_trips_through_label_studio(ls_schema, value)
-
-    @UNUNIFIED
-    def test_a_prediction_encodes_for_label_studio(self, ls_schema, prediction):
-        super().test_a_prediction_encodes_for_label_studio(ls_schema, prediction)
-
     @pytest.fixture
     def schema(self):
         return SpanSchema(classes=["name", "place"])
@@ -88,14 +65,6 @@ class TestSpans(LabelTypeConformance):
 
 
 class TestBoxes(LabelTypeConformance):
-    @UNUNIFIED
-    def test_an_annotation_round_trips_through_label_studio(self, ls_schema, value):
-        super().test_an_annotation_round_trips_through_label_studio(ls_schema, value)
-
-    @UNUNIFIED
-    def test_a_prediction_encodes_for_label_studio(self, ls_schema, prediction):
-        super().test_a_prediction_encodes_for_label_studio(ls_schema, prediction)
-
     @pytest.fixture
     def schema(self):
         return BBoxSchema(classes=["cat", "dog"])

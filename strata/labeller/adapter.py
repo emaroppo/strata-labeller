@@ -19,7 +19,7 @@ from urllib.parse import quote, unquote, urlparse
 
 from strata.catalog import Catalog, SampleRow, blob_path
 from strata.catalog.signing import DEFAULT_TTL, sign, window_expiry
-from strata.labels import Choices, Prediction
+from strata.labels import AnyValue, Choices, Prediction
 
 from .schemas import LabelSchema
 
@@ -41,14 +41,19 @@ def to_results(value: Choices, schema: LabelSchema) -> list[dict]:
     return schema.encode_target(list(value.values))
 
 
-def from_results(results: list[dict], schema: LabelSchema) -> Choices:
+def from_results(results: list[dict], schema: LabelSchema) -> AnyValue:
     """Label Studio results as a neutral value.
+
+    Built through the schema's own value type, so a bbox schema yields boxes
+    rather than a Choices holding objects that are not classes. Reading every
+    task type back as one of them is how a corpus annotated with boxes came
+    back empty.
 
     Note what this does with an empty list: it produces an empty value, not
     nothing. A reviewer who looked and found none of the classes present has
     answered the question, and the catalog stores that as a real annotation.
     """
-    return Choices(values=list(schema.decode_target(results)))
+    return schema.value_type(values=list(schema.decode_target(results)))
 
 
 def prediction_to_results(prediction: Prediction, schema: LabelSchema) -> list[dict]:
