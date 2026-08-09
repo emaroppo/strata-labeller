@@ -806,6 +806,45 @@ def train(
     console.print(f"  checkpoint: {result.run.checkpoint}")
 
 
+def _remote_predictions(settings, run_id: int, checksums: list[str]) -> dict:
+    """Score a review pool on the host that has the GPU and the blobs.
+
+    The same job machinery as a round, for the same reason: this is minutes
+    of work over tens of thousands of samples, and a laptop that closes
+    should not take it with it.
+    """
+    from strata.labels import ChoicesPrediction
+
+    from .remote import RemoteError, Trainer
+
+    if not settings.modelling.token:
+        _error(
+            "No token for the modelling host. Set $STRATA_MODELLING_TOKEN to "
+            "the same value it was started with."
+        )
+        raise typer.Exit(1)
+
+    trainer = Trainer(settings.modelling.url, settings.modelling.token)
+    try:
+        job = trainer.predict(run_id, checksums)
+    except RemoteError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+    console.print(f"Scoring {len(checksums):,} sample(s) as job [bold]{job['id']}[/bold]")
+    result = _follow(trainer, job["id"])
+
+    if result.get("unknown"):
+        console.print(
+            f"[yellow]{len(result['unknown']):,} sample(s) the host's catalog "
+            f"does not know — left out of the ranking[/yellow]"
+        )
+    return {
+        checksum: ChoicesPrediction.model_validate(value)
+        for checksum, value in result.get("predictions", {}).items()
+    }
+
+
 def _reattach(settings, job_id: str) -> None:
     """Pick up a round that is already running elsewhere."""
     from .remote import Trainer
@@ -1022,7 +1061,9 @@ def push(
                 f"[dim]{len(cached):,} prediction(s) reused from run {run.id}; "
                 f"{len(missing):,} to make[/dim]"
             )
-        if missing:
+        if missing and settings.modelling.url:
+            made = _remote_predictions(settings, run.id, [s.checksum for s in missing])
+        elif missing:
             with console.status(f"Predicting with run {run.id}..."):
                 fresh = run_predict(
                     PredictRequest(
@@ -1031,8 +1072,16 @@ def push(
                     ),
                     store,
                 )
-            cache.put(run.id, {s.checksum: p for s, p in zip(missing, fresh, strict=True)})
-            cached.update(dict(zip((s.checksum for s in missing), fresh, strict=True)))
+            made = dict(zip((s.checksum for s in missing), fresh, strict=True))
+        else:
+            made = {}
+
+        if made:
+            cache.put(run.id, made)
+            cached.update(made)
+        # A sample the host could not score has no place in a ranking that
+        # claims to be least-confident-first
+        pool = [s for s in pool if s.checksum in cached]
 
         # Keyed by id rather than by the row, which says what the mapping
         # is really on and does not depend on a row being hashable
