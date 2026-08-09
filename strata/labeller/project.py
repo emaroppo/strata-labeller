@@ -531,6 +531,12 @@ class Project:
             "batch_size = 16\n"
             "lr = 5e-5\n"
             "\n"
+            "# Applied over the above when a round has nothing to continue\n"
+            "# from. A cold start on an increment's schedule undertrains,\n"
+            "# and the result then reads as a baseline.\n"
+            "[model.fresh_params]\n"
+            "num_epochs = 8\n"
+            "\n"
             "[label_studio]\n"
         )
         return cls.load(root)

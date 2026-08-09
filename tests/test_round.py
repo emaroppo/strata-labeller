@@ -318,15 +318,20 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
 
 
 def with_fresh_params(project, block: str):
-    """Give the project a [model.fresh_params] section and reload it."""
+    """Replace the project's [model.fresh_params] with this and reload.
+
+    Replaced rather than appended: the scaffold now writes one, and a second
+    declaration of the same table is a TOML error rather than an override.
+    """
+    import re
+
     from strata.labeller.project import Project
 
     toml = project.root / "project.toml"
-    toml.write_text(
-        toml.read_text().replace(
-            "num_epochs = 4", f"num_epochs = 4\n\n[model.fresh_params]\n{block}"
-        )
+    text = re.sub(
+        r"\[model\.fresh_params\]\n(?:[^\[]*\n)?", "", toml.read_text()
     )
+    toml.write_text(text.rstrip("\n") + f"\n\n[model.fresh_params]\n{block}\n")
     return Project.load(project.root)
 
 
@@ -341,9 +346,28 @@ def test_a_cold_round_takes_the_fresh_params(ready):
 def test_a_warm_round_ignores_them(ready):
     project, catalog = ready()
     reloaded = with_fresh_params(project, 'note = "cold"')
+    # A first round has nothing to inherit, so it is cold whatever was
+    # asked for. Only the second is genuinely warm.
+    run_round(reloaded, catalog)
+    second = run_round(reloaded, catalog)
+
+    assert second.warm_started
     # Not overridden and not defaulted-in: params record what the project
     # asked for, and a warm round asked for nothing extra
-    assert "note" not in run_round(reloaded, catalog).run.params
+    assert "note" not in second.run.params
+
+
+def test_a_first_round_is_cold_however_it_was_asked_for(ready):
+    project, catalog = ready()
+    reloaded = with_fresh_params(project, 'note = "cold"')
+    # --fresh is a request; being cold is an outcome. They part company when
+    # nothing has trained on this dataset yet, and a cold run trained on an
+    # increment's settings is undertrained — which is what made two early
+    # baselines not baselines.
+    first = run_round(reloaded, catalog)
+
+    assert not first.warm_started
+    assert first.run.params["note"] == "cold"
 
 
 def test_fresh_params_only_override_what_they_name(ready):

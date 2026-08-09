@@ -47,15 +47,19 @@ def sent(monkeypatch):
 
 
 def test_a_round_sends_an_id_not_a_dataset(sent):
-    Trainer("http://gpu:8082", "t").submit(7, "multilabel", {"num_epochs": 4})
+    Trainer("http://gpu:8082", "t").submit(
+        7, "multilabel", {"num_epochs": 4}, {"num_epochs": 8}
+    )
 
     assert sent["url"] == "http://gpu:8082/round"
     # The host has the index and the bucket; sending it images it can fetch
-    # itself would be paying the network to avoid the network
+    # itself would be paying the network to avoid the network. Both parameter
+    # sets go because only the host knows whether it has a parent.
     assert sent["body"] == {
         "dataset_id": 7,
         "model": "multilabel",
         "params": {"num_epochs": 4},
+        "fresh_params": {"num_epochs": 8},
         "fresh": False,
     }
 

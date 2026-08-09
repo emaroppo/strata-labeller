@@ -989,7 +989,11 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     try:
         job = trainer.submit(
-            dataset_id, project.model_ref, project.model.params_for(fresh), fresh
+            dataset_id,
+            project.model_ref,
+            project.model.params,
+            project.model.fresh_params,
+            fresh,
         )
     except RemoteError as e:
         _error(str(e))

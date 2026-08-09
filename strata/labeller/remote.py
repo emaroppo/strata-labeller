@@ -82,11 +82,29 @@ class Trainer:
         """What that host can serve, which is not what this one can."""
         return self._call("/models", timeout=30).get("models", {})
 
-    def submit(self, dataset_id: int, model: str, params: dict, fresh: bool = False) -> dict:
-        """Ask for a round. Returns the job; the round runs after this returns."""
+    def submit(
+        self,
+        dataset_id: int,
+        model: str,
+        params: dict,
+        fresh_params: dict | None = None,
+        fresh: bool = False,
+    ) -> dict:
+        """Ask for a round. Returns the job; the round runs after this returns.
+
+        Both parameter sets go, because only the host knows whether it has a
+        parent to continue from — and a cold run wants the longer schedule
+        whether or not the caller asked for one.
+        """
         return self._call(
             "/round",
-            {"dataset_id": dataset_id, "model": model, "params": params, "fresh": fresh},
+            {
+                "dataset_id": dataset_id,
+                "model": model,
+                "params": params,
+                "fresh_params": fresh_params or {},
+                "fresh": fresh,
+            },
             timeout=60,
         )
 

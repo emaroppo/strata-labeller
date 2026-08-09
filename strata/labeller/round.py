@@ -76,6 +76,12 @@ def run_round(
     # The policy lives here rather than inside modelling, which is handed a
     # parent id or nothing.
     previous = None if fresh else store.latest(project.dataset_name)
+    # Asked after the parent is known, not before. --fresh is a request and
+    # being cold is an outcome; they part company when nothing has trained
+    # on this dataset yet, and a cold run then trained for as long as a warm
+    # one — which is most of why two of the early baselines were not
+    # baselines.
+    cold = previous is None
 
     run = train(
         TrainRequest(
@@ -85,7 +91,7 @@ def run_round(
             # absolute ref also resolves from anywhere, which is what a
             # request has to do once it crosses a wire.
             model=absolute(project.model_ref, project.root),
-            params=project.model.params_for(fresh),
+            params=project.model.params_for(cold),
             parent_run_id=previous.id if previous else None,
         ),
         store,
