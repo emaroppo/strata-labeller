@@ -1712,6 +1712,78 @@ def runs_merge(
         )
 
 
+@app.command(name="catalog-merge")
+def catalog_merge(
+    from_url: str = typer.Option(
+        ..., "--from", help="Index URL of the copy whose answers to fold in"
+    ),
+    apply: bool = typer.Option(
+        False, "--apply", help="Write. Without this, the merge is only reported."
+    ),
+    config_path: Path = ConfigOption,
+) -> None:
+    """Fold a copy's annotations back into this host's catalog.
+
+    For work done away from the index: take a copy with `catalog-copy`,
+    label offline, bring the answers home. Only annotations move — the
+    samples are already here, since a copy is the same corpus.
+
+    Where both sides answered the same sample differently, this catalog
+    keeps what it had and the disagreement is recorded for a person to look
+    at. Nothing is overwritten and nothing is discarded.
+
+    Reports without writing unless --apply is given. Conflicts are the
+    interesting outcome and are much easier to read before the merge than to
+    find after it.
+    """
+    from strata.catalog import Catalog, MergeError, merge_annotations
+
+    settings = Settings.load(config_path)
+    target, root = _catalog_for(settings, config_path)
+    source = Catalog.connect(from_url, _blobs_for(settings, root))
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed:,}/{task.total:,}"),
+            console=console,
+        ) as progress:
+            bar = progress.add_task("Merging", total=1)
+
+            def tick(done: int, total: int) -> None:
+                progress.update(bar, completed=done, total=total)
+
+            report = merge_annotations(source, target, dry_run=not apply, on_progress=tick)
+    except MergeError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+
+    if not report.total and not report.unknown_label_sets:
+        console.print(f"Nothing to merge from {from_url}.")
+        return
+
+    for line in report.lines():
+        console.print(f"  {line}")
+    if report.unknown_samples:
+        console.print(
+            "[yellow]Some answers are for samples this catalog has never "
+            "seen. They were ingested on the other machine after the copy "
+            "was taken; ingest those files here and merge again.[/yellow]"
+        )
+    if not apply:
+        console.print("[yellow]Nothing was written. Re-run with --apply.[/yellow]")
+        return
+    console.print(f"[green]{report.copied:,} annotation(s) merged[/green]")
+    if report.conflicted:
+        console.print(
+            f"[yellow]{report.conflicted:,} sample(s) were answered both ways. "
+            f"This catalog kept its own; the next 'push' sends them for "
+            f"review ahead of everything else.[/yellow]"
+        )
+
+
 @app.command(name="catalog-copy")
 def catalog_copy(
     to_url: str = typer.Option(..., "--to", help="Index URL to copy into"),
