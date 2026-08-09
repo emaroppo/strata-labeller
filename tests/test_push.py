@@ -24,13 +24,17 @@ from strata.modelling.requests import Run
 
 runner = CliRunner()
 
-#: Deliberately not in descending order. With the highest confidence first,
-#: `confidences[0]` and `max(confidences)` are the same number, and a test
-#: cannot tell the score a reviewer is shown from an arbitrary one.
+#: Chosen so the tests can fail. Not in descending order, because with the
+#: highest first `confidences[0]` and `max(confidences)` are the same number
+#: and nothing can tell the score a reviewer is shown from an arbitrary one.
+#: And the strategies disagree on which is worst:
+#:
+#:   least-confident (1 - max)      vague 0.60 > torn 0.50 > confident 0.05
+#:   margin (1 - gap of top two)    torn 0.99 > vague 0.65 > confident 0.07
 CONFIDENCES = {
-    "sure": [0.02, 0.95],
-    "unsure": [0.45, 0.55],
-    "middling": [0.10, 0.80],
+    "confident": [0.02, 0.95],
+    "torn": [0.49, 0.50],
+    "vague": [0.05, 0.40],
 }
 
 
@@ -147,7 +151,7 @@ def test_the_least_confident_comes_first(stage):
     # One task, and it is the sample the model was least sure of — what a
     # human settles fastest
     [task] = fake.tasks.values()
-    assert by_name["unsure"].checksum in task["data"]["image"]
+    assert by_name["vague"].checksum in task["data"]["image"]
 
 
 def test_the_score_shown_is_the_confidence_ranked_on(stage):
@@ -158,7 +162,7 @@ def test_the_score_shown_is_the_confidence_ranked_on(stage):
     [[prediction]] = fake.predictions.values()
     # Not the first confidence, which is whichever class happened to come
     # first: the number beside a task and its position have to agree
-    assert prediction["score"] == pytest.approx(0.55)
+    assert prediction["score"] == pytest.approx(0.40)
 
 
 def test_a_second_push_creates_nothing_new(stage):
@@ -196,10 +200,39 @@ def test_pushing_without_predictions_still_creates_tasks(stage):
 
 def test_a_labelled_sample_is_not_pushed_again(stage):
     project, config, fake, by_name, catalog, label_set_id = stage
-    catalog.annotate(by_name["sure"].id, label_set_id, Choices(values=["cat"]))
+    catalog.annotate(by_name["confident"].id, label_set_id, Choices(values=["cat"]))
 
     push(project, config)
 
     # Answered is not awaiting review; a queue that re-asks settled questions
     # is worse than an empty one
     assert len(fake.tasks) == 2
+
+
+def test_the_ranking_strategy_is_selectable(stage):
+    """Three uncertainties are implemented; only one was reachable.
+
+    They disagree on purpose. least-confident asks how sure the model was of
+    its best guess; margin asks whether it could tell the top two apart — a
+    model certain of two classes at once is certain about the wrong
+    question.
+    """
+    project, config, fake, by_name, _, _ = stage
+
+    push(project, config, "--limit", "1", "--strategy", "margin")
+
+    # least-confident would pick 'vague'; margin picks 'torn', whose top two
+    # are a hundredth apart. Different answers, or the flag proves nothing.
+    [task] = fake.tasks.values()
+    assert by_name["torn"].checksum in task["data"]["image"]
+
+
+def test_an_unknown_strategy_says_what_there_is(stage):
+    project, config, fake, _, _, _ = stage
+
+    result = push(project, config, "--strategy", "vibes")
+
+    assert result.exit_code == 1
+    assert "least-confident" in result.stdout
+    # Refused before anything was created, not halfway through a queue
+    assert fake.tasks == {}

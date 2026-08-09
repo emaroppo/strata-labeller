@@ -1134,6 +1134,11 @@ def push(
     rebuild_map: bool = typer.Option(
         False, "--rebuild-map", help="Re-list tasks instead of trusting the local cache"
     ),
+    strategy: str = typer.Option(
+        "least-confident",
+        "--strategy",
+        help="Which uncertainty to rank by: least-confident, margin, entropy",
+    ),
 ) -> None:
     """Send unreviewed samples to Label Studio, least confident first.
 
@@ -1143,9 +1148,16 @@ def push(
     from strata.modelling import PredictRequest, RunStore
     from strata.modelling import predict as run_predict
 
-    from .active_learning import certainty, rank
+    from .active_learning import STRATEGIES, certainty, rank
     from .adapter import prediction_to_results
     from .sync import load_task_map, rebuild_task_map, save_task_map, tasks_to_push
+
+    if strategy not in STRATEGIES:
+        _error(
+            f"Unknown strategy {strategy!r}. Available: "
+            f"{', '.join(sorted(STRATEGIES))}."
+        )
+        raise typer.Exit(1)
 
     project = _load_project(project_path)
     settings = Settings.load(config_path)
@@ -1219,7 +1231,7 @@ def push(
                 cache.put(scoring_run, made)
                 scores.update(made)
 
-        ranked = rank(pool, scores)
+        ranked = rank(pool, scores, STRATEGIES[strategy])
         scored = {s.id: scores[s.checksum] for s in ranked}
     elif predictions:
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
