@@ -806,7 +806,7 @@ def train(
     console.print(f"  checkpoint: {result.run.checkpoint}")
 
 
-def _run_for_push(settings, project, store, run_id, remote: bool):
+def _run_for_push(settings, project, store, run_id, remote: bool) -> int | None:
     """Which run scores this push, in the numbering of whoever will score it.
 
     Run ids belong to the store that issued them. Asking a modelling host to
@@ -817,7 +817,7 @@ def _run_for_push(settings, project, store, run_id, remote: bool):
         run = store.get(run_id) if run_id else store.latest(project.dataset_name)
         if run is None or not run.checkpoint:
             return None
-        return {"id": run.id}
+        return run.id
 
     from .remote import RemoteError, Trainer
 
@@ -839,7 +839,7 @@ def _run_for_push(settings, project, store, run_id, remote: bool):
             f"checkpoint, so there is nothing to predict with."
         )
         raise typer.Exit(1)
-    return {"id": found["run"]["id"]}
+    return found["run"]["id"]
 
 
 def _remote_predictions(settings, run_id: int, checksums: list[str]) -> dict:
@@ -1087,35 +1087,35 @@ def push(
     # places but not others is how a cache came to hold values that read
     # back empty.
     scores: dict[str, object] = {}
-    run = _run_for_push(settings, project, store, run_id, remote)
+    scoring_run = _run_for_push(settings, project, store, run_id, remote)
 
-    if predictions and run is not None:
+    if predictions and scoring_run is not None:
         checksums = [s.checksum for s in pool]
         if remote:
             # The host keeps its own cache, keyed on its own run ids — which
             # is the only place that key means anything.
-            scores = _remote_predictions(settings, run["id"], checksums)
+            scores = _remote_predictions(settings, scoring_run, checksums)
         else:
             from strata.modelling import PredictionCache
 
             cache = PredictionCache.local(project.runs_dir)
-            scores = cache.get(run["id"], checksums)
+            scores = cache.get(scoring_run, checksums)
             missing = [s for s in pool if s.checksum not in scores]
             if scores:
                 console.print(
                     f"[dim]{len(scores):,} prediction(s) reused from run "
-                    f"{run['id']}; {len(missing):,} to make[/dim]"
+                    f"{scoring_run}; {len(missing):,} to make[/dim]"
                 )
             if missing:
-                with console.status(f"Predicting with run {run['id']}..."):
+                with console.status(f"Predicting with run {scoring_run}..."):
                     fresh = run_predict(
                         PredictRequest(
-                            run_id=run["id"], paths=_local_paths(catalog_root, missing)
+                            run_id=scoring_run, paths=_local_paths(catalog_root, missing)
                         ),
                         store,
                     )
                 made = {s.checksum: p.value for s, p in zip(missing, fresh, strict=True)}
-                cache.put(run["id"], made)
+                cache.put(scoring_run, made)
                 scores.update(made)
 
         ranked = rank(pool, scores)
@@ -1147,10 +1147,10 @@ def push(
             ls_project_id,
             payload,
             task_map,
-            model_version=f"run-{run.id}",
+            model_version=f"run-{scoring_run}",
             replace_existing=refresh,
         )
-        console.print(f"[green]{pushed} pre-annotation(s) attached from run {run.id}[/green]")
+        console.print(f"[green]{pushed} pre-annotation(s) attached from run {scoring_run}[/green]")
 
 
 @app.command(name="export")

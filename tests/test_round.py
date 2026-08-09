@@ -36,7 +36,7 @@ class Toy(Model):
         self.classes = list(classes)
         return {"accuracy": 0.5, "n_train": float(len(train)), "n_val": float(len(val or []))}
 
-    def predict(self, paths):
+    def predict(self, paths, on_batch=None):
         return [ChoicesPrediction(values=self.classes[:1], confidences=[0.5]) for _ in paths]
 
     def save(self, path):
