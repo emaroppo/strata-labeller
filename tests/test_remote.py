@@ -61,6 +61,7 @@ def test_a_round_sends_an_id_not_a_dataset(sent):
         "params": {"num_epochs": 4},
         "fresh_params": {"num_epochs": 8},
         "fresh": False,
+        "catalog_id": None,
     }
 
 

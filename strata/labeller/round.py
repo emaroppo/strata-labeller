@@ -75,7 +75,7 @@ def run_round(
     # Warm start from the newest run over this dataset unless told otherwise.
     # The policy lives here rather than inside modelling, which is handed a
     # parent id or nothing.
-    previous = None if fresh else store.latest(project.dataset_name)
+    previous = None if fresh else store.latest(project.dataset_name, catalog.id)
     # Asked after the parent is known, not before. --fresh is a request and
     # being cold is an outcome; they part company when nothing has trained
     # on this dataset yet, and a cold run then trained for as long as a warm

@@ -89,6 +89,7 @@ class Trainer:
         params: dict,
         fresh_params: dict | None = None,
         fresh: bool = False,
+        catalog_id: str | None = None,
     ) -> dict:
         """Ask for a round. Returns the job; the round runs after this returns.
 
@@ -104,6 +105,7 @@ class Trainer:
                 "params": params,
                 "fresh_params": fresh_params or {},
                 "fresh": fresh,
+                "catalog_id": catalog_id,
             },
             timeout=60,
         )
@@ -127,12 +129,20 @@ class Trainer:
                 return None
             raise
 
-    def latest_run(self, dataset: str) -> dict | None:
-        """The newest run there, or None. Its numbering, not this machine's."""
+    def latest_run(self, dataset: str, catalog_id: str | None = None) -> dict | None:
+        """The newest run there, or None. Its numbering, not this machine's.
+
+        Scoped to a catalog when one is given: a host serving two of them
+        has two answers to "the latest run over demo", and handing back the
+        wrong one warm-starts from a model trained on other data.
+        """
         from urllib.parse import quote
 
+        query = f"dataset={quote(dataset)}"
+        if catalog_id is not None:
+            query += f"&catalog={quote(catalog_id)}"
         try:
-            return self._call(f"/runs/latest?dataset={quote(dataset)}", timeout=30)
+            return self._call(f"/runs/latest?{query}", timeout=30)
         except Refused as e:
             if "No runs over" in str(e):
                 return None

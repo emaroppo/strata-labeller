@@ -903,7 +903,9 @@ def train(
     console.print(f"  checkpoint: {result.run.checkpoint}")
 
 
-def _run_for_push(settings, project, store, run_id, remote: bool) -> int | None:
+def _run_for_push(
+    settings, project, store, run_id, remote: bool, catalog_id: str | None = None
+) -> int | None:
     """Which run scores this push, in the numbering of whoever will score it.
 
     Run ids belong to the store that issued them. Asking a modelling host to
@@ -911,7 +913,7 @@ def _run_for_push(settings, project, store, run_id, remote: bool) -> int | None:
     silently, since both stores number from one.
     """
     if not remote:
-        run = store.get(run_id) if run_id else store.latest(project.dataset_name)
+        run = store.get(run_id) if run_id else store.latest(project.dataset_name, catalog_id)
         if run is None or not run.checkpoint:
             return None
         return run.id
@@ -923,7 +925,11 @@ def _run_for_push(settings, project, store, run_id, remote: bool) -> int | None:
         # Asked for by id or not, the host is the one that knows. Checking
         # now costs one request; not checking costs a pool fetched and
         # scored before anything notices.
-        found = trainer.run(run_id) if run_id else trainer.latest_run(project.dataset_name)
+        found = (
+            trainer.run(run_id)
+            if run_id
+            else trainer.latest_run(project.dataset_name, catalog_id)
+        )
     except RemoteError as e:
         _error(str(e))
         raise typer.Exit(1) from None
@@ -1091,6 +1097,7 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
             project.model.params,
             project.model.fresh_params,
             fresh,
+            catalog.id,
         )
     except RemoteError as e:
         _error(str(e))
@@ -1200,7 +1207,7 @@ def push(
     # places but not others is how a cache came to hold values that read
     # back empty.
     scores: dict[str, object] = {}
-    scoring_run = _run_for_push(settings, project, store, run_id, remote)
+    scoring_run = _run_for_push(settings, project, store, run_id, remote, catalog.id)
 
     if predictions and scoring_run is not None:
         checksums = [s.checksum for s in pool]
