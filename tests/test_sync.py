@@ -265,3 +265,96 @@ def test_an_unrecognised_task_is_reported_not_dropped(stocked, schema):
     )
     assert items == []
     assert len(report.unrecognised) == 1
+
+
+def test_reviewed_only_keeps_back_an_answer_nobody_opened(stocked, schema):
+    """A seeded project hands its own guesses back as ground truth.
+
+    Tasks imported with annotations arrive already answered. Export writes
+    everything it finds as a human answer, so exporting part-way through a
+    review stamps the seed on every task still untouched — and a seed can
+    be very wrong: one measured here found none of the people and none of
+    the places a reviewer went on to mark.
+    """
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
+    exported = [annotated(1, blob_url(sample, "blobs"), ["cat"])]
+
+    items, report = pull_annotations(
+        exported, catalog, label_set_id, schema, ADDRESSING, ["cat"], reviewed_only=True
+    )
+    assert items == []
+    assert report.untouched == 1
+    assert report.annotated == 0
+
+
+def test_reviewed_only_takes_an_answer_somebody_worked_on(stocked, schema):
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
+    exported = [annotated(1, blob_url(sample, "blobs"), ["cat"], lead_time=42.0)]
+
+    items, report = pull_annotations(
+        exported, catalog, label_set_id, schema, ADDRESSING, ["cat"], reviewed_only=True
+    )
+    assert items == [(sample.id, Choices(values=["cat"]))]
+    assert report.untouched == 0
+
+
+def test_without_the_flag_everything_still_comes_back(stocked, schema):
+    # The default is unchanged: a project nobody seeded has no such problem
+    catalog, ids, label_set_id = stocked
+    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
+    exported = [annotated(1, blob_url(sample, "blobs"), ["cat"])]
+
+    items, _report = pull_annotations(
+        exported, catalog, label_set_id, schema, ADDRESSING, ["cat"]
+    )
+    assert items == [(sample.id, Choices(values=["cat"]))]
+
+
+def test_an_undeclared_class_is_found_whatever_kind_of_value_carries_it(tmp_path):
+    """Reading a value's `values` as class names is a classification-ism.
+
+    Spans carry their class on each labelled range, so the old check raised
+    a TypeError comparing Span objects instead of naming the class nobody
+    declared — and it raised on every span export, declared or not.
+    """
+    from strata.catalog import Catalog
+    from strata.labeller.schemas.span import SpanSchema as LSSpan
+
+    catalog = Catalog.local(tmp_path / "catalog")
+    source = tmp_path / "doc.txt"
+    source.write_text("Ada Lovelace wrote it")
+    [sample_id] = catalog.ingest([source], media="text")
+    schema = LSSpan(classes=["PER"])
+    label_set_id = catalog.create_label_set("x", schema.catalog_schema())
+    [row] = catalog.unlabelled(label_set_id, EVERYTHING)
+
+    task = ls_task(
+        1,
+        blob_url(row, "blobs"),
+        data_key="text",
+        annotations=[
+            {
+                "was_cancelled": False,
+                "lead_time": 12.0,
+                "result": [
+                    {
+                        "from_name": "label",
+                        "to_name": "text",
+                        "type": "labels",
+                        "value": {
+                            "start": 0,
+                            "end": 12,
+                            "text": "Ada Lovelace",
+                            "labels": ["NOBODY_DECLARED_THIS"],
+                        },
+                    }
+                ],
+            }
+        ],
+    )
+    _items, report = pull_annotations(
+        [task], catalog, label_set_id, schema, ADDRESSING, ["PER"]
+    )
+    assert report.undeclared == {"NOBODY_DECLARED_THIS"}

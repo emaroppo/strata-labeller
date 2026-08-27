@@ -31,6 +31,8 @@ class PushReport:
 class PullReport:
     annotated: int = 0
     skipped: int = 0
+    #: Answered in Label Studio, but by an import rather than by a person
+    untouched: int = 0
     unrecognised: list[str] = field(default_factory=list)
     undeclared: set[str] = field(default_factory=set)
 
@@ -220,6 +222,21 @@ def tasks_to_push(
 # ----------------------------------------------------------------------
 
 
+def _was_opened(annotation: dict) -> bool:
+    """Whether a person has actually been in this annotation.
+
+    Any of three marks will do. ``lead_time`` is the seconds Label Studio
+    measured; a draft means they started; ``updated_by`` means they saved.
+    An annotation that arrived through an import and was never opened
+    carries none of them.
+    """
+    return bool(
+        annotation.get("lead_time")
+        or annotation.get("draft_created_at")
+        or annotation.get("updated_by")
+    )
+
+
 def pull_annotations(
     exported: list[dict],
     catalog: Catalog,
@@ -227,16 +244,25 @@ def pull_annotations(
     schema: LabelSchema,
     addressing: Addressing,
     declared: list[str],
+    reviewed_only: bool = False,
 ) -> tuple[list[tuple[int, Choices | None]], PullReport]:
     """Turn a Label Studio export into catalog writes.
 
     A task with no annotation is left alone rather than recorded as empty:
     nobody has answered it, and writing an empty value would claim they had.
     A task marked cancelled is a skip — reviewed, nothing applicable.
+
+    ``reviewed_only`` keeps back annotations nobody has opened. It matters
+    when a project was seeded from somewhere else: those tasks arrive
+    already answered, an export writes every answer back as a human one,
+    and a partly-reviewed queue then hands back the seed's own guesses
+    stamped as ground truth. Label Studio records the time spent on an
+    annotation, and an untouched one has none.
     """
     report = PullReport()
     items: list[tuple[int, Choices | None]] = []
     known = set(declared)
+    stored = schema.catalog_schema()
 
     for task in exported:
         url = (task.get("data") or {}).get(schema.data_key, "")
@@ -251,13 +277,20 @@ def pull_annotations(
             continue
 
         annotation = annotations[0]
+        if reviewed_only and not _was_opened(annotation):
+            report.untouched += 1
+            continue
         if annotation.get("was_cancelled"):
             items.append((sample.id, None))
             report.skipped += 1
             continue
 
         value = from_results(schema.canonicalize(annotation.get("result") or []), schema)
-        report.undeclared |= set(value.values) - known
+        # Which classes a value asserts is the label type's own question,
+        # and every schema answers it — reading `values` as class names is
+        # true only for classification, where they happen to be strings.
+        # For spans they are Span objects, which do not even compare.
+        report.undeclared |= stored.classes_asserted(value) - known
         items.append((sample.id, value))
         report.annotated += 1
 

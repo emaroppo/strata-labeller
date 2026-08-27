@@ -1418,11 +1418,22 @@ def push(
 def export_annotations(
     project_path: Path | None = ProjectOption,
     config_path: Path = ConfigOption,
+    reviewed_only: bool = typer.Option(
+        False,
+        "--reviewed-only",
+        help="Keep back answers nobody has opened, from a seeded project",
+    ),
 ) -> None:
     """Pull corrected annotations out of Label Studio into the catalog.
 
     The catalog is what remembers; Label Studio is where the answering
     happens.
+
+    Everything that comes back is recorded as a human answer, which is
+    right when a person answered every task and wrong when the project was
+    seeded from somewhere else: those tasks arrive already answered, and
+    exporting halfway through a review stamps the seed's own guesses as
+    ground truth. ``--reviewed-only`` keeps back anything nobody opened.
     """
     from .sync import pull_annotations
 
@@ -1449,7 +1460,13 @@ def export_annotations(
         schema,
         _addressing(settings, _catalog_config(settings, project.catalog.name)),
         label_schema.classes,
+        reviewed_only=reviewed_only,
     )
+    if report.untouched:
+        console.print(
+            f"[yellow]{report.untouched} task(s) were answered by an import "
+            f"nobody has opened, and were left alone.[/yellow]"
+        )
 
     if report.undeclared:
         # The catalog validates against the label set, so this would fail
