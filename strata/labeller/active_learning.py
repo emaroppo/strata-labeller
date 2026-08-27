@@ -54,6 +54,12 @@ def entropy(prediction: Value) -> float:
     return -sum(s * math.log(s + 1e-10) for s in scores) if scores else 1.0
 
 
+#: How much of a review batch may be documents the model found nothing in.
+#: Not zero: a document it missed everything in is worth seeing, and only a
+#: reader can tell that from one that is genuinely empty. Not unbounded
+#: either, for the reason `rank` describes.
+DEFAULT_EMPTY_SHARE = 0.2
+
 #: Selectable by name, so a strategy can be a setting rather than an edit.
 STRATEGIES = {
     "least-confident": least_confident,
@@ -62,7 +68,11 @@ STRATEGIES = {
 }
 
 
-def rank(samples, scores, strategy=None):
+def _asserted_something(prediction: Value) -> bool:
+    return bool(getattr(prediction, "values", None))
+
+
+def rank(samples, scores, strategy=None, empty_share: float = DEFAULT_EMPTY_SHARE):
     """Order a review pool, least confident first, dropping the unscored.
 
     Separate from the command because this is where the wiring meets: three
@@ -73,10 +83,54 @@ def rank(samples, scores, strategy=None):
     A sample nobody scored is left out rather than sorted on a default. Its
     place in a queue that claims to be least-confident-first would be a
     fiction, and the sample is still unlabelled, so it comes back next time.
+
+    **Two questions, not one.** "Correct what I found" and "confirm there is
+    nothing here" are different requests, and every strategy above scores a
+    prediction with nothing in it at exactly 1.0 — so they arrive as a block
+    of ties at the very front and monopolise the queue rather than competing
+    for it. Measured on one span project: 684 documents the model found
+    nothing in took the whole of a fifty-task batch, while 12,333 documents
+    with real predictions to correct were unreachable behind them. Every one
+    of the fifty was a message of a few dozen characters that genuinely
+    contained nothing.
+
+    So they are drawn as two pools in a declared proportion. Both are still
+    ordered by the strategy; what changes is that neither can crowd the
+    other out.
+
+    This never bit classification because a classifier cannot return an
+    empty prediction — the image baseline falls back to its best guess when
+    nothing clears the threshold — so the rule was written for a case that
+    could not arise until a task could honestly assert nothing.
     """
+    if not 0.0 <= empty_share <= 1.0:
+        raise ValueError(f"empty_share is a proportion, got {empty_share}")
+
     strategy = strategy or least_confident
     scored = [s for s in samples if s.checksum in scores]
-    return sorted(scored, key=lambda s: strategy(scores[s.checksum]), reverse=True)
+    ordered = sorted(scored, key=lambda s: strategy(scores[s.checksum]), reverse=True)
+
+    found = [s for s in ordered if _asserted_something(scores[s.checksum])]
+    nothing = [s for s in ordered if not _asserted_something(scores[s.checksum])]
+    if not found or not nothing:
+        return ordered
+
+    merged, i, j = [], 0, 0
+    while i < len(found) or j < len(nothing):
+        # Take from the empty pool only while it is under its share of what
+        # has been emitted so far, so the proportion holds at every prefix
+        # rather than only over the whole list — a caller taking the top N
+        # gets the same mix as one taking all of it.
+        take_nothing = j < len(nothing) and (
+            i >= len(found) or j < empty_share * (len(merged) + 1)
+        )
+        if take_nothing:
+            merged.append(nothing[j])
+            j += 1
+        else:
+            merged.append(found[i])
+            i += 1
+    return merged
 
 
 def certainty(prediction: Value) -> float:

@@ -75,3 +75,90 @@ def test_nothing_asserted_is_no_certainty():
     from strata.labels import ChoicesPrediction
 
     assert certainty(ChoicesPrediction()) == 0.0
+
+
+
+# ----------------------------------------------------------------------
+# Two questions, not one
+# ----------------------------------------------------------------------
+
+
+def _pool(n_found: int, n_nothing: int):
+    """Predictions that assert something, and predictions that assert nothing."""
+    from strata.labels import Span, SpansPrediction
+
+    samples, scores = [], {}
+    for i in range(n_found):
+        c = f"f{i:063x}"
+        samples.append(Sample(i, c))
+        # Deliberately unsure, but not as "uncertain" as an empty one
+        scores[c] = SpansPrediction(
+            values=[Span(label="PER", start=0, end=3, text="abc")], confidences=[0.5]
+        )
+    for i in range(n_nothing):
+        c = f"e{i:063x}"
+        samples.append(Sample(1000 + i, c))
+        scores[c] = SpansPrediction(values=[], confidences=[])
+    return samples, scores
+
+
+def test_empty_predictions_do_not_take_the_whole_queue():
+    """The failure this exists for.
+
+    Every strategy scores a prediction with nothing in it at 1.0, so before
+    the pools were separated a batch came entirely from them — on one real
+    project, fifty documents of a few dozen characters each, while twelve
+    thousand with real predictions sat unreachable behind them.
+    """
+    from strata.labeller.active_learning import rank
+
+    samples, scores = _pool(n_found=100, n_nothing=100)
+    top = rank(samples, scores)[:50]
+    nothing = [s for s in top if not scores[s.checksum].values]
+    assert len(nothing) <= 12
+
+
+def test_the_share_holds_at_every_prefix():
+    """A caller taking the top N gets the same mix as one taking all of it."""
+    from strata.labeller.active_learning import rank
+
+    samples, scores = _pool(n_found=100, n_nothing=100)
+    ranked = rank(samples, scores, empty_share=0.2)
+    for cut in (5, 10, 25, 50, 100):
+        nothing = [s for s in ranked[:cut] if not scores[s.checksum].values]
+        assert len(nothing) <= cut * 0.2 + 1
+
+
+def test_nothing_is_still_reviewed_eventually():
+    # Not zero: a document the model missed everything in is worth seeing,
+    # and only a reader can tell that from one that is genuinely empty
+    from strata.labeller.active_learning import rank
+
+    samples, scores = _pool(n_found=100, n_nothing=100)
+    ranked = rank(samples, scores)
+    assert len(ranked) == 200
+    assert any(not scores[s.checksum].values for s in ranked[:20])
+
+
+def test_a_pool_of_only_empties_is_still_ordered():
+    from strata.labeller.active_learning import rank
+
+    samples, scores = _pool(n_found=0, n_nothing=5)
+    assert len(rank(samples, scores)) == 5
+
+
+def test_a_pool_with_nothing_empty_is_untouched():
+    from strata.labeller.active_learning import rank
+
+    samples, scores = _pool(n_found=5, n_nothing=0)
+    assert len(rank(samples, scores)) == 5
+
+
+def test_a_share_outside_a_proportion_is_refused():
+    import pytest
+
+    from strata.labeller.active_learning import rank
+
+    samples, scores = _pool(n_found=2, n_nothing=2)
+    with pytest.raises(ValueError, match="proportion"):
+        rank(samples, scores, empty_share=1.5)

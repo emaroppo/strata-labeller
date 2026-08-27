@@ -1270,6 +1270,15 @@ def push(
         "--strategy",
         help="Which uncertainty to rank by: least-confident, margin, entropy",
     ),
+    empty_share: float = typer.Option(
+        0.2,
+        "--empty-share",
+        help=(
+            "How much of the batch may be samples the model found nothing in. "
+            "They all score as maximally uncertain, so without a cap they take "
+            "the whole queue."
+        ),
+    ),
 ) -> None:
     """Send unreviewed samples to Label Studio, least confident first.
 
@@ -1362,7 +1371,7 @@ def push(
                 cache.put(scoring_run, made)
                 scores.update(made)
 
-        ranked = rank(pool, scores, STRATEGIES[strategy])
+        ranked = rank(pool, scores, STRATEGIES[strategy], empty_share=empty_share)
         scored = {s.id: scores[s.checksum] for s in ranked}
     elif predictions:
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
