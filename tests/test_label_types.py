@@ -46,6 +46,12 @@ class TestChoices(LabelTypeConformance):
 
 class TestSpans(LabelTypeConformance):
     @pytest.fixture
+    def media(self):
+        # Spans are character ranges in a document, so the samples carrying
+        # them are text. Driven through the catalog as images until now.
+        return "text"
+
+    @pytest.fixture
     def schema(self):
         return SpanSchema(classes=["name", "place"])
 

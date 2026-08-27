@@ -27,6 +27,8 @@ catalog, modelling and the Label Studio boundary together. A type that
 passes this is usable for a whole round.
 """
 
+import json
+
 import pytest
 from pydantic import TypeAdapter
 
@@ -100,14 +102,38 @@ class LabelTypeConformance:
         return Catalog.local(tmp_path / "catalog")
 
     @pytest.fixture
-    def sample_ids(self, catalog, tmp_path):
+    def media(self) -> str:
+        """Which media these samples are, as the catalog records it.
+
+        Defaults to images because that is what every label type was driven
+        through before this fixture existed — spans included, whose samples
+        are documents rather than pictures. A type exercised as the wrong
+        media still passes everything in this suite, which is why it went
+        unnoticed; media is read by the serving path, the Label Studio task
+        and the template that renders it.
+        """
+        return "image"
+
+    @pytest.fixture
+    def suffix(self, media) -> str:
+        """What fixture files are named.
+
+        Cosmetic to the catalog, which records the media it is told rather
+        than reading it off a filename. Kept honest anyway: a document
+        called ``.bin`` is a misleading thing to leave in a suite whose
+        whole job is fidelity.
+        """
+        return {"text": "txt"}.get(media, "bin")
+
+    @pytest.fixture
+    def sample_ids(self, catalog, tmp_path, media, suffix):
         """Two, because a group is indivisible and one cannot be split."""
         sources = []
         for i in range(2):
-            source = tmp_path / f"sample{i}.bin"
+            source = tmp_path / f"sample{i}.{suffix}"
             source.write_bytes(f"sample {i}".encode())
             sources.append(source)
-        return catalog.ingest(sources, media="image")
+        return catalog.ingest(sources, media=media)
 
     @pytest.fixture
     def sample_id(self, sample_ids):
@@ -173,6 +199,32 @@ class LabelTypeConformance:
         )
         assert manifest.label_schema == schema
         assert manifest.samples[0].value == value
+
+    def test_a_model_is_handed_the_type_it_was_annotated_with(
+        self, catalog, sample_ids, schema, value, tmp_path
+    ):
+        """The last step, and the one that was missing.
+
+        Everything above proves the value survives to a materialised
+        dataset. This proves it survives being read back out of one into the
+        targets a model trains on, which is a separate piece of code and was
+        the only layer between a reviewer and a model that nothing checked.
+        It read every value as a classification, so a span or box dataset
+        raised on the first sample and no model ever saw one.
+        """
+        from strata.modelling.handlers import _examples
+
+        label_set_id = catalog.create_label_set("x", schema)
+        for sample_id in sample_ids:
+            catalog.annotate(sample_id, label_set_id, value)
+        dataset_id = catalog.create_dataset("d", label_set_id, collections="*")
+        directory = catalog.materialise(dataset_id, tmp_path / "out")
+        manifest = json.loads((directory / MANIFEST_NAME).read_text())
+
+        train, val = _examples(directory, manifest)
+        assert train or val
+        for example in [*train, *val]:
+            assert example.target == value
 
     # ------------------------------------------------------------------
     # Between machines
