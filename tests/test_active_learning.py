@@ -162,3 +162,32 @@ def test_a_share_outside_a_proportion_is_refused():
     samples, scores = _pool(n_found=2, n_nothing=2)
     with pytest.raises(ValueError, match="proportion"):
         rank(samples, scores, empty_share=1.5)
+
+
+def test_density_ranks_by_how_much_there_is_to_check():
+    """The strategy for building a training set rather than refining one.
+
+    Uncertainty avoids dense predictions structurally for spans: a
+    document's score is its least certain span, so one carrying fifty of
+    them almost surely holds a weak one and never ranks as confident.
+    """
+    from strata.labeller.active_learning import density, rank
+    from strata.labels import Span, SpansPrediction
+
+    def pred(n):
+        return SpansPrediction(
+            values=[Span(label="PER", start=i, end=i + 1) for i in range(n)],
+            confidences=[0.9] * n,
+        )
+
+    samples = [Sample(i, f"{i:064x}") for i in range(3)]
+    scores = {samples[0].checksum: pred(1), samples[1].checksum: pred(30),
+              samples[2].checksum: pred(5)}
+    assert [s.id for s in rank(samples, scores, density)] == [1, 2, 0]
+
+
+def test_density_of_an_empty_prediction_is_nothing_to_check():
+    from strata.labeller.active_learning import density
+    from strata.labels import SpansPrediction
+
+    assert density(SpansPrediction(values=[], confidences=[])) == 0.0

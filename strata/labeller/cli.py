@@ -1268,7 +1268,11 @@ def push(
     strategy: str = typer.Option(
         "least-confident",
         "--strategy",
-        help="Which uncertainty to rank by: least-confident, margin, entropy",
+        help=(
+            "How to order the queue: least-confident, margin or entropy for "
+            "what teaches most per document; density for where a reviewer's "
+            "hour is worth most, which is the early answer"
+        ),
     ),
     empty_share: float = typer.Option(
         0.2,

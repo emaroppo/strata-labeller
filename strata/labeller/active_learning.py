@@ -54,6 +54,32 @@ def entropy(prediction: Value) -> float:
     return -sum(s * math.log(s + 1e-10) for s in scores) if scores else 1.0
 
 
+def density(prediction: Value) -> float:
+    """How much the model is asking to have checked.
+
+    The others answer "what would teach the model most per document". This
+    answers "where is a reviewer's hour worth most", and early on those are
+    not the same question at all.
+
+    Uncertainty sampling systematically avoids dense predictions, and for
+    spans it does so structurally: a document's score is its *least* certain
+    span, so anything carrying fifty of them almost surely contains one weak
+    one and can never rank as confident. Measured on one project, the pool
+    averaged 22 predicted spans a document while an uncertainty-ranked batch
+    of sixty averaged under one.
+
+    That cost is measurable. Twenty-nine dense documents reviewed by hand
+    yielded 869 spans; fifty sparse ones, the same hours later, yielded 134
+    — and retraining on them moved the score not at all.
+
+    So this ranks by how much there is to confirm. It is the right choice
+    while a training set is being built and the wrong one once it exists,
+    because a model already good at dense documents learns nothing from
+    another. Name it deliberately, and stop naming it when that turns.
+    """
+    return float(len(getattr(prediction, "values", None) or []))
+
+
 #: How much of a review batch may be documents the model found nothing in.
 #: Not zero: a document it missed everything in is worth seeing, and only a
 #: reader can tell that from one that is genuinely empty. Not unbounded
@@ -65,6 +91,7 @@ STRATEGIES = {
     "least-confident": least_confident,
     "margin": margin,
     "entropy": entropy,
+    "density": density,
 }
 
 
