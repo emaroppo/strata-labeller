@@ -1471,10 +1471,20 @@ def export_annotations(
         )
 
 
+#: What "how is it going" means per task. A model may report anything it
+#: likes alongside; this is only which one the history plots by default.
+HEADLINE_METRIC = {
+    "classification": "val_accuracy",
+    "span": "val_span_f1",
+}
+
+
 @app.command()
 def report(
     project_path: Path | None = ProjectOption,
-    metric: str = typer.Option("val_accuracy", help="Which metric to plot"),
+    metric: str | None = typer.Option(
+        None, help="Which metric to plot (default: this task's headline one)"
+    ),
     run_id: str | None = typer.Option(
         None, "--run", help="Detail one run instead of the history"
     ),
@@ -1499,6 +1509,11 @@ def report(
 
     store = RunStore.local(project.runs_dir)
 
+    # The headline number differs by task, and defaulting to the
+    # classification one meant this command reported nothing at all for a
+    # span project — every run had metrics, just not that name.
+    metric = metric or HEADLINE_METRIC.get(project.schema.task, "val_accuracy")
+
     if run_id is not None:
         run = store.get(run_id)
         if run is None:
@@ -1511,7 +1526,12 @@ def report(
     if not history:
         _error(
             f"No run recorded {metric!r} for '{project.dataset_name}'. "
-            f"Try --metric accuracy, or --run to inspect one."
+            + (
+                f"Try --metric {', --metric '.join(available)}, "
+                if (available := store.metric_names(project.dataset_name))
+                else ""
+            )
+            + "or --run to inspect one."
         )
         raise typer.Exit(1)
 
@@ -1689,10 +1709,13 @@ def catalog_stats(
         # is, not of what any one job draws from
         labelled = catalog.labelled(label_set_id, EVERYTHING)
         queue = catalog.unlabelled(label_set_id, EVERYTHING)
-        console.print(
-            f"\n[bold]{name}[/bold] — {schema.task}, "
-            f"{'multi' if schema.multiple else 'single'}-choice"
-        )
+        # Whether choices are exclusive is a classification detail. A span
+        # or bbox label set has no such notion, and reading it off one
+        # raised here rather than printing — so this command worked for
+        # every image project and for no text one.
+        multiple = getattr(schema, "multiple", None)
+        detail = "" if multiple is None else f", {'multi' if multiple else 'single'}-choice"
+        console.print(f"\n[bold]{name}[/bold] — {schema.task}{detail}")
         console.print(f"  {len(labelled)} annotated, {len(queue)} awaiting review")
 
         table = Table("Class", "Samples", box=None, pad_edge=False)
