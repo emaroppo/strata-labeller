@@ -235,6 +235,21 @@ class LabelTypeConformance:
         cache.put(1, {"a" * 64: prediction})
         assert cache.get(1, ["a" * 64])["a" * 64] == prediction
 
+    def test_a_prediction_survives_being_tied_to_its_sample(self, prediction, tmp_path):
+        """The wrapper a scoring pass returns, on the way to the ranking.
+
+        A prediction is carried out of `predict` paired with the file it was
+        made from, and that pairing is the last thing it travels in before
+        the review queue is ordered. Typed to one concrete prediction it
+        refused every other kind outright, so a scoring pass over a span or
+        box project failed after minutes of work rather than at the contract.
+        """
+        from strata.modelling import ScoredPath
+
+        scored = ScoredPath(path=tmp_path / "a.bin", value=prediction)
+        back = ScoredPath.model_validate_json(scored.model_dump_json())
+        assert back.value == prediction
+
     def test_a_prediction_survives_the_wire(self, prediction):
         from strata.modelling.service import PredictionResponse
 

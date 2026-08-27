@@ -1070,7 +1070,9 @@ def _remote_predictions(settings, run_id: str, checksums: list[str]) -> dict:
     of work over tens of thousands of samples, and a laptop that closes
     should not take it with it.
     """
-    from strata.labels import ChoicesPrediction
+    from pydantic import TypeAdapter
+
+    from strata.labels import AnyPrediction
 
     from .remote import RemoteError, Trainer
 
@@ -1096,8 +1098,12 @@ def _remote_predictions(settings, run_id: str, checksums: list[str]) -> dict:
             f"[yellow]{len(result['unknown']):,} sample(s) the host's catalog "
             f"does not know — left out of the ranking[/yellow]"
         )
+    # Through the union: a remote scoring pass returns whatever the task
+    # emits, and reading spans as choices parses to an empty value rather
+    # than failing — which would rank the queue by nothing at all.
+    prediction = TypeAdapter(AnyPrediction)
     return {
-        checksum: ChoicesPrediction.model_validate(value)
+        checksum: prediction.validate_python(value)
         for checksum, value in result.get("predictions", {}).items()
     }
 
