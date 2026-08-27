@@ -54,30 +54,50 @@ def entropy(prediction: Value) -> float:
     return -sum(s * math.log(s + 1e-10) for s in scores) if scores else 1.0
 
 
-def density(prediction: Value) -> float:
-    """How much the model is asking to have checked.
+#: A span the model is this sure of is usually right enough to confirm at a
+#: glance. Below it, checking costs about what marking from scratch does.
+CONFIDENT = 0.9
+
+
+def density(prediction: Value, threshold: float = CONFIDENT) -> float:
+    """How much the model is asking to have *confirmed*.
 
     The others answer "what would teach the model most per document". This
     answers "where is a reviewer's hour worth most", and early on those are
-    not the same question at all.
+    not the same question.
 
-    Uncertainty sampling systematically avoids dense predictions, and for
-    spans it does so structurally: a document's score is its *least* certain
-    span, so anything carrying fifty of them almost surely contains one weak
-    one and can never rank as confident. Measured on one project, the pool
-    averaged 22 predicted spans a document while an uncertainty-ranked batch
-    of sixty averaged under one.
+    Uncertainty sampling avoids dense predictions, and for spans it does so
+    structurally: a document scores as its *least* certain span, so anything
+    carrying fifty of them almost surely holds a weak one and can never rank
+    as confident. Measured on one project, the pool averaged 22 predicted
+    spans a document while an uncertainty-ranked batch of sixty averaged
+    under one — and reviewing those sparse ones yielded a tenth of the
+    training signal per hour that dense ones had.
 
-    That cost is measurable. Twenty-nine dense documents reviewed by hand
-    yielded 869 spans; fifty sparse ones, the same hours later, yielded 134
-    — and retraining on them moved the score not at all.
+    **Counting every span was the wrong measure**, and the first version of
+    this did. It selected the documents the model was most wrong about: the
+    densest was 400 spans across 3,896 characters, one per ten, including a
+    hundred and ten phone numbers in a political email and organisations cut
+    to "Campaign" and "federal". Deleting a wrong span costs what marking a
+    missing one does, so that batch would have been slower than a blank page.
 
-    So this ranks by how much there is to confirm. It is the right choice
-    while a training set is being built and the wrong one once it exists,
-    because a model already good at dense documents learns nothing from
-    another. Name it deliberately, and stop naming it when that turns.
+    Confidence separates the two cleanly. In that document only 37 spans
+    cleared 0.9; ranking on the confident ones instead puts forward a
+    document with 221 spans of which 187 are confident. Same idea, and it
+    stops rewarding a model for guessing more.
+
+    Right while a training set is being built, wrong once it exists: a model
+    already good at these documents learns nothing from another. Name it
+    deliberately, and stop naming it when that turns.
     """
-    return float(len(getattr(prediction, "values", None) or []))
+    confidences = _confidences(prediction)
+    if not confidences:
+        # A model may assert something and say nothing about how sure it is.
+        # Absent is unknown, not unconfident, so everything it named counts —
+        # scoring it zero would hide such a model's output from this ranking
+        # entirely.
+        return float(len(getattr(prediction, "values", None) or []))
+    return float(sum(1 for c in confidences if c >= threshold))
 
 
 #: How much of a review batch may be documents the model found nothing in.

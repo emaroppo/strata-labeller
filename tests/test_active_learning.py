@@ -164,7 +164,16 @@ def test_a_share_outside_a_proportion_is_refused():
         rank(samples, scores, empty_share=1.5)
 
 
-def test_density_ranks_by_how_much_there_is_to_check():
+def _spans(*confidences):
+    from strata.labels import Span, SpansPrediction
+
+    return SpansPrediction(
+        values=[Span(label="PER", start=i, end=i + 1) for i in range(len(confidences))],
+        confidences=list(confidences),
+    )
+
+
+def test_density_ranks_by_how_much_there_is_to_confirm():
     """The strategy for building a training set rather than refining one.
 
     Uncertainty avoids dense predictions structurally for spans: a
@@ -172,18 +181,34 @@ def test_density_ranks_by_how_much_there_is_to_check():
     them almost surely holds a weak one and never ranks as confident.
     """
     from strata.labeller.active_learning import density, rank
-    from strata.labels import Span, SpansPrediction
-
-    def pred(n):
-        return SpansPrediction(
-            values=[Span(label="PER", start=i, end=i + 1) for i in range(n)],
-            confidences=[0.9] * n,
-        )
 
     samples = [Sample(i, f"{i:064x}") for i in range(3)]
-    scores = {samples[0].checksum: pred(1), samples[1].checksum: pred(30),
-              samples[2].checksum: pred(5)}
+    scores = {
+        samples[0].checksum: _spans(*[0.95]),
+        samples[1].checksum: _spans(*[0.95] * 30),
+        samples[2].checksum: _spans(*[0.95] * 5),
+    }
     assert [s.id for s in rank(samples, scores, density)] == [1, 2, 0]
+
+
+def test_density_counts_confident_spans_not_every_guess():
+    """Counting every span selects the documents the model is most wrong about.
+
+    The first version did, and put forward a document with 400 spans across
+    3,896 characters — one per ten — of which 37 cleared 0.9. Deleting a
+    wrong span costs what marking a missing one does, so that batch would
+    have been slower than a blank page.
+    """
+    from strata.labeller.active_learning import density, rank
+
+    prolific = _spans(*([0.3] * 100))
+    careful = _spans(*([0.95] * 10))
+    samples = [Sample(0, "a" * 64), Sample(1, "b" * 64)]
+    scores = {"a" * 64: prolific, "b" * 64: careful}
+
+    assert density(prolific) == 0.0
+    assert density(careful) == 10.0
+    assert [s.id for s in rank(samples, scores, density)] == [1, 0]
 
 
 def test_density_of_an_empty_prediction_is_nothing_to_check():
