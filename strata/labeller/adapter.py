@@ -8,7 +8,7 @@ The conversion is thin because ``schemas/`` already knows the wire format —
 it converts between a bare Python target and a result list. What was missing
 was the step either side of that: a neutral value in, a neutral value out.
 
-A task's image URL is how a sample is recognised on the way back, so it
+A task's sample URL is how a sample is recognised on the way back, so it
 addresses the blob by content: the checksum is in the path, and a URL maps
 to exactly one sample rather than to whatever string used to match.
 """
@@ -74,7 +74,7 @@ def prediction_to_results(prediction: Prediction, schema: LabelSchema) -> list[d
 
 @dataclass(frozen=True)
 class Addressing:
-    """How a task refers to its image, in both directions.
+    """How a task refers to its sample, in both directions.
 
     One object rather than three parameters because the two directions have
     to agree: a URL written one way and read another silently orphans every
@@ -90,11 +90,16 @@ class Addressing:
 
     #: What Label Studio serves the blob mount under. Only used for local
     #: URLs, and the reason it survives is those existing tasks.
+    #:
+    #: Nothing here reads it as a media. A project's own setting still says
+    #: "images" because it is a directory name on a mount that reviewers'
+    #: tasks already point at — changing the string orphans every one of
+    #: them, which is a relink rather than a rename.
     prefix: str = "blobs"
     #: The serving API, e.g. ``http://minipc:8081``. Empty means the mount.
     base_url: str = ""
-    #: Signs blob URLs. Required once ``base_url`` is set — an image tag
-    #: cannot carry a header, so the URL is the credential.
+    #: Signs blob URLs. Required once ``base_url`` is set — a browser
+    #: fetching a sample cannot carry a header, so the URL is the credential.
     secret: str = ""
     ttl: int = DEFAULT_TTL
 
@@ -107,7 +112,7 @@ class Addressing:
             )
 
     def url_for(self, sample: SampleRow) -> str:
-        """Where Label Studio fetches this sample's bytes."""
+        """Where Label Studio fetches this sample's bytes, whatever it is."""
         if not self.base_url:
             return blob_url(sample, self.prefix)
         name = blob_path(sample.checksum, _suffix_of(sample)).rsplit("/", 1)[-1]

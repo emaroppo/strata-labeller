@@ -22,6 +22,10 @@ class LabelStudioConfig:
     url: str = "http://localhost:8080"
     api_key: str = ""
     # Where the images mount shows up inside the Label Studio container
+    # Names a directory inside the Label Studio container, not a media:
+    # whatever a project labels is served from it. The word stays because
+    # deployments already mount it under this path — changing the default
+    # would be a redeploy dressed up as a rename.
     local_storage_path: str = "/label-studio/data/images"
 
 

@@ -163,8 +163,14 @@ class DataSpec:
 class LabelStudioSpec:
     project_id: int | None = None
     # Host directory mounted into the Label Studio container, and the name
-    # it has under LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT. Image URLs are
+    # it has under LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT. Sample URLs are
     # built from the sample path relative to this mount.
+    #
+    # The prefix says "images" for every project, including ones labelling
+    # documents, and it stays that way: it is written into every task URL a
+    # reviewer's queue already holds, and read back to recognise which
+    # sample a task is. A URL written one way and read another orphans the
+    # lot of them, so changing it is 'relink', not an edit.
     local_files_root: str = "data"
     local_files_prefix: str = "images"
 

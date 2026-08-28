@@ -70,7 +70,9 @@ class LSClient:
         self.client.import_storage.local.create(
             project=project_id,
             path=path or self.settings.label_studio.local_storage_path,
-            title="Local Images",
+            # What is on the mount is whatever the project labels —
+            # pictures, documents, frames
+            title="Local files",
             use_blob_urls=False,
         )
 
@@ -126,7 +128,7 @@ class LSClient:
         ]
 
     def update_task_data(self, task_id: int, data: dict) -> None:
-        """Repoint one task at a different image.
+        """Repoint one task at a different sample.
 
         Data is replaced whole rather than merged, which is what the API
         offers — so callers pass the task's existing data with one key
