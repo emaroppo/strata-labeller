@@ -913,19 +913,35 @@ def ingest(
             for i in range(0, len(paths), batch):
                 chunk = paths[i : i + batch]
                 sources = {p: str(p.relative_to(data_dir)) for p in chunk}
-                catalog.ingest(
-                    chunk,
-                    media=sample_type.media,
-                    subtype=type(sample_type).subtype(),
-                    group_id=group_id,
-                    # What only the type knows, plus where it came from
-                    metadata_for=lambda p: {
-                        "source_path": sources[p],
-                        **sample_type.metadata_for(p),
-                    },
-                    collections=project.collections,
-                    on_sample=lambda _p: progress.advance(bar),
-                )
+                try:
+                    catalog.ingest(
+                        chunk,
+                        media=sample_type.media,
+                        subtype=type(sample_type).subtype(),
+                        group_id=group_id,
+                        # What only the type knows, plus where it came from
+                        metadata_for=lambda p: {
+                            "source_path": sources[p],
+                            **sample_type.metadata_for(p, data_dir),
+                        },
+                        # Only for a type that has a canonical form; for the
+                        # rest this is None and no file is read twice.
+                        canonicalise=(
+                            sample_type.canonicalise
+                            if type(sample_type).canonicalises()
+                            else None
+                        ),
+                        collections=project.collections,
+                        on_sample=lambda _p: progress.advance(bar),
+                    )
+                except CatalogError as e:
+                    # A file this type cannot store — a document in an
+                    # encoding it will not guess at. The chunks before this
+                    # one are committed, so re-running after fixing it
+                    # carries on rather than starting over.
+                    progress.stop()
+                    _error(str(e))
+                    raise typer.Exit(1) from None
 
     after = len(catalog.unlabelled(label_set_id, where)) + len(
         catalog.labelled(label_set_id, where)
