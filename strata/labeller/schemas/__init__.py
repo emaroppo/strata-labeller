@@ -92,6 +92,12 @@ def from_label_config(xml: str) -> LabelSchema:
         params: dict[str, str] = {"from_name": from_name, "to_name": to_name}
         if schema_cls is ClassificationSchema:
             params["choice"] = _attr(attrs, "choice") or "multiple"
+        if schema_cls is SpanSchema:
+            # What the config permits is what reviewers will produce, so it
+            # is what the label set has to accept. Overlap has no attribute
+            # to read — Label Studio always allows it — so it stays declared
+            # in project.toml.
+            params["multi_label"] = _attr(attrs, "choice") == "multiple"
         return schema_cls(classes, media=media, **params)
 
     known = ", ".join(sorted(CONTROL_TAGS))

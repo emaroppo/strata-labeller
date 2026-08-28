@@ -1,5 +1,5 @@
 <View>
-  <Labels name="@from_name" toName="@to_name">
+  <Labels name="@from_name" toName="@to_name"@choice>
 @labels
   </Labels>
   <Text name="@to_name" value="$text" valueType="url"/>

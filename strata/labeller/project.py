@@ -72,6 +72,13 @@ class LabelConfigSpec:
     # Template-specific parameters (e.g. choice="single"); validated against
     # the schema the template selects
     choice: str | None = None
+    # Span-only, and None means "not declared" so that setting either on a
+    # template that has no such notion is refused by name rather than
+    # ignored. Both describe what the job is, not a preference: a model
+    # that cannot learn overlapping spans refuses the label set rather than
+    # training on a projection of it.
+    multi_label: bool | None = None
+    overlapping: bool | None = None
     # For template = "custom": the project's own labeling config
     file: str = CUSTOM_LABEL_CONFIG
 
@@ -271,7 +278,12 @@ class Project:
                         f"config at {path}"
                     )
                 return schemas.from_label_config(path.read_text())
-            params = {k: v for k, v in {"choice": spec.choice}.items() if v is not None}
+            declared = {
+                "choice": spec.choice,
+                "multi_label": spec.multi_label,
+                "overlapping": spec.overlapping,
+            }
+            params = {k: v for k, v in declared.items() if v is not None}
             return schemas.from_template(spec.template, spec.classes, **params)
         except schemas.SchemaError as e:
             raise ProjectError(str(e)) from None
