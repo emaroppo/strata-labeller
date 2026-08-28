@@ -128,6 +128,17 @@ class CatalogSpec:
 @dataclass
 class DataSpec:
     root: str = "data/raw"
+    #: Where the corpus arrives, before anything has converted it — a
+    #: directory of .eml, of video, of whatever this project started from.
+    #: Separate from ``root`` because the two hold different things: one is
+    #: the corpus as it came, the other is the corpus as the catalog stores
+    #: it, and a conversion that overwrote the first would be a one-way
+    #: door with no way back.
+    source_root: str = "data/source"
+    #: Which conversion to run over it. Empty resolves by what the files
+    #: are and what this project ingests, and refuses an ambiguity rather
+    #: than picking one.
+    preparer: str = ""
     #: A registered sample type: what these files are, which decides which
     #: extensions are allowed, what is recorded about each one, and how they
     #: group. Empty falls back to ``kind``, which said two of those three
@@ -312,6 +323,11 @@ class Project:
     def data_dir(self) -> Path:
         """Where this project's samples live, whatever kind of file they are."""
         return _resolve(self.root, self.data.root)
+
+    @property
+    def source_dir(self) -> Path:
+        """Where this project's corpus arrives, before it is converted."""
+        return _resolve(self.root, self.data.source_root)
 
     @property
     def local_files_root(self) -> Path:
@@ -558,6 +574,9 @@ class Project:
             'root = "data/raw"  # files live here; may be an absolute path\n'
             f'type = "{_scaffold_type(template)}"'
             "  # a registered sample type; see 'auto-labeller types'\n"
+            "# Where a corpus arrives if it needs converting first — mail,\n"
+            "# video. See 'auto-labeller preparers' and 'prepare'.\n"
+            '# source_root = "data/source"\n'
             "\n"
             "[model]\n"
             '# "model.py:MyModel" to use a model carried by this project\n'

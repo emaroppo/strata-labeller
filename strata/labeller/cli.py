@@ -478,6 +478,37 @@ def sample_types() -> None:
     )
 
 
+@app.command(name="preparers")
+def list_preparers() -> None:
+    """List the conversions installed here, and what each turns into what."""
+    from strata.catalog.preparers import available, resolve
+
+    table = Table(title="Preparers")
+    table.add_column("Name", style="cyan")
+    table.add_column("Reads", style="yellow")
+    table.add_column("Produces", style="green")
+    for name in sorted(available()):
+        cls = resolve(name)
+        table.add_row(
+            name,
+            ", ".join(f".{e}" for e in sorted(cls.sources)) or "-",
+            cls.produces,
+        )
+    if not available():
+        console.print(
+            "[yellow]None installed. A conversion is a plugin — it carries a "
+            "decoder or a parser, and a checkout with nothing to convert "
+            "should not have to install one.[/yellow]"
+        )
+        return
+    console.print(table)
+    console.print(
+        r"[dim]'prepare' writes into \[data] root, then 'ingest' catalogues "
+        "it. Two steps, because ingest is where content addressing, "
+        "grouping and collections are decided.[/dim]"
+    )
+
+
 @app.command(name="projects")
 def list_projects_cmd() -> None:
     """List the projects under projects/."""
@@ -822,10 +853,11 @@ def ingest(
 ) -> None:
     """Scan the project's data root and register new files in the catalog.
 
-    Which files count comes from the project's media type, so a text project
-    picks up documents where an image project picks up pictures. Grouping
-    comes from [data] kind: video frames are grouped by the folder they sit
-    in, so near-duplicates cannot straddle a train/val split.
+    Which files count comes from the project's sample type, so a text
+    project picks up documents where an image project picks up pictures.
+    Grouping comes from the same place: frames of one video move together,
+    so near-duplicates cannot straddle a train/val split. A corpus written
+    by 'prepare' says which group each sample is in, and the type reads it.
 
     Registering is not queueing. The catalog holds the whole pool and `push`
     sends only what you are about to review, so there is no cost to
@@ -955,6 +987,123 @@ def ingest(
         f"  {after + skipped_count} sample(s) catalogued, "
         f"{len(by_group)} group(s) touched"
     )
+
+
+@app.command()
+def prepare(
+    project_path: Path | None = ProjectOption,
+    source: Path | None = typer.Option(
+        None, "--from", help="Where the corpus is; defaults to the project's source_root"
+    ),
+    preparer_name: str = typer.Option(
+        "", "--preparer", help="Which conversion to run; defaults to the project's setting"
+    ),
+) -> None:
+    """Convert a corpus into the shape this project's sample type stores.
+
+    Mail arrives as .eml, footage as video, and a catalog holds neither.
+    This writes what it does hold — one document per message, one image per
+    frame — into the project's data root, along with an index recording
+    what the conversion knew: where each sample came from, and which video or thread
+    it belongs to, so a group cannot straddle a train/val split.
+
+    Then run 'ingest'. Two steps rather than one, because ingest is where
+    content addressing, grouping and collections are decided, and a
+    converter reaching around it would be a second implementation of the
+    thing most worth having only one of.
+    """
+    from strata.catalog.preparers import PreparerError, available, for_source, resolve
+    from strata.catalog.preparers import run as run_preparer
+
+    project = _load_project(project_path)
+    source_dir = source or project.source_dir
+    if not source_dir.exists():
+        _error(
+            f"No corpus at {source_dir}. Put the files there, or point "
+            f"[data] source_root at where they are."
+        )
+        raise typer.Exit(1)
+
+    everything = [p for p in sorted(source_dir.rglob("*")) if p.is_file()]
+    if not everything:
+        console.print(f"[yellow]No files under {source_dir} yet.[/yellow]")
+        return
+
+    name = preparer_name or project.data.preparer
+    try:
+        wants = project.sample_type_name
+        cls = resolve(name) if name else for_source(wants, everything[0])
+    except (PreparerError, ProjectError) as e:
+        _error(str(e))
+        if not available():
+            console.print(
+                "[dim]Nothing is installed. A conversion is a plugin: "
+                "uv pip install strata-prepare-email, or -video.[/dim]"
+            )
+        raise typer.Exit(1) from None
+
+    if cls.produces != project.sample_type_name:
+        # The corpus would convert, and ingest would then admit none of it
+        _error(
+            f"'{cls.name}' produces '{cls.produces}' samples and this project "
+            f"ingests '{project.sample_type_name}'."
+        )
+        raise typer.Exit(1)
+
+    preparer = cls()
+    found = [p for p in everything if preparer.allows(p)]
+    skipped = [p for p in everything if p not in set(found)]
+    if skipped:
+        kinds = sorted({p.suffix.lower() or "(none)" for p in skipped})
+        console.print(
+            f"[yellow]{len(skipped):,} file(s) skipped — '{cls.name}' does "
+            f"not read {', '.join(kinds)}[/yellow]"
+        )
+    if not found:
+        _error(
+            f"None of the {len(everything):,} file(s) under {source_dir} are "
+            f"read by '{cls.name}' "
+            f"({', '.join('.' + e for e in sorted(cls.sources))})."
+        )
+        raise typer.Exit(1)
+
+    out_dir = project.data_dir
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        bar = progress.add_task(f"Preparing with '{cls.name}'", total=len(found))
+        try:
+            index = run_preparer(
+                preparer, found, out_dir, on_source=lambda _p: progress.advance(bar)
+            )
+        except PreparerError as e:
+            progress.stop()
+            _error(str(e))
+            raise typer.Exit(1) from None
+
+    console.print(
+        f"[green]{len(found):,} source file(s) → {len(index.samples):,} "
+        f"sample(s)[/green] in {out_dir}"
+    )
+    # Anything left behind, said out loud. A corpus that arrives quietly
+    # smaller than the source it came from is the failure ingest already
+    # goes out of its way to avoid.
+    for key, count in sorted(preparer.report().items()):
+        console.print(f"  {key.replace('_', ' ')}: {count:,}")
+    carrying = sum(1 for entry in index.samples.values() if entry.value is not None)
+    if carrying:
+        console.print(
+            f"[dim]{carrying:,} sample(s) came with candidate annotations. They "
+            f"are guesses, and nothing lands them in the catalog on its own."
+            f"[/dim]"
+        )
+    console.print(f"\nNext: auto-labeller ingest --project {project.name}")
 
 
 @app.command()
