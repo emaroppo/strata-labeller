@@ -5,6 +5,8 @@ rounds/*/metadata.json — and both are mostly about not asserting more than
 the record supports.
 """
 
+import json
+
 import pytest
 from typer.testing import CliRunner
 
@@ -37,9 +39,7 @@ def workspace(project, tmp_path, monkeypatch):
 
 
 def run_cmd(project, *args):
-    return runner.invoke(
-        app, [*args, "-p", str(project.root), "--config", "config.toml"]
-    )
+    return runner.invoke(app, [*args, "-p", str(project.root), "--config", "config.toml"])
 
 
 def report_cmd(project, *args):
@@ -155,8 +155,7 @@ def test_no_change_across_a_version_going_backwards(runs):
     # An imported round, then the first trained on the catalog: the lineage
     # is real but the two were scored on different held-out samples
     first = a_run(store, dataset_version=33, metrics={"val_accuracy": 0.877})
-    a_run(store, dataset_version=2, parent_run_id=first.id,
-          metrics={"val_accuracy": 0.978})
+    a_run(store, dataset_version=2, parent_run_id=first.id, metrics={"val_accuracy": 0.978})
     result = report_cmd(project)
     assert "+0.1010" not in result.stdout
     assert "warm" in result.stdout
@@ -185,3 +184,80 @@ def test_an_unknown_metric_suggests_another(runs):
     result = report_cmd(project, "--metric", "f1")
     assert result.exit_code == 1
     assert "--metric accuracy" in result.stdout
+
+
+# ----------------------------------------------------------------------
+# report --json
+# ----------------------------------------------------------------------
+
+
+def _json_of(result):
+    """The payload, and proof there is nothing else on stdout."""
+    return json.loads(result.stdout)
+
+
+def test_report_json_carries_the_history(runs):
+    project, store = runs
+    first = a_run(store, dataset_version=1, metrics={"val_accuracy": 0.80})
+    a_run(store, dataset_version=2, parent_run_id=first.id, metrics={"val_accuracy": 0.85})
+
+    payload = _json_of(report_cmd(project, "--json"))
+
+    assert payload["dataset"] == "demo"
+    assert payload["metric"] == "val_accuracy"
+    assert [r["value"] for r in payload["runs"]] == [0.80, 0.85]
+
+
+def test_report_json_is_the_only_thing_on_stdout(runs):
+    """It has to pipe. A table drawn alongside it would be a parse error."""
+    project, store = runs
+    a_run(store, dataset_version=1)
+    result = report_cmd(project, "--json")
+    assert result.stdout.lstrip().startswith("{")
+    json.loads(result.stdout)
+
+
+def test_report_json_says_null_where_a_delta_would_mean_nothing(runs):
+    """Absent is not zero: 'not comparable' and 'did not move' differ."""
+    project, store = runs
+    first = a_run(store, dataset_version=1, metrics={"val_accuracy": 0.80})
+    a_run(store, dataset_version=2, parent_run_id=first.id, metrics={"val_accuracy": 0.85})
+    a_run(store, dataset_version=2, metrics={"val_accuracy": 0.60})  # cold
+
+    runs_out = _json_of(report_cmd(project, "--json"))["runs"]
+    deltas = [r["delta"] for r in runs_out]
+
+    assert deltas[0] is None  # nothing before it
+    assert deltas[1] == pytest.approx(0.05)
+    assert deltas[2] is None  # a cold run continues nothing
+    assert [r["lineage"] for r in runs_out] == ["unchained", "warm", "unchained"]
+
+
+def test_report_json_carries_params_and_classes(runs):
+    """What lets a consumer decide two runs are not asking one question.
+
+    A metric can move because the data changed, the model changed, or what
+    the model was told to do changed. Only the last is invisible in a table
+    of numbers, and these two fields are where it shows.
+    """
+    project, store = runs
+    a_run(store, dataset_version=1, params={"arm": "flat"}, classes=["cat", "dog"])
+
+    run = _json_of(report_cmd(project, "--json"))["runs"][0]
+
+    assert run["params"] == {"arm": "flat"}
+    assert run["classes"] == ["cat", "dog"]
+
+
+def test_report_json_details_one_run_with_its_chain(runs):
+    project, store = runs
+    first = a_run(store, dataset_version=1)
+    second = a_run(
+        store, dataset_version=2, parent_run_id=first.id, metrics={"val_accuracy": 0.9, "loss": 0.1}
+    )
+
+    payload = _json_of(report_cmd(project, "--run", second.id, "--json"))
+
+    assert payload["run"]["id"] == second.id
+    assert payload["run"]["metrics"] == {"val_accuracy": 0.9, "loss": 0.1}
+    assert [r["id"] for r in payload["chain"]] == [first.id, second.id]

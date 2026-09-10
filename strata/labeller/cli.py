@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import typer
@@ -1689,11 +1690,23 @@ def report(
     run_id: str | None = typer.Option(
         None, "--run", help="Detail one run instead of the history"
     ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit the same thing as JSON, for a chart or a script"
+    ),
 ) -> None:
     """Show the training history, or one run in detail.
 
     Read from the run store rather than from round folders, so a metric
     across rounds is one query.
+
+    ``--json`` writes the same query to stdout as JSON and nothing else, so
+    it pipes. It carries more than the table does — every metric rather than
+    the one plotted, and each run's ``params`` and ``classes`` — because the
+    table's job is to be read and this one's is to be computed on. Those two
+    fields are what let a consumer decide whether two runs are even
+    comparable: a project whose ``[model.params]`` reshape the task can
+    produce a history that looks like progress and is not, and the table's
+    delta column cannot tell.
 
     A change is shown only where one run actually continues the one above:
     a warm-started number means something against its parent and nothing
@@ -1720,6 +1733,14 @@ def report(
         if run is None:
             _error(f"No run with id {run_id}")
             raise typer.Exit(1)
+        if as_json:
+            _emit_json(
+                {
+                    "run": _run_json(run),
+                    "chain": [_run_json(r) for r in store.chain(run.id)],
+                }
+            )
+            return
         _print_run(store, run)
         return
 
@@ -1736,13 +1757,10 @@ def report(
         )
         raise typer.Exit(1)
 
-    table = Table(title=f"{project.dataset_name} — {metric}")
-    table.add_column("Run", justify="right")
-    table.add_column("Dataset", justify="right")
-    table.add_column(metric, justify="right")
-    table.add_column("Δ", justify="right")
-    table.add_column("Lineage")
-
+    # Computed once, rendered twice. The delta rule below is the whole
+    # reason this is not a plain dump of the store, and a JSON consumer
+    # reimplementing it from the raw rows would get it subtly wrong.
+    rows: list[dict] = []
     seen: dict[int, float] = {}
     versions: dict[int, int] = {}
     for run_num, version, value in history:
@@ -1760,15 +1778,56 @@ def report(
             and now is not None
             and before <= now
         )
-        delta = f"{value - seen[parent]:+.4f}" if comparable else ""
+        rows.append(
+            {
+                "run": run,
+                "value": value,
+                "version": version,
+                "delta": (value - seen[parent]) if comparable else None,
+                "warm": bool(parent),
+            }
+        )
+        seen[run_num] = value
+        versions[run_num] = version
+
+    if as_json:
+        _emit_json(
+            {
+                "dataset": project.dataset_name,
+                "metric": metric,
+                "runs": [
+                    {
+                        **_run_json(row["run"]),
+                        "value": row["value"],
+                        # Null rather than absent, and null rather than zero:
+                        # "this cannot be compared to its parent" is not the
+                        # same statement as "it did not move".
+                        "delta": row["delta"],
+                        "lineage": "warm" if row["warm"] else "unchained",
+                    }
+                    for row in rows
+                ],
+            }
+        )
+        return
+
+    table = Table(title=f"{project.dataset_name} — {metric}")
+    table.add_column("Run", justify="right")
+    table.add_column("Dataset", justify="right")
+    table.add_column(metric, justify="right")
+    table.add_column("Δ", justify="right")
+    table.add_column("Lineage")
+    for row in rows:
+        version = row["version"]
         # Whether it continued, not what from. An id is a timestamp and a
         # host now, and two of them in one row of a table is a row of
         # ellipses — the chain itself is what `report --run` is for.
-        lineage = "warm" if parent else "[yellow]unchained[/yellow]"
+        lineage = "warm" if row["warm"] else "[yellow]unchained[/yellow]"
         shown = f"v{version}" if version is not None else "[dim]—[/dim]"
-        table.add_row(_short(run_num), shown, f"{value:.4f}", delta, lineage)
-        seen[run_num] = value
-        versions[run_num] = version
+        delta = f"{row['delta']:+.4f}" if row["delta"] is not None else ""
+        table.add_row(
+            _short(row["run"].id), shown, f"{row['value']:.4f}", delta, lineage
+        )
     console.print(table)
 
 
@@ -1781,6 +1840,33 @@ def _short(run_id) -> str:
     """
     stamp, _, host = str(run_id).partition("-")
     return f"{stamp[:15]}-{host}" if host else str(run_id)
+
+
+def _run_json(run) -> dict:
+    """One run, as something to compute on rather than to read.
+
+    Everything the store holds, including ``params`` and ``classes``. Those
+    are the fields that answer whether two runs are asking the same
+    question: a metric moved by changing the data, the model, or what the
+    model was told to do, and only the last of those is invisible in a
+    table of numbers.
+    """
+    data = run.model_dump(mode="json")
+    # Not a field on the model, and the one thing a caller would otherwise
+    # have to reimplement the id format to get.
+    data["short"] = run.short
+    return data
+
+
+def _emit_json(payload: dict) -> None:
+    """Straight to stdout, past rich.
+
+    ``console.print`` would wrap it to the terminal width and colour it,
+    which is right for a table and fatal for something being piped into
+    ``jq``. Written with ``print`` for the same reason the width is not
+    consulted: this output has no reader to be considerate of.
+    """
+    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
 
 
 def _print_run(store, run) -> None:
