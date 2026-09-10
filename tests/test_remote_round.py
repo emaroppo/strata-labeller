@@ -87,6 +87,9 @@ def host(featured, tmp_path, monkeypatch):
     monkeypatch.setattr(service, "run_train", train)
     monkeypatch.setattr(Trainer, "submit", submit)
     monkeypatch.setattr(
+        Trainer, "served_catalog", lambda self: {"name": "default", "id": catalog.id}
+    )
+    monkeypatch.setattr(
         cli,
         "_follow",
         lambda trainer, job_id: {"run": {"id": "r", "parent_run_id": None}, "metrics": {}},
@@ -114,6 +117,32 @@ def test_a_remote_round_trains_on_the_features_the_project_declares(featured, ho
     assert {s.features["species"] for s in manifest.samples} == {
         f"sp-img{i:03d}" for i in range(8)
     }
+
+
+def test_a_host_on_another_catalog_is_refused_before_anything_is_frozen(
+    featured, host, monkeypatch, capsys
+):
+    import typer
+    from sqlalchemy import func, select
+
+    from strata.catalog import tables as t
+    from strata.labeller.remote import Trainer
+
+    project, catalog = featured
+    monkeypatch.setattr(
+        Trainer, "served_catalog", lambda self: {"name": "main", "id": "20250101T000000-cccccccc"}
+    )
+
+    with pytest.raises(typer.Exit):
+        _remote_round(project, catalog)
+
+    assert "request" not in host
+    # No dataset version left behind for a round that never ran
+    with catalog.engine.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(t.dataset)).scalar() == 0
+    # This catalog's index is SQLite, which the host could only read by
+    # running here — the one case where repointing the host is not the fix
+    assert "SQLite" in capsys.readouterr().out
 
 
 def test_the_request_says_what_its_dataset_id_means(featured, host):

@@ -174,6 +174,15 @@ def test_a_host_on_another_protocol_is_refused_naming_both(sent):
     assert "http://gpu:8082/round" not in sent["calls"]
 
 
+def test_the_host_says_which_catalog_it_is_on(sent):
+    sent["health"] = {"ok": True, "protocol": PROTOCOL, "catalog": {"name": "main", "id": "x"}}
+    trainer = Trainer("http://gpu:8082", "t")
+    assert trainer.served_catalog() == {"name": "main", "id": "x"}
+    trainer.models()
+    # One question answers both: which protocol, and which catalog
+    assert sent["calls"].count("http://gpu:8082/healthz") == 1
+
+
 def test_the_protocol_is_asked_once(sent):
     trainer = Trainer("http://gpu:8082", "t")
     trainer.models()

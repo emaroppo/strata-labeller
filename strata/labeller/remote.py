@@ -65,6 +65,16 @@ class Trainer:
         self.token = token
         self.timeout = timeout
         self._spoken = False
+        self._health: dict = {}
+
+    def served_catalog(self) -> dict:
+        """Which catalog that host trains from: ``{name, id}``, as it says itself.
+
+        From the same answer the protocol check reads, so asking costs
+        nothing once anything else has been asked.
+        """
+        self._handshake()
+        return self._health.get("catalog") or {}
 
     def _handshake(self) -> None:
         """Refuse a host on another protocol, before asking it anything.
@@ -77,7 +87,8 @@ class Trainer:
         request = urllib.request.Request(f"{self.url}/healthz", method="GET")
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
-                spoken = json.loads(response.read()).get("protocol")
+                health = json.loads(response.read())
+            spoken = health.get("protocol")
         except urllib.error.HTTPError as e:
             raise Refused(f"{self.url}/healthz refused it: {_detail(e)}") from None
         except urllib.error.URLError as e:
@@ -89,6 +100,7 @@ class Trainer:
                 f"{PROTOCOL}. Nothing was sent. Upgrade strata-modelling there or "
                 f"strata-labeller here, so the two match."
             )
+        self._health = health
         self._spoken = True
 
     def _call(self, path: str, payload: dict | None = None, timeout: int | None = None) -> dict:

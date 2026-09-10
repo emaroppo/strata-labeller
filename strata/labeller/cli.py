@@ -1310,6 +1310,39 @@ def _follow(trainer, job_id: str) -> dict:
     return job["result"]
 
 
+def _on_another_catalog(where: str, served: dict, catalog, config) -> str:
+    """Why a machine on another catalog cannot work with this one, and what to change."""
+    if served.get("id"):
+        message = (
+            f"{where} is on catalog {served.get('name') or '?'} ({served['id']}), "
+            f"and this machine is on {catalog.id}."
+        )
+    else:
+        why = served.get("error") or "none — it may predate machines saying which"
+        message = f"{where} reports no catalog ({why}), and this machine is on {catalog.id}."
+    if not config.url:
+        message += (
+            f" This catalog's index is SQLite under {config.root}, which only this "
+            f"machine can read: the modelling host and the blob server open the index "
+            f"themselves, so they can use this catalog only if they run here too. Give "
+            f"it a Postgres url to share it, or unset [modelling] url to train here."
+        )
+    else:
+        message += (
+            " Make this catalog the default in that machine's config.toml, and "
+            "restart its service."
+        )
+    return message
+
+
+def _blob_server_catalog(url: str) -> dict:
+    """What a blob server says it serves, from its /healthz."""
+    import urllib.request
+
+    with urllib.request.urlopen(f"{url.rstrip('/')}/healthz", timeout=10) as response:
+        return json.loads(response.read()).get("catalog") or {}
+
+
 def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> None:
     """Freeze a dataset here, and have another host train on it.
 
@@ -1338,13 +1371,26 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
         )
         raise typer.Exit(1)
 
+    # Asked before anything is frozen. A host on another catalog would refuse
+    # the round anyway; asking first says which machine to repoint, and
+    # leaves no dataset version behind for a round that never ran.
+    trainer = Trainer(settings.modelling.url, settings.modelling.token)
+    try:
+        served = trainer.served_catalog()
+    except RemoteError as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+    if served.get("id") != catalog.id:
+        config = _catalog_config(settings, project.catalog.name)
+        _error(_on_another_catalog("The modelling host", served, catalog, config))
+        raise typer.Exit(1)
+
     dataset_id = catalog.create_dataset(
         project.dataset_name, label_set_id, collections=project.collections, val_ratio=val_ratio
     )
     ref = catalog.dataset_named(dataset_id)
     console.print(f"Dataset {ref.name} v{ref.version} → {settings.modelling.url}")
 
-    trainer = Trainer(settings.modelling.url, settings.modelling.token)
     try:
         job = trainer.submit(
             RoundRequest(
@@ -2489,6 +2535,60 @@ def catalog_repack(
         "even so — Label Studio serves images straight off that mount rather "
         "than through the catalog, so it is unaffected either way.[/dim]"
     )
+
+
+@app.command(name="catalog-check")
+def catalog_check(
+    catalog_name: str = CatalogOption,
+    config_path: Path = ConfigOption,
+) -> None:
+    """Ask the blob server and the modelling host which catalog they are on.
+
+    Each machine reads its own config.toml, so pointing the setup at another
+    catalog is an edit on each, and a machine missed is what this catches: a
+    blob server left on the old catalog answers 404 for every new sample, and
+    a modelling host left on it refuses every round.
+    """
+    from .remote import RemoteError, Trainer
+
+    settings = _settings(config_path)
+    config = _catalog_config(settings, catalog_name)
+    catalog = _catalog_if_any(settings, catalog_name)
+    if catalog is None:
+        _error(f"No catalog at {config.root} yet, so there is nothing to compare against.")
+        raise typer.Exit(1)
+    name = catalog_name or settings.catalogs.default_name or "default"
+    console.print(f"[bold]this machine[/bold]  {escape(name)}  {catalog.id}")
+
+    hosts = []
+    if config.serve_url:
+        hosts.append(
+            ("blob server", config.serve_url, lambda: _blob_server_catalog(config.serve_url))
+        )
+    if settings.modelling.url:
+        trainer = Trainer(settings.modelling.url, settings.modelling.token)
+        hosts.append(("modelling host", settings.modelling.url, trainer.served_catalog))
+    if not hosts:
+        console.print(
+            escape("No serve_url and no [modelling] url, so no other machine reads a catalog.")
+        )
+        return
+
+    ok = True
+    for label, url, ask in hosts:
+        try:
+            served = ask()
+        except (RemoteError, OSError, ValueError) as e:
+            ok = False
+            console.print(f"[bold]{label}[/bold]  {url}  [red]unreachable[/red] — {escape(str(e))}")
+            continue
+        if served.get("id") == catalog.id:
+            console.print(f"[bold]{label}[/bold]  {url}  [green]same catalog[/green]")
+        else:
+            ok = False
+            console.print(f"[bold]{label}[/bold]  {url}  [red]another catalog[/red]")
+            _error(_on_another_catalog(f"The {label} at {url}", served, catalog, config))
+    raise typer.Exit(0 if ok else 1)
 
 
 @app.command(name="catalog-probe")
