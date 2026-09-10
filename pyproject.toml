@@ -9,9 +9,9 @@ dependencies = [
     "label-studio-sdk>=1.0",
     # Declared ahead of use so the dependency graph is enforced by the build
     # from the start rather than at the phase that first imports them.
-    "strata-labels",
-    "strata-catalog",
-    "strata-modelling",
+    "strata-labels>=0.1,<0.2",
+    "strata-catalog>=0.1,<0.2",
+    "strata-modelling>=0.1,<0.2",
 ]
 
 [tool.uv.sources]
