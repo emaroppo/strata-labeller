@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from strata.catalog import Catalog, CatalogError
-from strata.labels import MANIFEST_NAME, Manifest
+from strata.labels import MANIFEST_NAME, Manifest, ManifestFormatError
 from strata.modelling import Run, RunStore, TrainRequest, train
 from strata.modelling.registry import absolute
 
@@ -122,14 +122,24 @@ def _materialise(
         # confirmed it matches — including the answers, since a version's
         # identity covers its annotations. The manifest rather than the
         # directory, because only the manifest proves the rename completed.
-        manifest = Manifest.model_validate_json((final / MANIFEST_NAME).read_text())
+        try:
+            manifest = Manifest.model_validate_json((final / MANIFEST_NAME).read_text())
+        except ManifestFormatError:
+            # Written by a release whose layout this one does not read, or
+            # before manifests said which layout they were. The directory is
+            # only a copy of what the catalog holds, so rebuilding it costs a
+            # fetch — and guessing at its fields could cost a round trained
+            # on the wrong split.
+            manifest = None
         # Features are not part of a version's identity: they change what
         # the model is *told*, not which samples were selected or what was
         # said about them. So a project that adds one keeps its version and
         # needs the directory rebuilt — otherwise the round trains from a
         # manifest written before the feature existed and reports a number
         # for a model that never saw it.
-        if [dict(f) for f in manifest.features] == [s.as_dict() for s in specs]:
+        if manifest is not None and [dict(f) for f in manifest.features] == [
+            s.as_dict() for s in specs
+        ]:
             _finished(on_progress, manifest)
             return manifest, final
         shutil.rmtree(final)

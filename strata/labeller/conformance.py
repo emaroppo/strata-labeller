@@ -34,6 +34,7 @@ from pydantic import TypeAdapter
 
 from strata.catalog import Catalog
 from strata.labels import (
+    MANIFEST_FORMAT,
     MANIFEST_NAME,
     AnyPrediction,
     AnySchema,
@@ -176,6 +177,7 @@ class LabelTypeConformance:
 
     def test_a_manifest_carries_the_type(self, tmp_path, schema, value):
         manifest = Manifest(
+            format=MANIFEST_FORMAT,
             dataset="d",
             version=1,
             label_set="x",

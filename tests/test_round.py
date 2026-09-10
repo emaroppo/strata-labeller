@@ -392,11 +392,12 @@ def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch)
     away on arrival.
     """
     from strata.labeller.round import _materialise
-    from strata.labels import MANIFEST_NAME, ClassificationSchema, Manifest
+    from strata.labels import MANIFEST_FORMAT, MANIFEST_NAME, ClassificationSchema, Manifest
 
     version_dir = project.datasets_dir / project.dataset_name / "v002"
     (version_dir / "files").mkdir(parents=True)
     manifest_on_disk = Manifest(
+        format=MANIFEST_FORMAT,
         dataset=project.dataset_name,
         version=2,
         label_set=project.label_set_name,
@@ -414,3 +415,55 @@ def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch)
     manifest, path = _materialise(project, Refuses(), dataset_id=7)
     assert path == version_dir
     assert manifest.version == 2
+
+
+def test_a_manifest_from_before_formats_is_rebuilt_not_reused(project):
+    """Every directory on disk when manifests started saying their format.
+
+    Refusing would stop the first round on every host until someone deleted
+    them by hand; reading one as the current layout is the guess the format
+    exists to stop. The catalog still holds the version, so it is fetched.
+    """
+    import json
+
+    from strata.labeller.round import _materialise
+    from strata.labels import MANIFEST_FORMAT, MANIFEST_NAME, ClassificationSchema, Manifest
+
+    version_dir = project.datasets_dir / project.dataset_name / "v002"
+    (version_dir / "files").mkdir(parents=True)
+    (version_dir / MANIFEST_NAME).write_text(
+        json.dumps(
+            {
+                "dataset": project.dataset_name,
+                "version": 2,
+                "label_set": project.label_set_name,
+                "label_schema": {"task": "classification", "classes": ["cat"]},
+                "samples": [],
+            }
+        )
+    )
+
+    class Rebuilds:
+        fetched = 0
+
+        def dataset_version(self, dataset_id):
+            return 2
+
+        def materialise(self, dataset_id, dest, on_progress=None, cache=None, features=None):
+            self.fetched += 1
+            dest.mkdir(parents=True)
+            fresh = Manifest(
+                format=MANIFEST_FORMAT,
+                dataset=project.dataset_name,
+                version=2,
+                label_set=project.label_set_name,
+                label_schema=ClassificationSchema(classes=["cat"]),
+            )
+            (dest / MANIFEST_NAME).write_text(fresh.model_dump_json())
+            return dest
+
+    catalog = Rebuilds()
+    manifest, path = _materialise(project, catalog, dataset_id=7)
+    assert catalog.fetched == 1
+    assert path == version_dir
+    assert manifest.format == MANIFEST_FORMAT
