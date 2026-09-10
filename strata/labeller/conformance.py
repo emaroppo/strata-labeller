@@ -183,7 +183,9 @@ class LabelTypeConformance:
             label_set="x",
             label_schema=schema,
             samples=[
-                ManifestSample(id=1, checksum="a" * 64, path="files/a", value=value)
+                ManifestSample(
+                    id=1, checksum="a" * 64, path="files/a", split="train", value=value
+                )
             ],
         )
         path = tmp_path / MANIFEST_NAME

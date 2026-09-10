@@ -202,13 +202,13 @@ def test_a_version_directory_is_never_overwritten(ready):
 def test_the_split_survives_a_second_round(ready):
     project, catalog = ready(labelled=12, total=20)
     first = run_round(project, catalog)
-    before = {s.id: s.val for s in first.manifest.samples}
+    before = {s.id: s.split for s in first.manifest.samples}
 
     # label the rest and go again
     stock(project, catalog, labelled=20, total=20)
 
     second = run_round(project, catalog)
-    after = {s.id: s.val for s in second.manifest.samples}
+    after = {s.id: s.split for s in second.manifest.samples}
     assert all(after[i] == before[i] for i in before)
 
 

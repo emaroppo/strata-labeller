@@ -14,9 +14,9 @@ from strata.catalog import EVERYTHING, Catalog
 from strata.modelling import PredictRequest, RunStore, TrainRequest, predict, train
 
 
-def split_of(directory) -> dict[int, bool]:
+def split_of(directory) -> dict[int, str]:
     manifest = json.loads((directory / "manifest.json").read_text())
-    return {s["id"]: s["val"] for s in manifest["samples"]}
+    return {s["id"]: s["split"] for s in manifest["samples"]}
 
 TOY_MODEL = '''
 import json
@@ -82,7 +82,7 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
 
     # Only the labelled samples; the unreviewed four are the pool, not data
     assert len(manifest["samples"]) == 16
-    assert 0 < sum(s["val"] for s in manifest["samples"]) < 16
+    assert 0 < sum(s["split"] == "val" for s in manifest["samples"]) < 16
 
     (materialised / "toy.py").write_text(TOY_MODEL)
     store = RunStore.local(tmp_path / "runs")
