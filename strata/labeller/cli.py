@@ -15,6 +15,8 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from strata.catalog.features import digest_of as feature_digest
+
 from .config import Settings
 from .project import PROJECT_ENV_VAR, PROJECTS_DIR, Project, ProjectError
 
@@ -1229,7 +1231,9 @@ def _run_for_push(
     return found["run"]["id"]
 
 
-def _remote_predictions(settings, run_id: str, checksums: list[str]) -> dict:
+def _remote_predictions(
+    settings, run_id: str, checksums: list[str], features: dict | None = None
+) -> dict:
     """Score a review pool on the host that has the GPU and the blobs.
 
     The same job machinery as a round, for the same reason: this is minutes
@@ -1251,7 +1255,7 @@ def _remote_predictions(settings, run_id: str, checksums: list[str]) -> dict:
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     try:
-        job = trainer.predict(run_id, checksums)
+        job = trainer.predict(run_id, checksums, features)
     except RemoteError as e:
         _error(str(e))
         raise typer.Exit(1) from None
@@ -1514,15 +1518,41 @@ def push(
 
     if predictions and scoring_run is not None:
         checksums = [s.checksum for s in pool]
+        # What the model is to be told about each sample, and — the same
+        # values — what keeps a cached answer the answer. A prediction is a
+        # function of a checkpoint, some bytes and these; keyed on the
+        # first two alone, a correction upstream would be served the score
+        # it invalidated.
+        specs = project.feature_specs
+        resolved = catalog.features_for([s.id for s in pool], specs) if specs else {}
+        by_checksum = {s.checksum: resolved.get(s.id, {}) for s in pool}
+        if specs:
+            uncovered = [s for s in pool if not by_checksum.get(s.checksum)]
+            if uncovered:
+                # Skipped and said out loud rather than scored on a blank.
+                # The danger is the silence: a queue that only surfaces
+                # covered samples never gets the rest labelled, so the gap
+                # sustains itself.
+                console.print(
+                    f"[yellow]{len(uncovered):,} sample(s) carry no value for "
+                    f"{', '.join(f.name for f in specs)} and cannot be scored — "
+                    f"they stay out of this queue until they do.[/yellow]"
+                )
+                dropped = {s.checksum for s in uncovered}
+                pool = [s for s in pool if s.checksum not in dropped]
+                checksums = [s.checksum for s in pool]
+        digests = {c: feature_digest(f) for c, f in by_checksum.items()}
         if remote:
             # The host keeps its own cache, keyed on its own run ids — which
             # is the only place that key means anything.
-            scores = _remote_predictions(settings, scoring_run, checksums)
+            scores = _remote_predictions(
+                settings, scoring_run, checksums, by_checksum
+            )
         else:
             from strata.modelling import PredictionCache
 
             cache = PredictionCache.local(project.runs_dir)
-            scores = cache.get(scoring_run, checksums)
+            scores = cache.get(scoring_run, checksums, digests)
             missing = [s for s in pool if s.checksum not in scores]
             if scores:
                 console.print(
@@ -1533,12 +1563,14 @@ def push(
                 with console.status(f"Predicting with run {scoring_run}..."):
                     fresh = run_predict(
                         PredictRequest(
-                            run_id=scoring_run, paths=_local_paths(catalog_root, missing)
+                            run_id=scoring_run,
+                            paths=_local_paths(catalog_root, missing),
+                            features=[by_checksum[s.checksum] for s in missing],
                         ),
                         store,
                     )
                 made = {s.checksum: p.value for s, p in zip(missing, fresh, strict=True)}
-                cache.put(scoring_run, made)
+                cache.put(scoring_run, made, digests)
                 scores.update(made)
 
         ranked = rank(pool, scores, STRATEGIES[strategy], empty_share=empty_share)

@@ -114,15 +114,24 @@ def _materialise(
     # discover the directory already existed meant pulling the whole dataset
     # out of object storage to delete it. Cheap when blobs were local files
     # and a hard link away; minutes and gigabytes once they are not.
+    specs = project.feature_specs
     final = target / f"v{catalog.dataset_version(dataset_id):03d}"
     if (final / MANIFEST_NAME).exists():
         # Membership is what makes a version, and the catalog already
-        # confirmed it matches, so the contents are the same. The manifest
-        # rather than the directory, because only the manifest proves the
-        # rename below completed.
+        # confirmed it matches — including the answers, since a version's
+        # identity covers its annotations. The manifest rather than the
+        # directory, because only the manifest proves the rename completed.
         manifest = Manifest.model_validate_json((final / MANIFEST_NAME).read_text())
-        _finished(on_progress, manifest)
-        return manifest, final
+        # Features are not part of a version's identity: they change what
+        # the model is *told*, not which samples were selected or what was
+        # said about them. So a project that adds one keeps its version and
+        # needs the directory rebuilt — otherwise the round trains from a
+        # manifest written before the feature existed and reports a number
+        # for a model that never saw it.
+        if [dict(f) for f in manifest.features] == [s.as_dict() for s in specs]:
+            _finished(on_progress, manifest)
+            return manifest, final
+        shutil.rmtree(final)
 
     staging = target / "pending"
     if staging.exists():
@@ -130,7 +139,9 @@ def _materialise(
         # written, no manifest — and keeping them would let a partial
         # dataset masquerade as a whole one.
         shutil.rmtree(staging)
-    catalog.materialise(dataset_id, staging, on_progress=on_progress, cache=cache)
+    catalog.materialise(
+        dataset_id, staging, on_progress=on_progress, cache=cache, features=specs
+    )
     manifest = Manifest.model_validate_json((staging / MANIFEST_NAME).read_text())
     staging.rename(final)
     _finished(on_progress, manifest)

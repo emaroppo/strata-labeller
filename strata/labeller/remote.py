@@ -110,14 +110,18 @@ class Trainer:
             timeout=60,
         )
 
-    def predict(self, run_id: int, checksums: list[str]) -> dict:
+    def predict(
+        self, run_id: int, checksums: list[str], features: dict | None = None
+    ) -> dict:
         """Ask for scores. Returns the job; the work runs after this returns.
 
         Checksums rather than paths, because the point is that this machine
         has no files — the host has the bucket and a cache of its own.
         """
         return self._call(
-            "/predict", {"run_id": run_id, "checksums": checksums}, timeout=120
+            "/predict",
+            {"run_id": run_id, "checksums": checksums, "features": features or {}},
+            timeout=120,
         )
 
     def run(self, run_id: int) -> dict | None:
