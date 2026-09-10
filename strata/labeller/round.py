@@ -176,7 +176,11 @@ def describe(result: RoundResult) -> list[str]:
         f"Dataset {manifest.dataset} v{manifest.version}: "
         f"{len(manifest.train)} train, {len(manifest.val)} val",
     ]
-    if abs(manifest.val_ratio_achieved - manifest.val_ratio) > 0.02:
+    if (
+        manifest.val_ratio is not None
+        and manifest.val_ratio_achieved is not None
+        and abs(manifest.val_ratio_achieved - manifest.val_ratio) > 0.02
+    ):
         # Grouping can make the target unreachable, and a val figure read
         # without knowing that is misleading
         lines.append(
