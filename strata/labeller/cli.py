@@ -1361,6 +1361,9 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
                 params=project.model.params,
                 fresh_params=project.model.fresh_params,
                 fresh=fresh,
+                # Declarations only: the host reads the values out of the
+                # catalog itself, as a local round does
+                features=[spec.as_dict() for spec in project.feature_specs],
             )
         )
     except RemoteError as e:
