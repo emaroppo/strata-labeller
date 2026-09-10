@@ -1694,9 +1694,10 @@ def export_annotations(
         )
         raise typer.Exit(1)
 
-    annotated, skipped = catalog.annotate_many(label_set_id, items, source="human")
+    written = catalog.annotate_many(label_set_id, items, source="human")
     console.print(
-        f"[green]{annotated} annotation(s) and {skipped} skip(s) into the catalog[/green]"
+        f"[green]{written.annotated} annotation(s) and {written.skipped} skip(s) "
+        f"into the catalog[/green]"
     )
     if report.unrecognised:
         console.print(
