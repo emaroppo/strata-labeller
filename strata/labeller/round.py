@@ -11,12 +11,11 @@ previous version instead of being recomputed — which is what stopped a
 warm-started model being scored on what it had already trained on.
 """
 
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from strata.catalog import Catalog, CatalogError
-from strata.labels import MANIFEST_NAME, Manifest, ManifestFormatError
+from strata.catalog import Catalog, CatalogError, ensure_materialised
+from strata.labels import Manifest
 from strata.modelling import Run, RunStore, TrainRequest, train
 from strata.modelling.registry import absolute
 
@@ -107,56 +106,18 @@ def _materialise(
     on_progress=None,
     cache: Path | None = None,
 ) -> tuple[Manifest, Path]:
-    target = project.datasets_dir / project.dataset_name
-
-    # Asked before fetching, not after. A round retried after crashing —
-    # which is the ordinary case, since training is the part that runs out of
-    # memory — reuses its version, and materialising into staging only to
-    # discover the directory already existed meant pulling the whole dataset
-    # out of object storage to delete it. Cheap when blobs were local files
-    # and a hard link away; minutes and gigabytes once they are not.
-    specs = project.feature_specs
-    final = target / f"v{catalog.dataset_version(dataset_id):03d}"
-    if (final / MANIFEST_NAME).exists():
-        # Membership is what makes a version, and the catalog already
-        # confirmed it matches — including the answers, since a version's
-        # identity covers its annotations. The manifest rather than the
-        # directory, because only the manifest proves the rename completed.
-        try:
-            manifest = Manifest.model_validate_json((final / MANIFEST_NAME).read_text())
-        except ManifestFormatError:
-            # Written by a release whose layout this one does not read, or
-            # before manifests said which layout they were. The directory is
-            # only a copy of what the catalog holds, so rebuilding it costs a
-            # fetch — and guessing at its fields could cost a round trained
-            # on the wrong split.
-            manifest = None
-        # Features are not part of a version's identity: they change what
-        # the model is *told*, not which samples were selected or what was
-        # said about them. So a project that adds one keeps its version and
-        # needs the directory rebuilt — otherwise the round trains from a
-        # manifest written before the feature existed and reports a number
-        # for a model that never saw it.
-        if manifest is not None and [dict(f) for f in manifest.features] == [
-            s.as_dict() for s in specs
-        ]:
-            _finished(on_progress, manifest)
-            return manifest, final
-        shutil.rmtree(final)
-
-    staging = target / "pending"
-    if staging.exists():
-        # An interrupted fetch. Its contents are unknowable — some files
-        # written, no manifest — and keeping them would let a partial
-        # dataset masquerade as a whole one.
-        shutil.rmtree(staging)
-    catalog.materialise(
-        dataset_id, staging, on_progress=on_progress, cache=cache, features=specs
+    # The same rule the modelling host uses for when a version already on
+    # disk may be reused, because it is the same function.
+    result = ensure_materialised(
+        catalog,
+        dataset_id,
+        project.datasets_dir,
+        features=project.feature_specs,
+        on_progress=on_progress,
+        cache=cache,
     )
-    manifest = Manifest.model_validate_json((staging / MANIFEST_NAME).read_text())
-    staging.rename(final)
-    _finished(on_progress, manifest)
-    return manifest, final
+    _finished(on_progress, result.manifest)
+    return result.manifest, result.directory
 
 
 def _finished(on_progress, manifest: Manifest) -> None:
