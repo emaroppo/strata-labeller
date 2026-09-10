@@ -1,13 +1,20 @@
 """Asking another host to run the round.
 
-The wire is deliberately narrow: a dataset id, a model name, params. The
-caller freezes the dataset — collections and val ratio are the project's
-business — and the host materialises it, picks a parent from the runs it
-holds, trains, and records. Nothing about a project travels.
+The wire is deliberately narrow: a dataset id and what it names, a model
+name, params. The caller freezes the dataset — collections and val ratio
+are the project's business — and the host materialises it, picks a parent
+from the runs it holds, trains, and records. Nothing about a project
+travels.
 
-Standard library rather than a client library, because this is four JSON
-calls and adding a dependency to the tool people install locally to save
-twenty lines is a poor trade.
+What is sent is built from the host's own request models, so a field
+renamed on one side fails a test rather than being dropped at the other.
+And the host is asked which protocol it speaks before anything is sent: a
+host on another release would ignore what it does not know and run the
+round anyway.
+
+Standard library rather than a client library, because this is a handful
+of JSON calls and adding a dependency to the tool people install locally
+to save twenty lines is a poor trade.
 
 **A round is submitted, not awaited.** The submission is one short request;
 after it returns, the round is the host's problem. Closing the laptop,
@@ -24,6 +31,8 @@ import json
 import time
 import urllib.error
 import urllib.request
+
+from strata.modelling.service import PROTOCOL, PROTOCOL_HEADER, PredictionRequest, RoundRequest
 
 #: Generous, because the request is held open for a whole training run and
 #: a timeout here reads as a failed round rather than as a slow one.
@@ -55,14 +64,42 @@ class Trainer:
         self.url = url.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self._spoken = False
+
+    def _handshake(self) -> None:
+        """Refuse a host on another protocol, before asking it anything.
+
+        Once per client: a host does not change release under a running
+        command, and the check costs a request.
+        """
+        if self._spoken:
+            return
+        request = urllib.request.Request(f"{self.url}/healthz", method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                spoken = json.loads(response.read()).get("protocol")
+        except urllib.error.HTTPError as e:
+            raise Refused(f"{self.url}/healthz refused it: {_detail(e)}") from None
+        except urllib.error.URLError as e:
+            raise Unreachable(f"Could not reach {self.url}: {e.reason}") from None
+        if spoken != PROTOCOL:
+            which = spoken if spoken is not None else "none — it predates protocol versions"
+            raise Refused(
+                f"{self.url} speaks protocol {which}, and this machine speaks "
+                f"{PROTOCOL}. Nothing was sent. Upgrade strata-modelling there or "
+                f"strata-labeller here, so the two match."
+            )
+        self._spoken = True
 
     def _call(self, path: str, payload: dict | None = None, timeout: int | None = None) -> dict:
+        self._handshake()
         request = urllib.request.Request(
             f"{self.url}{path}",
             data=json.dumps(payload).encode() if payload is not None else None,
             headers={
                 "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json",
+                PROTOCOL_HEADER: str(PROTOCOL),
             },
             method="POST" if payload is not None else "GET",
         )
@@ -82,47 +119,17 @@ class Trainer:
         """What that host can serve, which is not what this one can."""
         return self._call("/models", timeout=30).get("models", {})
 
-    def submit(
-        self,
-        dataset_id: int,
-        model: str,
-        params: dict,
-        fresh_params: dict | None = None,
-        fresh: bool = False,
-        catalog_id: str | None = None,
-    ) -> dict:
-        """Ask for a round. Returns the job; the round runs after this returns.
+    def submit(self, request: RoundRequest) -> dict:
+        """Ask for a round. Returns the job; the round runs after this returns."""
+        return self._call("/round", request.model_dump(mode="json"), timeout=60)
 
-        Both parameter sets go, because only the host knows whether it has a
-        parent to continue from — and a cold run wants the longer schedule
-        whether or not the caller asked for one.
-        """
-        return self._call(
-            "/round",
-            {
-                "dataset_id": dataset_id,
-                "model": model,
-                "params": params,
-                "fresh_params": fresh_params or {},
-                "fresh": fresh,
-                "catalog_id": catalog_id,
-            },
-            timeout=60,
-        )
-
-    def predict(
-        self, run_id: int, checksums: list[str], features: dict | None = None
-    ) -> dict:
+    def predict(self, request: PredictionRequest) -> dict:
         """Ask for scores. Returns the job; the work runs after this returns.
 
         Checksums rather than paths, because the point is that this machine
         has no files — the host has the bucket and a cache of its own.
         """
-        return self._call(
-            "/predict",
-            {"run_id": run_id, "checksums": checksums, "features": features or {}},
-            timeout=120,
-        )
+        return self._call("/predict", request.model_dump(mode="json"), timeout=120)
 
     def run(self, run_id: int) -> dict | None:
         """One run there, or None. Its numbering, not this machine's."""

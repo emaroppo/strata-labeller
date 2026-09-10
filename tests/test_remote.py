@@ -13,6 +13,7 @@ import urllib.request
 import pytest
 
 from strata.labeller.remote import Refused, Trainer, Unreachable
+from strata.modelling.service import PROTOCOL, PredictionRequest, RoundRequest
 
 
 class Reply:
@@ -29,12 +30,32 @@ class Reply:
         return False
 
 
+def _healthz(request) -> bool:
+    return request.full_url.endswith("/healthz")
+
+
+def _round(**overrides) -> RoundRequest:
+    fields = {
+        "dataset_id": 7,
+        "dataset_name": "demo",
+        "dataset_version": 3,
+        "annotation_digest": "a" * 64,
+        "catalog_id": "20260101T000000-aaaaaaaa",
+        "model": "multilabel",
+    }
+    fields.update(overrides)
+    return RoundRequest(**fields)
+
+
 @pytest.fixture
 def sent(monkeypatch):
-    """Capture the request instead of making it."""
-    captured = {}
+    """Capture the request instead of making it. The host speaks this protocol."""
+    captured = {"calls": []}
 
     def fake_urlopen(request, timeout=None):
+        captured["calls"].append(request.full_url)
+        if _healthz(request):
+            return Reply(captured.get("health", {"ok": True, "protocol": PROTOCOL}))
         captured["url"] = request.full_url
         captured["method"] = request.get_method()
         captured["headers"] = dict(request.headers)
@@ -46,37 +67,37 @@ def sent(monkeypatch):
     return captured
 
 
-def test_a_round_sends_an_id_not_a_dataset(sent):
-    Trainer("http://gpu:8082", "t").submit(
-        7, "multilabel", {"num_epochs": 4}, {"num_epochs": 8}
-    )
+def test_a_round_sends_an_id_and_what_it_means(sent):
+    request = _round(params={"num_epochs": 4}, fresh_params={"num_epochs": 8})
+    Trainer("http://gpu:8082", "t").submit(request)
 
     assert sent["url"] == "http://gpu:8082/round"
-    # The host has the index and the bucket; sending it images it can fetch
-    # itself would be paying the network to avoid the network. Both parameter
-    # sets go because only the host knows whether it has a parent.
-    assert sent["body"] == {
-        "dataset_id": 7,
-        "model": "multilabel",
-        "params": {"num_epochs": 4},
-        "fresh_params": {"num_epochs": 8},
-        "fresh": False,
-        "catalog_id": None,
-    }
+    # The host has the index and the bucket, so an id travels rather than a
+    # dataset — with its name, version and digest, so the host can tell its
+    # own dataset from a copy's that shares the number. Serialised by the
+    # host's own model, so a renamed field fails here and not there.
+    assert sent["body"] == request.model_dump(mode="json")
+    assert (sent["body"]["dataset_name"], sent["body"]["dataset_version"]) == ("demo", 3)
 
 
 def test_the_token_travels(sent):
-    Trainer("http://gpu:8082", "sekrit").submit(7, "multilabel", {})
+    Trainer("http://gpu:8082", "sekrit").submit(_round())
     assert sent["headers"]["Authorization"] == "Bearer sekrit"
 
 
+def test_the_protocol_travels(sent):
+    Trainer("http://gpu:8082", "t").submit(_round())
+    # urllib capitalises header names as it stores them
+    assert sent["headers"]["X-strata-protocol"] == str(PROTOCOL)
+
+
 def test_a_trailing_slash_does_not_double_up(sent):
-    Trainer("http://gpu:8082/", "t").submit(7, "m", {})
+    Trainer("http://gpu:8082/", "t").submit(_round())
     assert sent["url"] == "http://gpu:8082/round"
 
 
 def test_submitting_is_a_short_request(sent):
-    Trainer("http://gpu:8082", "t").submit(7, "m", {})
+    Trainer("http://gpu:8082", "t").submit(_round())
     # The round outlives the request that asked for it, so this waits for an
     # acknowledgement rather than for training
     assert sent["timeout"] <= 60
@@ -88,8 +109,19 @@ def test_listing_models_does_not_wait_for_hours(sent):
     assert sent["timeout"] <= 60
 
 
+def test_scoring_sends_the_hosts_own_request(sent):
+    request = PredictionRequest(
+        run_id="r", checksums=["a" * 64], features={"a" * 64: {"species": "oak"}}
+    )
+    Trainer("http://gpu:8082", "t").predict(request)
+    assert sent["url"] == "http://gpu:8082/predict"
+    assert sent["body"] == request.model_dump(mode="json")
+
+
 def test_the_hosts_reason_is_what_surfaces(monkeypatch):
     def refuse(request, timeout=None):
+        if _healthz(request):
+            return Reply({"ok": True, "protocol": PROTOCOL})
         raise urllib.error.HTTPError(
             request.full_url, 400, "Bad Request", {},
             _Body(json.dumps({"detail": "register it as an entry point, or run locally"})),
@@ -97,7 +129,7 @@ def test_the_hosts_reason_is_what_surfaces(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
     with pytest.raises(Refused, match="entry point"):
-        Trainer("http://gpu:8082", "t").submit(7, "model.py:Custom", {})
+        Trainer("http://gpu:8082", "t").submit(_round(model="model.py:Custom"))
 
 
 def test_an_unreachable_host_says_so(monkeypatch):
@@ -106,7 +138,7 @@ def test_an_unreachable_host_says_so(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", unreachable)
     with pytest.raises(Unreachable, match="Could not reach"):
-        Trainer("http://gpu:8082", "t").submit(7, "m", {})
+        Trainer("http://gpu:8082", "t").submit(_round())
 
 
 class _Body:
@@ -120,6 +152,33 @@ class _Body:
 
     def close(self):
         pass
+
+
+# ----------------------------------------------------------------------
+# Speaking the host's protocol
+# ----------------------------------------------------------------------
+
+
+def test_a_host_from_before_protocols_is_refused_before_anything_is_sent(sent):
+    """It would ignore what it does not understand and run the round anyway."""
+    sent["health"] = {"ok": True}
+    with pytest.raises(Refused, match="predates protocol"):
+        Trainer("http://gpu:8082", "t").submit(_round())
+    assert sent["calls"] == ["http://gpu:8082/healthz"]
+
+
+def test_a_host_on_another_protocol_is_refused_naming_both(sent):
+    sent["health"] = {"ok": True, "protocol": PROTOCOL + 1}
+    with pytest.raises(Refused, match=rf"protocol {PROTOCOL + 1}, .* speaks {PROTOCOL}"):
+        Trainer("http://gpu:8082", "t").submit(_round())
+    assert "http://gpu:8082/round" not in sent["calls"]
+
+
+def test_the_protocol_is_asked_once(sent):
+    trainer = Trainer("http://gpu:8082", "t")
+    trainer.models()
+    trainer.models()
+    assert sent["calls"].count("http://gpu:8082/healthz") == 1
 
 
 # ----------------------------------------------------------------------

@@ -1199,6 +1199,7 @@ def _remote_predictions(
     from pydantic import TypeAdapter
 
     from strata.labels import AnyPrediction
+    from strata.modelling.service import PredictionRequest
 
     from .remote import RemoteError, Trainer
 
@@ -1211,7 +1212,9 @@ def _remote_predictions(
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     try:
-        job = trainer.predict(run_id, checksums, features)
+        job = trainer.predict(
+            PredictionRequest(run_id=run_id, checksums=checksums, features=features or {})
+        )
     except RemoteError as e:
         _error(str(e))
         raise typer.Exit(1) from None
@@ -1315,6 +1318,8 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     the catalog is reachable from both machines. Everything after that needs
     a GPU and the checkpoints, and both live there.
     """
+    from strata.modelling.service import RoundRequest
+
     from .remote import RemoteError, Trainer
 
     if not settings.modelling.token:
@@ -1336,18 +1341,27 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     dataset_id = catalog.create_dataset(
         project.dataset_name, label_set_id, collections=project.collections, val_ratio=val_ratio
     )
-    name, version = catalog.dataset_named(dataset_id)
-    console.print(f"Dataset {name} v{version} → {settings.modelling.url}")
+    ref = catalog.dataset_named(dataset_id)
+    console.print(f"Dataset {ref.name} v{ref.version} → {settings.modelling.url}")
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     try:
         job = trainer.submit(
-            dataset_id,
-            project.model_ref,
-            project.model.params,
-            project.model.fresh_params,
-            fresh,
-            catalog.id,
+            RoundRequest(
+                dataset_id=dataset_id,
+                # What the id means here, for the host to check it means the
+                # same there: a copy of a catalog shares its numbering
+                dataset_name=ref.name,
+                dataset_version=ref.version,
+                annotation_digest=ref.annotation_digest,
+                catalog_id=catalog.id,
+                model=project.model_ref,
+                # Both sets, because only the host knows whether it has a
+                # parent — and a cold run wants the longer schedule
+                params=project.model.params,
+                fresh_params=project.model.fresh_params,
+                fresh=fresh,
+            )
         )
     except RemoteError as e:
         _error(str(e))
