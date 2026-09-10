@@ -388,7 +388,7 @@ class Project:
                 "both what a sample was and how it grouped — the reason a "
                 "satellite scene had nowhere to go. For a project written "
                 "before types:\n"
-                "  uv run python scripts/migrate_project_type.py <project>"
+                "  uv run python packages/labeller/scripts/migrate_project_type.py <project>"
             )
         return self.data.type
 
