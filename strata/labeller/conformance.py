@@ -27,8 +27,6 @@ catalog, modelling and the Label Studio boundary together. A type that
 passes this is usable for a whole round.
 """
 
-import json
-
 import pytest
 from pydantic import TypeAdapter
 
@@ -224,16 +222,16 @@ class LabelTypeConformance:
         It read every value as a classification, so a span or box dataset
         raised on the first sample and no model ever saw one.
         """
-        from strata.modelling.handlers import _examples
+        from strata.modelling import examples
 
         label_set_id = catalog.create_label_set("x", schema)
         for sample_id in sample_ids:
             catalog.annotate(sample_id, label_set_id, value)
         dataset_id = catalog.create_dataset("d", label_set_id, collections="*")
         directory = catalog.materialise(dataset_id, tmp_path / "out")
-        manifest = json.loads((directory / MANIFEST_NAME).read_text())
+        manifest = Manifest.model_validate_json((directory / MANIFEST_NAME).read_text())
 
-        train, val = _examples(directory, manifest)
+        train, val = examples(directory, manifest)
         assert train or val
         for example in [*train, *val]:
             assert example.target == value
