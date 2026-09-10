@@ -2251,7 +2251,7 @@ def catalog_merge(
     if not apply:
         console.print("[yellow]Nothing was written. Re-run with --apply.[/yellow]")
         return
-    console.print(f"[green]{report.copied:,} annotation(s) merged[/green]")
+    console.print(f"[green]{report.written:,} annotation(s) merged[/green]")
     if report.conflicted:
         console.print(
             f"[yellow]{report.conflicted:,} sample(s) were answered both ways. "
