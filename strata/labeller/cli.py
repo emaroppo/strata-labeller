@@ -1335,6 +1335,24 @@ def _on_another_catalog(where: str, served: dict, catalog, config) -> str:
     return message
 
 
+def _unreachable(error: Exception, config) -> str:
+    """Why an index could not be opened, in a line, and the likely fix.
+
+    The usual reason on a machine that just switched catalogs is the one
+    that is easiest to miss: the file names the index without its password,
+    and nothing in this shell supplies it.
+    """
+    import os
+
+    reason = str(error).splitlines()[0] if str(error) else type(error).__name__
+    if config.url and "password" in reason.lower() and not os.environ.get("PGPASSWORD"):
+        reason += (
+            " — $PGPASSWORD is not set. config.toml names the index without its "
+            "password, and the environment is where it comes from."
+        )
+    return reason
+
+
 def _blob_server_catalog(url: str) -> dict:
     """What a blob server says it serves, from its /healthz."""
     import urllib.request
@@ -2553,7 +2571,11 @@ def catalog_check(
 
     settings = _settings(config_path)
     config = _catalog_config(settings, catalog_name)
-    catalog = _catalog_if_any(settings, catalog_name)
+    try:
+        catalog = _catalog_if_any(settings, catalog_name)
+    except Exception as e:  # the answer to "which catalog", not a crash
+        _error(f"Cannot open this machine's catalog: {_unreachable(e, config)}")
+        raise typer.Exit(1) from None
     if catalog is None:
         _error(f"No catalog at {config.root} yet, so there is nothing to compare against.")
         raise typer.Exit(1)

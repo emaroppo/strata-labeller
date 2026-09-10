@@ -77,6 +77,30 @@ def test_a_machine_left_on_another_catalog_fails_naming_it(setup):
     assert ELSEWHERE in result.output
 
 
+def test_an_index_that_wants_a_password_says_so(tmp_path, monkeypatch):
+    """Not a traceback: the likeliest reason, on a machine that just switched."""
+    from strata.labeller import cli
+
+    def refuse(settings, name=""):
+        raise RuntimeError(
+            'connection failed: connection to server at "db", port 5432 failed: '
+            "fe_sendauth: no password supplied"
+        )
+
+    monkeypatch.setattr(cli, "_catalog_if_any", refuse)
+    monkeypatch.delenv("PGPASSWORD", raising=False)
+    config = tmp_path / "config.toml"
+    config.write_text('[catalog]\nurl = "postgresql+psycopg://strata@db:5432/strata"\n')
+
+    result = _check(config)
+
+    assert result.exit_code == 1
+    # The console wraps long lines, so compare with the wrapping taken out
+    said = " ".join(result.output.split())
+    assert "PGPASSWORD is not set" in said
+    assert "Traceback" not in said
+
+
 def test_an_unreachable_machine_fails(setup, monkeypatch):
     config, _ = setup
 
