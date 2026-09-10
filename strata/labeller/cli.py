@@ -1738,6 +1738,13 @@ def report(
                 {
                     "run": _run_json(run),
                     "chain": [_run_json(r) for r in store.chain(run.id)],
+                    # Only here, never in the history: there are as many of
+                    # these as epochs times metrics, and the history is a
+                    # list of runs rather than a list of curves.
+                    "curve": [
+                        {"epoch": epoch, **reported}
+                        for epoch, reported in store.curve(run.id)
+                    ],
                 }
             )
             return
@@ -1885,6 +1892,13 @@ def _print_run(store, run) -> None:
         console.print(f"  continues: {' -> '.join(r.short for r in chain)}")
     else:
         console.print("  unchained — continues nothing in the store")
+
+    curve = store.curve(run.id)
+    if curve:
+        console.print(
+            f"  curve:     {len(curve)} epoch(s) recorded — "
+            f"'report --run {run.short} --json' has them"
+        )
 
     if run.metrics:
         table = Table("Metric", "Value", box=None, pad_edge=False)
