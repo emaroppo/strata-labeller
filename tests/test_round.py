@@ -391,9 +391,8 @@ def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch)
     they are tar members in a bucket it is minutes and gigabytes, thrown
     away on arrival.
     """
-    from strata.catalog import MANIFEST_NAME, Manifest
     from strata.labeller.round import _materialise
-    from strata.labels import ClassificationSchema
+    from strata.labels import MANIFEST_NAME, ClassificationSchema, Manifest
 
     version_dir = project.datasets_dir / project.dataset_name / "v002"
     (version_dir / "files").mkdir(parents=True)

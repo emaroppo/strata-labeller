@@ -15,7 +15,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from strata.catalog import MANIFEST_NAME, Catalog, CatalogError, Manifest
+from strata.catalog import Catalog, CatalogError
+from strata.labels import MANIFEST_NAME, Manifest
 from strata.modelling import Run, RunStore, TrainRequest, train
 from strata.modelling.registry import absolute
 

@@ -15,7 +15,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from strata.catalog.features import digest_of as feature_digest
+from strata.labels import feature_digest
 
 from .config import Settings
 from .project import PROJECT_ENV_VAR, PROJECTS_DIR, Project, ProjectError

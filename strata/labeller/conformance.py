@@ -32,8 +32,16 @@ import json
 import pytest
 from pydantic import TypeAdapter
 
-from strata.catalog import MANIFEST_NAME, Catalog, Manifest, ManifestSample
-from strata.labels import AnyPrediction, AnySchema, AnyValue, Prediction
+from strata.catalog import Catalog
+from strata.labels import (
+    MANIFEST_NAME,
+    AnyPrediction,
+    AnySchema,
+    AnyValue,
+    Manifest,
+    ManifestSample,
+    Prediction,
+)
 from strata.modelling import PredictionCache
 
 _VALUE = TypeAdapter(AnyValue)
