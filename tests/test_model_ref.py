@@ -37,7 +37,7 @@ class ToyModel(Model):
         self.classes = classes
         return {"loss": 0.0}
 
-    def predict(self, paths, on_batch=None):
+    def predict(self, paths, on_batch=None, *, features=None):
         return [ChoicesPrediction(values=["cat"], confidences=[0.87]) for _ in paths]
 
     def save(self, path: Path) -> None:
