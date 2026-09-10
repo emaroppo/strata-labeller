@@ -1,187 +1,63 @@
-"""Every label type that ships, driven through the whole contract.
+"""Every label type through the Label Studio boundary and the ranking.
 
-The suite is only worth having if it runs against real types, and these are
-also what proves it catches anything: each was written after finding, by
-hand, a place that had assumed classification.
+Checked against the examples ``strata.labels`` ships, as the catalog and
+modelling check their own layers, so a type added there is covered here on
+the next upgrade. A type with no Label Studio mapping below fails here —
+which is the point: it can be stored and trained on, but not yet reviewed.
 """
 
 import pytest
 
-from strata.catalog import Catalog
-from strata.labeller.conformance import LabelTypeConformance
+from strata.labeller.active_learning import certainty, least_confident
+from strata.labeller.adapter import prediction_to_results
 from strata.labeller.schemas.bbox import BBoxSchema as LSBBox
 from strata.labeller.schemas.classification import ClassificationSchema as LSChoices
 from strata.labeller.schemas.span import SpanSchema as LSSpan
-from strata.labels import (
-    BBoxSchema,
-    Box,
-    Boxes,
-    BoxesPrediction,
-    Choices,
-    ChoicesPrediction,
-    ClassificationSchema,
-    SchemaError,
-    Span,
-    Spans,
-    SpanSchema,
-    SpansPrediction,
-)
+from strata.labels.examples import EXAMPLES
+
+each_type = pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
+
+#: How each label type is shown to a reviewer, by the example's name.
+LABEL_STUDIO = {
+    "choices": lambda: LSChoices(classes=["cat", "dog"]),
+    "spans": lambda: LSSpan(classes=["name", "place"]),
+    "multi-label spans": lambda: LSSpan(classes=["name", "place"], multi_label=True),
+    "overlapping spans": lambda: LSSpan(classes=["name", "place"], overlapping=True),
+    "boxes": lambda: LSBBox(classes=["cat", "dog"]),
+}
 
 
-class TestChoices(LabelTypeConformance):
-    @pytest.fixture
-    def schema(self):
-        return ClassificationSchema(classes=["cat", "dog"])
-
-    @pytest.fixture
-    def value(self):
-        return Choices(values=["cat"])
-
-    @pytest.fixture
-    def prediction(self):
-        return ChoicesPrediction(values=["cat", "dog"], confidences=[0.9, 0.2])
-
-    @pytest.fixture
-    def ls_schema(self):
-        return LSChoices(classes=["cat", "dog"])
+def test_every_label_type_can_be_shown_to_a_reviewer():
+    missing = {e.name for e in EXAMPLES} - set(LABEL_STUDIO)
+    assert not missing, f"no Label Studio mapping for: {', '.join(sorted(missing))}"
 
 
-class TestSpans(LabelTypeConformance):
-    @pytest.fixture
-    def media(self):
-        # Spans are character ranges in a document, so the samples carrying
-        # them are text. Driven through the catalog as images until now.
-        return "text"
-
-    @pytest.fixture
-    def schema(self):
-        return SpanSchema(classes=["name", "place"])
-
-    @pytest.fixture
-    def value(self):
-        return Spans(values=[Span(label="name", start=0, end=4)])
-
-    @pytest.fixture
-    def prediction(self):
-        return SpansPrediction(
-            values=[Span(label="name", start=0, end=4)], confidences=[0.8]
-        )
-
-    @pytest.fixture
-    def ls_schema(self):
-        return LSSpan(classes=["name", "place"])
+@each_type
+def test_an_annotation_round_trips_through_label_studio(example):
+    ls_schema = LABEL_STUDIO[example.name]()
+    encoded = ls_schema.encode_target(list(example.value.values))
+    assert ls_schema.decode_target(encoded) == list(example.value.values)
 
 
-class TestMultiLabelSpans(LabelTypeConformance):
-    """A region carrying two labels, all the way through.
-
-    Label Studio has always been able to express this; the layer storing it
-    could not, and dropped the second label without a word. Driving it
-    through the whole contract is what proves the two now agree.
-    """
-
-    @pytest.fixture
-    def media(self):
-        return "text"
-
-    @pytest.fixture
-    def schema(self):
-        return SpanSchema(classes=["name", "place"], multi_label=True)
-
-    @pytest.fixture
-    def value(self):
-        return Spans(values=[Span(labels=["name", "place"], start=0, end=4)])
-
-    @pytest.fixture
-    def prediction(self):
-        return SpansPrediction(
-            values=[Span(labels=["name", "place"], start=0, end=4)], confidences=[0.8]
-        )
-
-    @pytest.fixture
-    def ls_schema(self):
-        return LSSpan(classes=["name", "place"], multi_label=True)
+@each_type
+def test_a_prediction_encodes_for_label_studio(example):
+    ls_schema = LABEL_STUDIO[example.name]()
+    # What a reviewer is shown as a pre-annotation. A type that cannot do
+    # this can be labelled but never pre-labelled, which is most of what
+    # the loop is for.
+    results = prediction_to_results(example.prediction, ls_schema)
+    assert ls_schema.decode_target(results) == list(example.prediction.values)
 
 
-class TestOverlappingSpans(LabelTypeConformance):
-    """Two regions that intersect, where the label set says they may."""
-
-    @pytest.fixture
-    def media(self):
-        return "text"
-
-    @pytest.fixture
-    def schema(self):
-        return SpanSchema(classes=["name", "place"], overlapping=True)
-
-    @pytest.fixture
-    def value(self):
-        return Spans(
-            values=[
-                Span(labels=["name"], start=0, end=8),
-                Span(labels=["place"], start=4, end=12),
-            ]
-        )
-
-    @pytest.fixture
-    def prediction(self):
-        return SpansPrediction(
-            values=[
-                Span(labels=["name"], start=0, end=8),
-                Span(labels=["place"], start=4, end=12),
-            ],
-            confidences=[0.8, 0.4],
-        )
-
-    @pytest.fixture
-    def ls_schema(self):
-        return LSSpan(classes=["name", "place"], overlapping=True)
+@each_type
+def test_the_template_renders(example):
+    assert LABEL_STUDIO[example.name]().label_config().strip().startswith("<")
 
 
-def test_an_undeclared_overlap_is_refused_where_it_would_be_stored(tmp_path):
-    """The refusal has to fire on the path a reviewer's answer takes.
-
-    Label Studio will let anyone draw two regions across one phrase. Until
-    the label set says whether that is meaningful here, storing it means a
-    tagger silently training on whichever of the two came last.
-    """
-    catalog = Catalog.local(tmp_path / "catalog")
-    document = tmp_path / "doc.txt"
-    document.write_text("Ada Lovelace worked here")
-    [sample_id] = catalog.ingest([document], media="text")
-    label_set_id = catalog.create_label_set(
-        "x", SpanSchema(classes=["name", "place"])
-    )
-
-    with pytest.raises(SchemaError, match="overlap"):
-        catalog.annotate(
-            sample_id,
-            label_set_id,
-            Spans(
-                values=[
-                    Span(labels=["name"], start=0, end=12),
-                    Span(labels=["place"], start=4, end=20),
-                ]
-            ),
-        )
-
-
-class TestBoxes(LabelTypeConformance):
-    @pytest.fixture
-    def schema(self):
-        return BBoxSchema(classes=["cat", "dog"])
-
-    @pytest.fixture
-    def value(self):
-        return Boxes(values=[Box(label="cat", x=0.1, y=0.2, width=0.3, height=0.4)])
-
-    @pytest.fixture
-    def prediction(self):
-        return BoxesPrediction(
-            values=[Box(label="cat", x=0.1, y=0.2, width=0.3, height=0.4)],
-            confidences=[0.7],
-        )
-
-    @pytest.fixture
-    def ls_schema(self):
-        return LSBBox(classes=["cat", "dog"])
+@each_type
+def test_uncertainty_reads_the_confidences(example):
+    prediction = example.prediction
+    # The number beside a task and the order it arrives in have to tell the
+    # same story
+    assert certainty(prediction) == max(prediction.confidences)
+    assert abs(certainty(prediction) - (1.0 - least_confident(prediction))) < 1e-9
