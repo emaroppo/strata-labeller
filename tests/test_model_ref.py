@@ -102,6 +102,7 @@ def test_a_missing_class_names_the_module(toy_project):
 def test_a_bare_name_is_looked_up_in_the_registry(project):
     # No ':' now means a registered short name rather than a malformed ref,
     # which is what lets a request carry "multilabel" over a wire
+    pytest.importorskip("timm", reason="presence is an image baseline")
     loaded = set_ref(project, "presence")
     assert type(loaded.load_model()).__name__ == "PresenceClassifier"
 
@@ -179,6 +180,7 @@ def test_a_ref_from_before_the_move_still_resolves(project, legacy):
     # The baselines moved twice. A project.toml written before either should
     # not fail with an import error that says nothing about what to change.
     assert legacy in LEGACY_MODEL_REFS
+    pytest.importorskip("timm", reason="both refs name an image baseline")
     assert set_ref(project, legacy).load_model() is not None
 
 
