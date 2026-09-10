@@ -73,42 +73,6 @@ def _ls_client(settings: Settings, project: Project, config_path: Path):
     return LSClient(settings, project)
 
 
-def _blobs_for(settings, root: Path, config=None):
-    """Where this host reads and writes sample bytes.
-
-    Files under the catalog root when nothing else is configured, which is
-    what keeps a checkout working. An endpoint means tar shards in a bucket,
-    which is what lets the machine that trains and the machine that labels
-    read the same bytes without either owning them.
-
-    ``config`` is the catalog whose storage this is; the host's default when
-    it is not given. Two catalogs can sit in one bucket or in different
-    ones, so this cannot read the default's endpoint and hope.
-    """
-    from strata.catalog import LocalBackend
-
-    config = config or settings.catalog
-    if not config.s3_endpoint:
-        return LocalBackend(root / "blobs")
-
-    import boto3
-    from botocore.config import Config
-
-    from strata.catalog.s3 import S3Backend
-
-    client = boto3.client(
-        "s3",
-        endpoint_url=config.s3_endpoint,
-        aws_access_key_id=config.s3_access_key or None,
-        aws_secret_access_key=config.s3_secret_key or None,
-        region_name=config.s3_region,
-        # Anything that is not AWS serves buckets as a path rather than as a
-        # subdomain, and the default guesses the other way
-        config=Config(s3={"addressing_style": "path"}),
-    )
-    return S3Backend(client, bucket=config.s3_bucket)
-
-
 def _addressing(settings, config=None):
     """How this host writes and reads task image URLs.
 
@@ -118,10 +82,10 @@ def _addressing(settings, config=None):
     """
     from .adapter import AdapterError, Addressing
 
-    config = config or settings.catalog
+    config = config or settings.catalogs.default
     try:
         return Addressing(
-            prefix=config.blobs_prefix,
+            prefix=settings.label_studio.blobs_prefix,
             base_url=config.serve_url,
             secret=config.blob_secret,
         )
@@ -187,24 +151,17 @@ def _catalog_for(settings, config_path: Path, create: bool = False, name: str = 
     ``create`` for the commands that put data in: refusing to make one would
     leave no way to make the first, and the advice would be circular.
     """
-    from strata.catalog import Catalog
+    from strata.catalog.config import CatalogMissing, open_catalog
 
     config = _catalog_config(settings, name)
-    root = Path(config.root)
-    blobs = _blobs_for(settings, root, config)
-    if config.url:
-        # A shared index: nothing local to check for, and create_all is
-        # harmless against one that already exists
-        return Catalog.connect(config.url, blobs), root
-
-    if not create and not (root / "catalog.db").exists():
+    try:
+        return open_catalog(config, create=create), Path(config.root)
+    except CatalogMissing:
         _error(
-            f"No catalog at {root}. Run 'auto-labeller ingest' to make one, "
+            f"No catalog at {config.root}. Run 'auto-labeller ingest' to make one, "
             f"or point [catalog] root in {config_path} at an existing one."
         )
-        raise typer.Exit(1)
-    root.mkdir(parents=True, exist_ok=True)
-    return Catalog.connect(f"sqlite:///{root / 'catalog.db'}", blobs), root
+        raise typer.Exit(1) from None
 
 
 def _settings(config_path: Path = Path("config.toml")):
@@ -214,11 +171,11 @@ def _settings(config_path: Path = Path("config.toml")):
     nothing saying which is the default is refused rather than guessed at.
     A traceback would be a poor way to say so.
     """
-    from .config import ConfigError
+    from strata.catalog.config import CatalogConfigError
 
     try:
         return Settings.load(config_path)
-    except ConfigError as e:
+    except CatalogConfigError as e:
         _error(str(e))
         raise typer.Exit(1) from None
 
@@ -255,11 +212,11 @@ def _catalog_config(settings, name: str = ""):
     ids in a catalog mean nothing outside it, so a job quietly reading the
     wrong one is the failure this naming exists to prevent.
     """
-    from .config import ConfigError
+    from strata.catalog.config import CatalogConfigError
 
     try:
-        return settings.catalog_named(name)
-    except ConfigError as e:
+        return settings.catalogs.named(name)
+    except CatalogConfigError as e:
         _error(str(e))
         raise typer.Exit(1) from None
 
@@ -276,17 +233,12 @@ def _catalog_if_any(settings, name: str = ""):
     commands ended up reading a stale SQLite index after the catalog moved
     to Postgres, reporting counts from it as though they were current.
     """
-    from strata.catalog import Catalog
+    from strata.catalog.config import CatalogMissing, open_catalog
 
-    config = _catalog_config(settings, name)
-    root = Path(config.root)
-    if config.url:
-        return Catalog.connect(config.url, _blobs_for(settings, root, config))
-    if (root / "catalog.db").exists():
-        return Catalog.connect(
-            f"sqlite:///{root / 'catalog.db'}", _blobs_for(settings, root, config)
-        )
-    return None
+    try:
+        return open_catalog(_catalog_config(settings, name))
+    except CatalogMissing:
+        return None
 
 
 def _warn_on_composition_drift(project: Project, catalog, schema) -> None:
@@ -431,8 +383,8 @@ def catalogs_cmd(config_path: Path = ConfigOption) -> None:
     table.add_column("Index", style="magenta")
     table.add_column("Blobs", style="green")
     table.add_column("Identity", style="yellow")
-    for name in settings.catalog_names():
-        config = settings.catalog_named("" if name == settings.default_catalog else name)
+    for name in settings.catalogs.names():
+        config = settings.catalogs.named("" if name == settings.catalogs.default_name else name)
         index = _redacted(config.url) if config.url else f"sqlite under {config.root}"
         blobs = (
             f"{config.s3_endpoint}/{config.s3_bucket}"
@@ -443,11 +395,15 @@ def catalogs_cmd(config_path: Path = ConfigOption) -> None:
         # pointing at one database is the mistake this makes visible, and
         # only the catalog itself can say.
         try:
-            catalog = _catalog_if_any(settings, "" if name == settings.default_catalog else name)
+            catalog = _catalog_if_any(
+                settings, "" if name == settings.catalogs.default_name else name
+            )
             identity = catalog.id if catalog is not None else "[dim]not created yet[/dim]"
         except Exception as e:  # a catalog that cannot be reached is not fatal here
             identity = f"[red]{escape(str(e).splitlines()[0])}[/red]"
-        label = f"{name} [dim](default)[/dim]" if name == settings.default_catalog else name
+        label = (
+            f"{name} [dim](default)[/dim]" if name == settings.catalogs.default_name else name
+        )
         table.add_row(label, index, blobs, identity)
     console.print(table)
 
@@ -811,7 +767,7 @@ def init(
         # at a mount this deployment no longer has, and configuring one
         # would suggest the mount still matters.
         client.setup_local_storage(
-            ls_project_id, path=f"/label-studio/data/{config.blobs_prefix}"
+            ls_project_id, path=f"/label-studio/data/{settings.label_studio.blobs_prefix}"
         )
 
     tasks, _ = tasks_to_push(
@@ -2213,10 +2169,12 @@ def catalog_merge(
     find after it.
     """
     from strata.catalog import Catalog, MergeError, merge_annotations
+    from strata.catalog.config import blobs_for
 
     settings = _settings(config_path)
-    target, root = _catalog_for(settings, config_path, name=catalog_name)
-    source = Catalog.connect(from_url, _blobs_for(settings, root))
+    target, _ = _catalog_for(settings, config_path, name=catalog_name)
+    # A copy is the same corpus, so it reads the same bytes this catalog does
+    source = Catalog.connect(from_url, blobs_for(_catalog_config(settings, catalog_name)))
 
     try:
         with Progress(
@@ -2277,10 +2235,12 @@ def catalog_copy(
     repoint every task at a different image.
     """
     from strata.catalog import Catalog, CopyError, copy_index
+    from strata.catalog.config import blobs_for
 
     settings = _settings(config_path)
-    source, root = _catalog_for(settings, config_path, name=catalog_name)
-    target = Catalog.connect(to_url, _blobs_for(settings, root))
+    source, _ = _catalog_for(settings, config_path, name=catalog_name)
+    # Only the index moves: the copy points at exactly the same bytes
+    target = Catalog.connect(to_url, blobs_for(_catalog_config(settings, catalog_name)))
 
     try:
         with Progress(
@@ -2412,25 +2372,28 @@ def catalog_repack(
     a second run resumes rather than packing twice.
     """
     from strata.catalog import LocalBackend, RepackError, repack_blobs
+    from strata.catalog.config import blobs_for
 
     settings = _settings(config_path)
     config = _catalog_config(settings, catalog_name)
     if not config.s3_endpoint:
         _error(
-            "No object storage configured. Set STRATA_S3_ENDPOINT and "
-            "STRATA_S3_BUCKET (and the credentials) — this packs blobs into a "
-            "bucket, so there is nowhere to put them otherwise."
+            "No object storage configured for this catalog. Set s3_endpoint and "
+            "s3_bucket in its [catalog] table, with the credentials in "
+            "$STRATA_S3_ACCESS_KEY and $STRATA_S3_SECRET_KEY — this packs blobs "
+            "into a bucket, so there is nowhere to put them otherwise."
         )
         raise typer.Exit(1)
 
     catalog, root = _catalog_for(settings, config_path, name=catalog_name)
-    config = _catalog_config(settings, catalog_name)
-    target = _blobs_for(settings, root)
+    # This catalog's bucket, not the host default's: with --catalog naming
+    # another, the default's would pack one corpus into someone else's.
+    target = blobs_for(config)
     # Before any put, since the size is read when a shard is opened. Larger
     # shards mean fewer objects and fewer requests; the cost is memory, as a
     # shard is buffered whole and then read into one bytes object to upload.
     target.shard_bytes = shard_mb * 1024 * 1024
-    # Explicitly the local one: _blobs_for answers with the bucket once an
+    # Explicitly the local one: blobs_for answers with the bucket once an
     # endpoint is set, and that is the destination, not the source.
     source = LocalBackend(root / "blobs")
 
@@ -2533,6 +2496,7 @@ def catalog_probe(
 
     from strata.catalog import checksum_of
     from strata.catalog import tables as t
+    from strata.catalog.config import blobs_for
 
     settings = _settings(config_path)
     config = _catalog_config(settings, catalog_name)
@@ -2569,7 +2533,7 @@ def catalog_probe(
     probe.write_bytes(body)
     uploaded = None
     try:
-        blobs = _blobs_for(settings, root)
+        blobs = blobs_for(config)
         if endpoint:
             # A prefix of its own, so a probe never lands among real shards
             blobs.prefix = "probe"

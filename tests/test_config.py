@@ -5,6 +5,8 @@ them. The tests here exist because the failure is quiet: a command reads a
 real catalog, reports real numbers, and they belong to the wrong index.
 """
 
+from strata.catalog.config import CatalogConfig, Catalogs
+
 
 def test_a_configured_index_wins_over_a_local_file(tmp_path, monkeypatch):
     """A stale catalog.db must not shadow the index that is configured.
@@ -15,7 +17,7 @@ def test_a_configured_index_wins_over_a_local_file(tmp_path, monkeypatch):
     trained on it.
     """
     from strata.labeller.cli import _catalog_if_any
-    from strata.labeller.config import CatalogConfig, Settings
+    from strata.labeller.config import Settings
 
     monkeypatch.chdir(tmp_path)
     root = tmp_path / "catalog"
@@ -24,7 +26,7 @@ def test_a_configured_index_wins_over_a_local_file(tmp_path, monkeypatch):
     elsewhere = tmp_path / "elsewhere.db"
 
     settings = Settings(
-        catalog=CatalogConfig(root=str(root), url=f"sqlite:///{elsewhere}")
+        catalogs=Catalogs(default=CatalogConfig(root=str(root), url=f"sqlite:///{elsewhere}"))
     )
     catalog = _catalog_if_any(settings)
     assert str(elsewhere) in str(catalog.engine.url)
@@ -32,12 +34,12 @@ def test_a_configured_index_wins_over_a_local_file(tmp_path, monkeypatch):
 
 def test_a_local_file_is_used_when_nothing_is_configured(tmp_path, monkeypatch):
     from strata.labeller.cli import _catalog_if_any
-    from strata.labeller.config import CatalogConfig, Settings
+    from strata.labeller.config import Settings
 
     monkeypatch.chdir(tmp_path)
     root = tmp_path / "catalog"
     root.mkdir()
-    settings = Settings(catalog=CatalogConfig(root=str(root)))
+    settings = Settings(catalogs=Catalogs(default=CatalogConfig(root=str(root))))
     # Nothing there yet: a project that has never ingested is still a
     # project, so this reports absence rather than failing
     assert _catalog_if_any(settings) is None
