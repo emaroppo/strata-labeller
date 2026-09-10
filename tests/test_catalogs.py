@@ -41,20 +41,31 @@ root = "text"
     assert settings.catalogs.named("images").root == "images"
 
 
-def test_the_blob_mount_name_belongs_to_label_studio(tmp_path):
-    settings = Settings.load(_write(tmp_path, '[label_studio]\nblobs_prefix = "samples"\n'))
-    assert settings.label_studio.blobs_prefix == "samples"
+def test_task_urls_use_each_catalogs_own_mount(tmp_path):
+    """One catalog's tasks read off `blobs`, another's off `blobs-emails`, in one Label Studio."""
+    from strata.labeller.cli import _addressing
+
+    settings = Settings.load(_write(tmp_path, """
+[catalog.main]
+root = "main"
+
+[catalog.emails]
+root = "emails"
+blobs_prefix = "blobs-emails"
+"""))
+    assert _addressing(settings, settings.catalogs.named("emails")).prefix == "blobs-emails"
+    assert _addressing(settings, settings.catalogs.named("main")).prefix == "blobs"
 
 
-def test_a_moved_setting_stops_a_command_saying_where_it_went(tmp_path):
+def test_a_credential_in_the_file_stops_a_command_saying_where_it_goes(tmp_path):
     from typer.testing import CliRunner
 
     from strata.labeller.cli import app
 
-    config = _write(tmp_path, '[catalog]\nblobs_prefix = "blobs"\n')
+    config = _write(tmp_path, '[catalog]\ns3_secret_key = "oops"\n')
     result = CliRunner().invoke(app, ["catalogs", "--config", str(config)])
     assert result.exit_code == 1
-    assert "[label_studio]" in result.output
+    assert "STRATA_S3_SECRET_KEY" in result.output
 
 
 # ----------------------------------------------------------------------

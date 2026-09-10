@@ -26,12 +26,6 @@ class LabelStudioConfig:
     # deployments already mount it under this path — changing the default
     # would be a redeploy dressed up as a rename.
     local_storage_path: str = "/label-studio/data/images"
-    #: What the catalog's blob directory is called inside the Label Studio
-    #: container, for when Label Studio reads files off a mount rather than
-    #: from a blob server. Must match the bind mount in docker-compose.yml.
-    #: Here rather than with the catalog because it describes this
-    #: container, and nothing but the labeller reads it.
-    blobs_prefix: str = "blobs"
 
 
 @dataclass

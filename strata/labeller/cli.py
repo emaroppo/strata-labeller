@@ -85,7 +85,7 @@ def _addressing(settings, config=None):
     config = config or settings.catalogs.default
     try:
         return Addressing(
-            prefix=settings.label_studio.blobs_prefix,
+            prefix=config.blobs_prefix,
             base_url=config.serve_url,
             secret=config.blob_secret,
         )
@@ -767,7 +767,7 @@ def init(
         # at a mount this deployment no longer has, and configuring one
         # would suggest the mount still matters.
         client.setup_local_storage(
-            ls_project_id, path=f"/label-studio/data/{settings.label_studio.blobs_prefix}"
+            ls_project_id, path=f"/label-studio/data/{config.blobs_prefix}"
         )
 
     tasks, _ = tasks_to_push(
