@@ -14,7 +14,7 @@ from strata.catalog.stages import Context as CatalogContext
 from strata.catalog.stages import DatasetRequest, MaterialiseRequest, dataset, materialise
 from strata.labels import MANIFEST_NAME, Manifest
 from strata.modelling import Run, RunStore
-from strata.modelling.registry import absolute
+from strata.modelling.plugins.registry import absolute
 from strata.modelling.stages import Context as ModellingContext
 from strata.modelling.stages import TrainStageRequest, train
 

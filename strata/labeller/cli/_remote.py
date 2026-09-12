@@ -9,7 +9,7 @@ from ._shared import _error, _progress, console
 
 def _reattach(settings, job_id: str) -> None:
     """Pick up a round that is already running elsewhere."""
-    from strata.modelling.client import Trainer
+    from strata.modelling.remote.client import Trainer
 
     if not settings.modelling.url:
         _error("No modelling host configured, so there is no job to reattach to.")
@@ -21,7 +21,7 @@ def _reattach(settings, job_id: str) -> None:
 
 def _trainer(settings):
     """The modelling host's client, refused without the token it was started with."""
-    from strata.modelling.client import Trainer
+    from strata.modelling.remote.client import Trainer
 
     if not settings.modelling.token:
         _error(
@@ -51,7 +51,7 @@ def _follow(trainer, job_id: str) -> dict:
     Interrupting this stops watching, not training. That distinction is
     worth stating out loud, because Ctrl-C usually means the opposite.
     """
-    from strata.modelling.client import RemoteError
+    from strata.modelling.remote.client import RemoteError
 
     # Elapsed, because every stage looks identical while it is running
     # and the long one looks identical to a stalled one

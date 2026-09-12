@@ -161,7 +161,7 @@ def _run_for_push(
             return None
         return run.id
 
-    from strata.modelling.client import RemoteError, Trainer
+    from strata.modelling.remote.client import RemoteError, Trainer
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     with _exit_on(RemoteError):
@@ -195,8 +195,8 @@ def _remote_predictions(
     from pydantic import TypeAdapter
 
     from strata.labels import AnyPrediction
-    from strata.modelling.client import RemoteError
-    from strata.modelling.service import PredictionRequest
+    from strata.modelling.remote.client import RemoteError
+    from strata.modelling.remote.service import PredictionRequest
 
     trainer = _trainer(settings)
     with _exit_on(RemoteError):

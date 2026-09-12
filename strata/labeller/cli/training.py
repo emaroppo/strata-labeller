@@ -105,7 +105,7 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     from strata.catalog import CatalogError
     from strata.catalog.stages import Context as CatalogContext
     from strata.catalog.stages import DatasetRequest, dataset
-    from strata.modelling.client import RemoteError
+    from strata.modelling.remote.client import RemoteError
     from strata.modelling.stages import Context as ModellingContext
     from strata.modelling.stages import DatasetIdentity, Host, TrainStageRequest, train
 

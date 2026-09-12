@@ -54,9 +54,9 @@ def host(featured, tmp_path, monkeypatch):
     Training itself is stood in for: it is covered where it lives, and what
     matters here is the directory the host would have trained from.
     """
-    import strata.modelling.service as service
+    import strata.modelling.remote.service as service
     from strata.modelling import RunStore
-    from strata.modelling.client import Trainer
+    from strata.modelling.remote.client import Trainer
     from strata.modelling.requests import Run
 
     _, catalog = featured
@@ -135,7 +135,7 @@ def test_a_host_on_another_catalog_is_refused_before_anything_is_frozen(
     from sqlalchemy import func, select
 
     from strata.catalog.index import tables as t
-    from strata.modelling.client import Trainer
+    from strata.modelling.remote.client import Trainer
 
     project, catalog = featured
     monkeypatch.setattr(

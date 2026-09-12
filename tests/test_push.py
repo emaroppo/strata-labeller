@@ -76,7 +76,7 @@ def stage(make_project, tmp_path, monkeypatch):
     with store.engine.begin() as conn:
         from sqlalchemy import update
 
-        from strata.modelling import tables as t
+        from strata.modelling.store import tables as t
 
         conn.execute(
             update(t.run).where(t.run.c.id == run.id)

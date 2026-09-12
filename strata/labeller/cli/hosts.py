@@ -30,7 +30,7 @@ def catalog_check(
     blob server left on the old catalog answers 404 for every new sample, and
     a modelling host left on it refuses every round.
     """
-    from strata.modelling.client import RemoteError, Trainer
+    from strata.modelling.remote.client import RemoteError, Trainer
 
     settings = _settings(config_path)
     config = _catalog_config(settings, catalog_name)
