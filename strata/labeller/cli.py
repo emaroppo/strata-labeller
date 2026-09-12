@@ -827,16 +827,8 @@ def prepare(
 ) -> None:
     """Convert a corpus into the shape this project's sample type stores.
 
-    Mail arrives as .eml, footage as video, and a catalog holds neither.
-    This writes what it does hold — one document per message, one image per
-    frame — into the project's data root, along with an index recording
-    what the conversion knew: where each sample came from, and which video or thread
-    it belongs to, so a group cannot straddle a train/val split.
-
-    Then run 'ingest'. Two steps rather than one, because ingest is where
-    content addressing, grouping and collections are decided, and a
-    converter reaching around it would be a second implementation of the
-    thing most worth having only one of.
+    Writes the files and an index of what the conversion knew into the
+    project's data root. Then run 'ingest', which catalogues them.
     """
     from strata.catalog.preparers import PreparerError, available, for_source, resolve
     from strata.catalog.preparers import run as run_preparer
