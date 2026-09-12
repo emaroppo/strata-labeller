@@ -27,6 +27,9 @@ ALLOWED = {
     "catalog": {"labels", "common"},
     "modelling": {"labels", "catalog", "common"},
     "labeller": {"labels", "catalog", "modelling"},
+    # The top of the graph: it sequences the others' stages, so it may
+    # import all of them, and nothing may import it.
+    "experiment": {"labels", "common", "catalog", "modelling", "labeller"},
 }
 
 #: Third-party imports that would undo the point of a package.
@@ -40,6 +43,9 @@ FORBIDDEN = {
     "catalog": {"torch", "timm", "transformers", "label_studio_sdk"},
     "modelling": {"label_studio_sdk"},
     "labeller": set(),
+    # Nothing in the orchestrator may know Label Studio exists, or carry a
+    # framework: the labeller's stages talk to the one and the models to the other.
+    "experiment": {"label_studio_sdk", "torch", "timm", "transformers"},
 }
 
 #: `modelling` may import `catalog`, but only from its service layer.
