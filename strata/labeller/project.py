@@ -51,11 +51,9 @@ class LabelConfigSpec:
     # Template-specific parameters (e.g. choice="single"); validated against
     # the schema the template selects
     choice: str | None = None
-    # Span-only, and None means "not declared" so that setting either on a
-    # template that has no such notion is refused by name rather than
-    # ignored. Both describe what the job is, not a preference: a model
-    # that cannot learn overlapping spans refuses the label set rather than
-    # training on a projection of it.
+    # Span-only. None means "not declared", so setting either on a template
+    # with no such notion is refused by name rather than ignored. See
+    # docs/adr/0014.
     multi_label: bool | None = None
     overlapping: bool | None = None
     # For template = "custom": the project's own labeling config
