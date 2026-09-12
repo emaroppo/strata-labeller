@@ -23,7 +23,7 @@ def workspace(project, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
     catalog = Catalog.local(tmp_path / "catalog")
-    label_set_id = catalog.create_label_set(
+    label_set_id = catalog.label_sets.create(
         project.name, ClassificationSchema(classes=["cat", "dog"])
     )
     paths = []

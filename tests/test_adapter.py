@@ -34,7 +34,7 @@ def stocked(catalog, files):
 
     paths = files(4)
     ids = catalog.ingest(paths, media="image")
-    label_set_id = catalog.create_label_set(
+    label_set_id = catalog.label_sets.create(
         "presence", ClassificationSchema(classes=["cat", "dog"])
     )
     return ids, label_set_id

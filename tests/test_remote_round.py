@@ -40,7 +40,7 @@ def featured(project, tmp_path):
         collections=project.collections,
         metadata_for=lambda p: {"species": f"sp-{p.stem}"},
     )
-    label_set = catalog.create_label_set(
+    label_set = catalog.label_sets.create(
         project.label_set_name, project.schema.catalog_schema()
     )
     catalog.annotate_many(label_set, [(i, Choices(values=["cat"])) for i in ids])

@@ -59,7 +59,7 @@ def stage(make_project, tmp_path, monkeypatch):
         paths, media="image", collections=["demo"],
         metadata_for=lambda p: {"source_path": str(p)},
     )
-    label_set_id = catalog.create_label_set(
+    label_set_id = catalog.label_sets.create(
         "demo", ClassificationSchema(classes=["cat", "dog"])
     )
 

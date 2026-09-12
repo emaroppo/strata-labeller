@@ -38,7 +38,7 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
     from strata.labels import Choices
 
     catalog, ids = _ingested(project, tmp_path)
-    label_set_id = catalog.create_label_set(
+    label_set_id = catalog.label_sets.create(
         "demo", project.schema.catalog_schema()
     )
     catalog.annotate_many(
@@ -78,7 +78,7 @@ def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
     from strata.labels import Choices
 
     catalog, ids = _ingested(project, tmp_path)
-    label_set_id = catalog.create_label_set("demo", project.schema.catalog_schema())
+    label_set_id = catalog.label_sets.create("demo", project.schema.catalog_schema())
     catalog.annotate_many(
         label_set_id, [(i, Choices(values=["cat"])) for i in ids[:12]]
     )

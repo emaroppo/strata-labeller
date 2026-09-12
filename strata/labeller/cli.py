@@ -282,7 +282,7 @@ def _schema_for(project: Project, catalog):
     from strata.catalog import CatalogError
 
     try:
-        _, label_set = catalog.label_set(project.label_set_name)
+        _, label_set = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
         return project.schema
     schema = project.schema_with(label_set.classes)
@@ -294,7 +294,7 @@ def _label_set_for(catalog, project: Project):
     from strata.catalog import CatalogError
 
     try:
-        return catalog.label_set(project.label_set_name)
+        return catalog.label_sets.get(project.label_set_name)
     except CatalogError:
         _error(
             f"No label set named '{project.label_set_name}' in the catalog. "
@@ -404,7 +404,7 @@ def list_projects_cmd() -> None:
         catalog = catalog_for_project(project)
         if catalog is not None:
             try:
-                label_set_id, _ = catalog.label_set(project.label_set_name)
+                label_set_id, _ = catalog.label_sets.get(project.label_set_name)
             except CatalogError:
                 pass
             else:
@@ -480,7 +480,7 @@ def class_add(
     catalog = _catalog_if_any(settings, project.catalog.name)
     if catalog is not None:
         try:
-            label_set_id, _ = catalog.label_set(project.label_set_name)
+            label_set_id, _ = catalog.label_sets.get(project.label_set_name)
         except CatalogError:
             return
         labelled = len(catalog.labelled(label_set_id, project.collections))
@@ -511,7 +511,7 @@ def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
     if catalog is None:
         return
     try:
-        label_set_id, schema = catalog.label_set(project.label_set_name)
+        label_set_id, schema = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
         # No label set yet: ingest creates it from project.toml, so the
         # classes arrive with it
@@ -522,7 +522,9 @@ def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
         return
     # Append-only, because a checkpoint maps output neurons to this list by
     # position and a run records the list it trained with
-    catalog.set_classes(label_set_id, schema.model_copy(update={"classes": list(classes)}))
+    catalog.label_sets.set_classes(
+        label_set_id, schema.model_copy(update={"classes": list(classes)})
+    )
     console.print(f"Label set '{project.label_set_name}' widened by {', '.join(added)}")
 
 
@@ -717,9 +719,9 @@ def ingest(
         settings, config_path, create=True, name=project.catalog.name
     )
     try:
-        label_set_id, _ = catalog.label_set(project.label_set_name)
+        label_set_id, _ = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
-        label_set_id = catalog.create_label_set(
+        label_set_id = catalog.label_sets.create(
             project.label_set_name, project.schema.catalog_schema()
         )
         console.print(f"Created label set '{project.label_set_name}'")

@@ -22,7 +22,7 @@ SERVED = Addressing(prefix="blobs", base_url="http://minipc:8081", secret=SECRET
 def stocked(catalog, files):
     paths = files(3)
     catalog.ingest(paths, media="image", metadata_for=lambda p: {"source_path": str(p)})
-    label_set_id = catalog.create_label_set(
+    label_set_id = catalog.label_sets.create(
         "presence", ClassificationSchema(classes=["cat"])
     )
     return catalog, catalog.unlabelled(label_set_id, EVERYTHING)

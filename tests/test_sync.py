@@ -29,7 +29,7 @@ def schema(project):
 def stocked(catalog, files):
     paths = files(5)
     ids = catalog.ingest(paths, media="image")
-    label_set_id = catalog.create_label_set(
+    label_set_id = catalog.label_sets.create(
         "presence", ClassificationSchema(classes=["cat", "dog"])
     )
     return catalog, ids, label_set_id
@@ -319,7 +319,7 @@ def test_an_undeclared_class_is_found_whatever_kind_of_value_carries_it(tmp_path
     source.write_text("Ada Lovelace wrote it")
     [sample_id] = catalog.ingest([source], media="text")
     schema = LSSpan(classes=["PER"])
-    label_set_id = catalog.create_label_set("x", schema.catalog_schema())
+    label_set_id = catalog.label_sets.create("x", schema.catalog_schema())
     [row] = catalog.unlabelled(label_set_id, EVERYTHING)
 
     task = ls_task(

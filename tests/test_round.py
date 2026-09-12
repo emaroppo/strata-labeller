@@ -30,9 +30,9 @@ def stock(project, catalog, labelled: int, total: int):
         metadata_for=lambda p: {"source_path": p.name},
     )
     try:
-        label_set_id, _ = catalog.label_set(project.label_set_name)
+        label_set_id, _ = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
-        label_set_id = catalog.create_label_set(
+        label_set_id = catalog.label_sets.create(
             project.label_set_name, project.schema.catalog_schema()
         )
     catalog.annotate_many(
@@ -272,7 +272,7 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
             group_id=f"vid{video}", collections=reloaded.collections,
             metadata_for=lambda p: {"source_path": p.name},
         )
-    label_set_id = catalog.create_label_set(
+    label_set_id = catalog.label_sets.create(
         reloaded.label_set_name, reloaded.schema.catalog_schema()
     )
     catalog.annotate_many(

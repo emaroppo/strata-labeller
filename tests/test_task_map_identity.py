@@ -165,7 +165,7 @@ def test_unskip_refuses_a_foreign_map(tmp_path, monkeypatch):
     sample = root / "data" / "raw" / "a.jpg"
     sample.write_bytes(b"bytes")
     [sample_id] = catalog.ingest([sample], media="image", collections=["job"])
-    label_set_id = catalog.create_label_set("job", ClassificationSchema(classes=["a"]))
+    label_set_id = catalog.label_sets.create("job", ClassificationSchema(classes=["a"]))
     catalog.skip(sample_id, label_set_id)
 
     project = Project.load(root)
