@@ -2,15 +2,9 @@
 
 Everything that knows Label Studio's shape stops here. Past this module a
 sample is a catalog row and an annotation is a :mod:`strata.labels` value;
-inside it, results carry control names, media keys and percentages.
-
-The conversion is thin because ``schemas/`` already knows the wire format —
-it converts between a bare Python target and a result list. What was missing
-was the step either side of that: a neutral value in, a neutral value out.
-
-A task's sample URL is how a sample is recognised on the way back, so it
-addresses the blob by content: the checksum is in the path, and a URL maps
-to exactly one sample rather than to whatever string used to match.
+inside it, results carry control names, media keys and percentages, and
+``schemas/`` does the conversion. A task's sample URL names the checksum.
+See ``docs/adr/0013`` and ``docs/adr/0001``.
 """
 
 from dataclasses import dataclass
