@@ -352,9 +352,10 @@ def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch)
     away on arrival.
 
     The rule itself — when a version on disk may be reused — is tested where
-    it lives, in the catalog; this only checks that a round goes through it.
+    it lives, in the catalog; this only checks that the stage a round runs
+    goes through it.
     """
-    from strata.labeller.round import _materialise
+    from strata.catalog.stages import Context, MaterialiseRequest, materialise
     from strata.labels import MANIFEST_FORMAT, MANIFEST_NAME, ClassificationSchema, Manifest
 
     version_dir = project.datasets_dir / project.dataset_name / "v002"
@@ -380,6 +381,8 @@ def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch)
         def materialise(self, *args, **kwargs):
             raise AssertionError("refetched a version already on disk")
 
-    manifest, path = _materialise(project, Refuses(), dataset_id=7)
-    assert path == version_dir
-    assert manifest.version == 2
+    built = materialise(
+        MaterialiseRequest(dataset_id=7), Context(Refuses(), project.datasets_dir)
+    )
+    assert built.directory == version_dir
+    assert built.version == 2

@@ -1,8 +1,10 @@
 """A training round, on the catalog.
 
-What ``train.py`` did in one process is now three steps across three
-packages: the catalog freezes a dataset version, materialises it, and
-modelling trains from the directory. The labeller only sequences them.
+What ``train.py`` did in one process is three stages across two packages:
+the catalog freezes a dataset version and materialises it, and modelling
+trains from the directory. The labeller only sequences them — and the
+sequence is the same one an experiment file writes down, because these are
+the same stage functions.
 
 The gain is not tidiness. Each round's dataset is written down rather than
 assembled on the fly, so a run resolves back to the exact samples and
@@ -14,10 +16,14 @@ warm-started model being scored on what it had already trained on.
 from dataclasses import dataclass
 from pathlib import Path
 
-from strata.catalog import Catalog, CatalogError, ensure_materialised
-from strata.labels import Manifest
-from strata.modelling import Run, RunStore, TrainRequest, train
+from strata.catalog import Catalog, CatalogError
+from strata.catalog.stages import Context as CatalogContext
+from strata.catalog.stages import DatasetRequest, MaterialiseRequest, dataset, materialise
+from strata.labels import MANIFEST_NAME, Manifest
+from strata.modelling import Run, RunStore
 from strata.modelling.registry import absolute
+from strata.modelling.stages import Context as ModellingContext
+from strata.modelling.stages import TrainStageRequest, train
 
 from .project import Project
 
@@ -48,94 +54,56 @@ def run_round(
     cache: Path | None = None,
 ) -> RoundResult:
     """Freeze a dataset version, materialise it, and train from it."""
-    try:
-        label_set_id, _ = catalog.label_set(project.label_set_name)
-    except CatalogError as exc:
-        raise RoundError(
-            f"No label set named {project.label_set_name!r} in the catalog. "
-            f"Run 'auto-labeller ingest' first, or set [catalog] label_set."
-        ) from exc
-
-    labelled = catalog.labelled(label_set_id, project.collections)
-    if not labelled:
-        raise RoundError(
-            f"Nothing is labelled for {project.label_set_name!r} in "
-            f"{', '.join(project.collections)}, so there is nothing to train on."
-        )
-
-    dataset_id = catalog.create_dataset(
-        project.dataset_name,
-        label_set_id,
-        collections=project.collections,
-        val_ratio=val_ratio,
+    context = CatalogContext(
+        catalog, project.datasets_dir, cache=cache, on_progress=on_progress
     )
-    manifest, dataset_dir = _materialise(project, catalog, dataset_id, on_progress, cache)
+    try:
+        frozen = dataset(
+            DatasetRequest(
+                name=project.dataset_name,
+                label_set=project.label_set_name,
+                collections=project.collections,
+                val_ratio=val_ratio,
+            ),
+            context,
+        )
+    except CatalogError as exc:
+        raise RoundError(str(exc)) from exc
+    built = materialise(
+        MaterialiseRequest(
+            dataset_id=frozen.dataset_id,
+            features=[spec.as_dict() for spec in project.feature_specs],
+        ),
+        context,
+    )
 
     store = RunStore.local(project.runs_dir)
-    # Warm start from the newest run over this dataset unless told otherwise.
-    # The policy lives here rather than inside modelling, which is handed a
-    # parent id or nothing.
-    previous = None if fresh else store.latest(project.dataset_name, catalog.id)
-    # Asked after the parent is known, not before. --fresh is a request and
-    # being cold is an outcome; they part company when nothing has trained
-    # on this dataset yet, and a cold run then trained for as long as a warm
-    # one — which is most of why two of the early baselines were not
-    # baselines.
-    cold = previous is None
-
-    run = train(
-        TrainRequest(
-            dataset_dir=dataset_dir,
+    # The warm-start policy is the caller's, and this caller's is the
+    # default: the newest run over this dataset unless told to start fresh.
+    record = train(
+        TrainStageRequest(
+            dataset_dir=built.directory,
             # Anchored at the project, because a model.py belongs to the job
             # rather than to the dataset it happens to be trained on. An
             # absolute ref also resolves from anywhere, which is what a
             # request has to do once it crosses a wire.
             model=absolute(project.model.ref, project.root),
-            params=project.model.params_for(cold),
-            parent_run_id=previous.id if previous else None,
+            params=project.model.params,
+            fresh_params=project.model.fresh_params,
+            fresh=fresh,
         ),
-        store,
+        ModellingContext(store=store),
     )
-    return RoundResult(run=run, manifest=manifest, dataset_dir=dataset_dir)
-
-
-def _materialise(
-    project: Project,
-    catalog: Catalog,
-    dataset_id: int,
-    on_progress=None,
-    cache: Path | None = None,
-) -> tuple[Manifest, Path]:
-    # The same rule the modelling host uses for when a version already on
-    # disk may be reused, because it is the same function.
-    result = ensure_materialised(
-        catalog,
-        dataset_id,
-        project.datasets_dir,
-        features=project.feature_specs,
-        on_progress=on_progress,
-        cache=cache,
-    )
-    _finished(on_progress, result.manifest)
-    return result.manifest, result.directory
-
-
-def _finished(on_progress, manifest: Manifest) -> None:
-    """One last tick, whichever way the version was obtained.
-
-    A version already on disk fetches nothing, and a local backend links
-    rather than downloads — so a caller watching ticks would never learn
-    that materialising was over, and would keep saying so while the GPU ran.
-    """
-    if on_progress is not None:
-        on_progress(len(manifest.samples), len(manifest.samples))
+    manifest = Manifest.model_validate_json((built.directory / MANIFEST_NAME).read_text())
+    return RoundResult(run=store.get(record.run_id), manifest=manifest, dataset_dir=built.directory)
 
 
 def describe(result: RoundResult) -> list[str]:
     manifest = result.manifest
     lines = [
         f"Dataset {manifest.dataset} v{manifest.version}: "
-        f"{len(manifest.train)} train, {len(manifest.val)} val",
+        f"{len(manifest.train)} train, {len(manifest.val)} val"
+        + (f", {len(manifest.holdout)} held out" if manifest.holdout else ""),
     ]
     if (
         manifest.val_ratio is not None

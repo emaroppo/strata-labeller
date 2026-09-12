@@ -1131,7 +1131,7 @@ def _run_for_push(
             return None
         return run.id
 
-    from .remote import RemoteError, Trainer
+    from strata.modelling.client import RemoteError, Trainer
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     with _exit_on(RemoteError):
@@ -1167,9 +1167,8 @@ def _remote_predictions(
     from pydantic import TypeAdapter
 
     from strata.labels import AnyPrediction
+    from strata.modelling.client import RemoteError
     from strata.modelling.service import PredictionRequest
-
-    from .remote import RemoteError
 
     trainer = _trainer(settings)
     with _exit_on(RemoteError):
@@ -1197,7 +1196,7 @@ def _remote_predictions(
 
 def _reattach(settings, job_id: str) -> None:
     """Pick up a round that is already running elsewhere."""
-    from .remote import Trainer
+    from strata.modelling.client import Trainer
 
     if not settings.modelling.url:
         _error("No modelling host configured, so there is no job to reattach to.")
@@ -1209,7 +1208,7 @@ def _reattach(settings, job_id: str) -> None:
 
 def _trainer(settings):
     """The modelling host's client, refused without the token it was started with."""
-    from .remote import Trainer
+    from strata.modelling.client import Trainer
 
     if not settings.modelling.token:
         _error(
@@ -1239,7 +1238,7 @@ def _follow(trainer, job_id: str) -> dict:
     Interrupting this stops watching, not training. That distinction is
     worth stating out loud, because Ctrl-C usually means the opposite.
     """
-    from .remote import RemoteError
+    from strata.modelling.client import RemoteError
 
     # Elapsed, because every stage looks identical while it is running
     # and the long one looks identical to a stalled one
@@ -1340,20 +1339,14 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     the catalog is reachable from both machines. Everything after that needs
     a GPU and the checkpoints, and both live there.
     """
-    from strata.modelling.service import RoundRequest
-
-    from .remote import RemoteError
+    from strata.catalog import CatalogError
+    from strata.catalog.stages import Context as CatalogContext
+    from strata.catalog.stages import DatasetRequest, dataset
+    from strata.modelling.client import RemoteError
+    from strata.modelling.stages import Context as ModellingContext
+    from strata.modelling.stages import DatasetIdentity, Host, TrainStageRequest, train
 
     trainer = _trainer(settings)
-
-    label_set_id, _ = _label_set_for(catalog, project)
-    labelled = catalog.labelled(label_set_id, project.collections)
-    if not labelled:
-        _error(
-            f"Nothing is labelled for {project.label_set_name!r} in "
-            f"{', '.join(project.collections)}, so there is nothing to train on."
-        )
-        raise typer.Exit(1)
 
     # Asked before anything is frozen. A host on another catalog would refuse
     # the round anyway; asking first says which machine to repoint, and
@@ -1365,44 +1358,83 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
         _error(_on_another_catalog("The modelling host", served, catalog, config))
         raise typer.Exit(1)
 
-    dataset_id = catalog.create_dataset(
-        project.dataset_name, label_set_id, collections=project.collections, val_ratio=val_ratio
-    )
-    ref = catalog.dataset_named(dataset_id)
-    console.print(f"Dataset {ref.name} v{ref.version} → {settings.modelling.url}")
-
-    with _exit_on(RemoteError):
-        job = trainer.submit(
-            RoundRequest(
-                dataset_id=dataset_id,
-                # What the id means here, for the host to check it means the
-                # same there: a copy of a catalog shares its numbering
-                dataset_name=ref.name,
-                dataset_version=ref.version,
-                annotation_digest=ref.annotation_digest,
-                catalog_id=catalog.id,
-                model=project.model.ref,
-                # Both sets, because only the host knows whether it has a
-                # parent — and a cold run wants the longer schedule
-                params=project.model.params,
-                fresh_params=project.model.fresh_params,
-                fresh=fresh,
-                # Declarations only: the host reads the values out of the
-                # catalog itself, as a local round does
-                features=[spec.as_dict() for spec in project.feature_specs],
-            )
+    with _exit_on(CatalogError):
+        frozen = dataset(
+            DatasetRequest(
+                name=project.dataset_name,
+                label_set=project.label_set_name,
+                collections=project.collections,
+                val_ratio=val_ratio,
+            ),
+            CatalogContext(catalog, project.datasets_dir),
         )
+    console.print(f"Dataset {frozen.name} v{frozen.version} → {settings.modelling.url}")
 
-    # Printed before following, and printed plainly: from here the round is
-    # the host's problem, and this id is how to ask after it from anywhere.
-    console.print(f"Job [bold]{job['id']}[/bold] accepted. Training continues there.")
-    console.print(f"  [dim]Reattach any time: auto-labeller train --job {job['id']}[/dim]\n")
-
-    _print_run_result(_follow(trainer, job["id"]))
+    with _progress(elapsed=True, transient=True) as progress:
+        bar = progress.add_task("Waiting for the host...")
+        with _exit_on(RemoteError):
+            record = train(
+                TrainStageRequest(
+                    dataset=DatasetIdentity(
+                        dataset_id=frozen.dataset_id,
+                        name=frozen.name,
+                        version=frozen.version,
+                        annotation_digest=frozen.annotation_digest,
+                        catalog_id=frozen.catalog_id,
+                    ),
+                    model=project.model.ref,
+                    params=project.model.params,
+                    fresh_params=project.model.fresh_params,
+                    fresh=fresh,
+                    features=[spec.as_dict() for spec in project.feature_specs],
+                ),
+                ModellingContext(
+                    store=None,
+                    host=Host(settings.modelling.url, settings.modelling.token),
+                    on_state=_job_state(progress, bar),
+                    # The client already spoken to, so the handshake is not
+                    # repeated and a test's fake host is the one asked
+                    client=lambda url, token: trainer,
+                ),
+            )
+    _print_train_record(record)
     console.print(
         "[dim]The run and its checkpoint live on that host, which is where the "
         "next round will warm-start from.[/dim]"
     )
+
+
+def _job_state(progress, bar):
+    """What to show as a remote job is polled."""
+
+    def show(job: dict) -> None:
+        if job.get("state") == "unreachable":
+            progress.update(
+                bar,
+                description=(
+                    f"[yellow]Cannot reach the host (attempt "
+                    f"{job['attempts']}) — the round is unaffected[/yellow]"
+                ),
+            )
+            return
+        stage = job.get("stage", job.get("state", ""))
+        if job.get("total"):
+            stage = f"{stage} {job['done']:,}/{job['total']:,}"
+        progress.update(bar, description=f"Host: {stage}")
+
+    return show
+
+
+def _print_train_record(record) -> None:
+    """A finished remote round: the run, its parent, and its metrics."""
+    console.print(
+        f"[green]Run {record.run_id}[/green]"
+        + (f", continuing run {record.parent_run_id}" if record.parent_run_id else " (cold)")
+    )
+    if record.materialised:
+        console.print(f"  [dim]{record.materialised:,} sample(s) materialised there[/dim]")
+    for metric, value in sorted(record.metrics.items()):
+        console.print(f"  {metric}: {value}")
 
 
 @app.command()
@@ -2463,7 +2495,7 @@ def catalog_check(
     blob server left on the old catalog answers 404 for every new sample, and
     a modelling host left on it refuses every round.
     """
-    from .remote import RemoteError, Trainer
+    from strata.modelling.client import RemoteError, Trainer
 
     settings = _settings(config_path)
     config = _catalog_config(settings, catalog_name)

@@ -55,9 +55,8 @@ def host(featured, tmp_path, monkeypatch):
     matters here is the directory the host would have trained from.
     """
     import strata.modelling.service as service
-    from strata.labeller import cli
-    from strata.labeller.remote import Trainer
     from strata.modelling import RunStore
+    from strata.modelling.client import Trainer
     from strata.modelling.requests import Run
 
     _, catalog = featured
@@ -89,11 +88,21 @@ def host(featured, tmp_path, monkeypatch):
     monkeypatch.setattr(
         Trainer, "served_catalog", lambda self: {"name": "default", "id": catalog.id}
     )
-    monkeypatch.setattr(
-        cli,
-        "_follow",
-        lambda trainer, job_id: {"run": {"id": "r", "parent_run_id": None}, "metrics": {}},
-    )
+    finished = {
+        "state": "done",
+        "result": {
+            "run": {
+                "id": "r",
+                "dataset": "demo",
+                "label_set": "demo",
+                "model": "multilabel",
+                "model_version": "1",
+                "classes": ["cat"],
+            },
+            "metrics": {},
+        },
+    }
+    monkeypatch.setattr(Trainer, "follow", lambda self, job_id, on_state=None: finished)
     return seen
 
 
@@ -126,7 +135,7 @@ def test_a_host_on_another_catalog_is_refused_before_anything_is_frozen(
     from sqlalchemy import func, select
 
     from strata.catalog import tables as t
-    from strata.labeller.remote import Trainer
+    from strata.modelling.client import Trainer
 
     project, catalog = featured
     monkeypatch.setattr(
