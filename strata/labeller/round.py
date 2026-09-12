@@ -1,16 +1,9 @@
 """A training round, on the catalog.
 
-What ``train.py`` did in one process is three stages across two packages:
-the catalog freezes a dataset version and materialises it, and modelling
-trains from the directory. The labeller only sequences them — and the
-sequence is the same one an experiment file writes down, because these are
-the same stage functions.
-
-The gain is not tidiness. Each round's dataset is written down rather than
-assembled on the fly, so a run resolves back to the exact samples and
-annotations behind it, and validation membership is inherited from the
-previous version instead of being recomputed — which is what stopped a
-warm-started model being scored on what it had already trained on.
+Three stages across two packages: the catalog freezes a dataset version
+and materialises it, and modelling trains from the directory. The
+labeller only sequences them, with the same stage functions an experiment
+file names. Why a version is frozen and inherited: ``docs/adr/0003``.
 """
 
 from dataclasses import dataclass
