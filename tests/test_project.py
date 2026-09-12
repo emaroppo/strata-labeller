@@ -1,6 +1,5 @@
 """The project construct: resolution, validation, paths and class edits."""
 
-import os
 from pathlib import Path
 
 import pytest
@@ -148,45 +147,12 @@ def test_list_projects_ignores_directories_without_a_project_file(make_project, 
 # ----------------------------------------------------------------------
 
 
-def test_sample_file_and_back(project):
-    absolute = project.sample_file("batch2/img001.jpg")
-    assert absolute == project.data_dir / "batch2" / "img001.jpg"
-    # The dataset stores the relative form, so the pair must be exact inverses
-    assert project.relative_sample_path(absolute) == os.path.join("batch2", "img001.jpg")
-
-
 def test_an_absolute_data_root_is_used_as_is(project, tmp_path):
     elsewhere = tmp_path / "shared-images"
     elsewhere.mkdir()
     toml = project.root / "project.toml"
     toml.write_text(toml.read_text().replace('root = "data/raw"', f'root = "{elsewhere}"'))
     assert Project.load(project.root).data_dir == elsewhere
-
-
-def test_mount_relative_path_round_trip(project):
-    # Label Studio addresses files relative to the directory mounted into
-    # its container, which is above the data root
-    mount_relative = project.mount_relative_path("batch2/img001.jpg")
-    assert mount_relative == "raw/batch2/img001.jpg"
-    assert project.sample_path_from_mount(mount_relative) == "batch2/img001.jpg"
-
-
-def test_a_data_root_outside_the_mount_is_an_error(project, tmp_path):
-    outside = tmp_path / "elsewhere"
-    outside.mkdir()
-    toml = project.root / "project.toml"
-    toml.write_text(toml.read_text().replace('root = "data/raw"', f'root = "{outside}"'))
-    with pytest.raises(ProjectError, match="must live inside"):
-        Project.load(project.root).mount_relative_path("a.jpg")
-
-
-def test_latest_checkpoint_is_the_highest_round(project):
-    assert project.latest_checkpoint() is None
-    project.checkpoints_dir.mkdir()
-    for name in ("round_001.pt", "round_002.pt", "round_010.pt"):
-        (project.checkpoints_dir / name).touch()
-    # Zero-padded so lexical order is round order
-    assert project.latest_checkpoint().name == "round_010.pt"
 
 
 # ----------------------------------------------------------------------

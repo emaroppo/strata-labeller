@@ -17,10 +17,7 @@ from strata.labeller.schemas import (
 from strata.labeller.schemas.media import IMAGE, TEXT
 from strata.labels import (
     Box,
-    BoxesPrediction,
-    ChoicesPrediction,
     Span,
-    SpansPrediction,
 )
 
 # ----------------------------------------------------------------------
@@ -65,25 +62,6 @@ def test_classification_canonicalize_drops_volatile_and_foreign_results():
             "value": {"choices": ["cat"]},
         }
     ]
-
-
-def test_classification_score_and_uncertainty_track_the_top_confidence():
-    schema = ClassificationSchema(["cat", "dog"])
-    output = ChoicesPrediction(values=["cat", "dog"], confidences=[0.7, 0.2])
-    assert schema.score(output) == pytest.approx(0.7)
-    assert schema.uncertainty(output) == pytest.approx(0.3)
-
-
-def test_classification_empty_output_scores_zero():
-    schema = ClassificationSchema(["cat"])
-    assert schema.score(ChoicesPrediction()) == 0.0
-    assert schema.uncertainty(ChoicesPrediction()) == 1.0
-
-
-def test_classes_in_use_reports_only_what_appears():
-    schema = ClassificationSchema(["cat", "dog", "bird"])
-    stored = [schema.encode_target(["dog"]), schema.encode_target(["cat", "dog"])]
-    assert schema.classes_in_use(stored) == ["cat", "dog"]
 
 
 def test_media_decides_the_type_and_data_key():
@@ -135,29 +113,6 @@ def test_bbox_canonicalize_keeps_the_geometry_fields():
     assert "id" not in results[0]
 
 
-def test_bbox_uncertainty_peaks_at_the_threshold_and_on_an_empty_prediction():
-    schema = BBoxSchema(["cat"])
-    assert schema.uncertainty(BoxesPrediction()) == 1.0
-    whole = Box(label="cat", x=0, y=0, width=1, height=1)
-    borderline = BoxesPrediction(values=[whole], confidences=[0.5])
-    assert schema.uncertainty(borderline) == pytest.approx(1.0)
-    confident = BoxesPrediction(values=[whole], confidences=[1.0])
-    assert schema.uncertainty(confident) == pytest.approx(0.0)
-
-
-def test_bbox_scores_as_its_weakest_box():
-    schema = BBoxSchema(["cat"])
-    output = BoxesPrediction(
-        values=[
-            Box(label="cat", x=0, y=0, width=1, height=1),
-            Box(label="dog", x=0, y=0, width=1, height=1),
-        ],
-        confidences=[0.9, 0.4],
-    )
-    assert schema.score(output) == pytest.approx(0.4)
-    assert schema.score(BoxesPrediction()) == 0.0
-
-
 # ----------------------------------------------------------------------
 # Spans
 # ----------------------------------------------------------------------
@@ -187,23 +142,6 @@ def test_span_decode_sorts_into_reading_order():
     )
     decoded = schema.decode_target(encoded)
     assert [(s.start, s.end) for s in decoded] == [(0, 3), (10, 11), (10, 12)]
-
-
-def test_span_uncertainty_treats_finding_nothing_as_maximally_uncertain():
-    schema = SpanSchema(["X"])
-    # Either the document contains nothing or the model missed everything,
-    # and only a reader settles which
-    assert schema.uncertainty(SpansPrediction()) == 1.0
-    assert schema.score(SpansPrediction()) == 0.0
-
-
-def test_span_classes_in_use_ignores_unlabelled_spans():
-    schema = SpanSchema(["PERSON", "PLACE"])
-    stored = schema.encode_target([
-            Span(label="PERSON", start=0, end=3, text="Ada"),
-            Span(label="", start=4, end=7, text="met"),
-        ])
-    assert schema.classes_in_use([stored]) == ["PERSON"]
 
 
 # ----------------------------------------------------------------------

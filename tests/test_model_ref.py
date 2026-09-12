@@ -2,18 +2,15 @@
 
 Resolution itself lives in strata.modelling and is tested there. What this
 covers is the project's side: that every form of ref still reaches a model,
-that [model.params] arrive as constructor arguments, and that a project.toml
-written before the baselines moved keeps working rather than failing with an
-import error that says nothing about what to change.
+and that [model.params] arrive as constructor arguments.
 """
 
 import importlib
 import re
-from pathlib import Path
 
 import pytest
 
-from strata.labeller.project import LEGACY_MODEL_REFS, Project, ProjectError
+from strata.labeller.project import Project, ProjectError
 
 TOY_MODEL = '''
 from pathlib import Path
@@ -167,22 +164,3 @@ def test_the_toy_model_declares_a_task_it_matches(toy_project):
     # Training refuses a model written for another task, and the label set
     # says which one it is
     assert type(toy_project.load_model()).task == "classification"
-
-
-@pytest.mark.parametrize(
-    "legacy",
-    [
-        "auto_labeller.models.classifier:PresenceClassifier",
-        "strata.labeller.models.classifier:MultiLabelClassifier",
-    ],
-)
-def test_a_ref_from_before_the_move_still_resolves(project, legacy):
-    # The baselines moved twice. A project.toml written before either should
-    # not fail with an import error that says nothing about what to change.
-    assert legacy in LEGACY_MODEL_REFS
-    pytest.importorskip("timm", reason="both refs name an image baseline")
-    assert set_ref(project, legacy).load_model() is not None
-
-
-def test_paths_handed_to_a_model_are_absolute(toy_project):
-    assert Path(toy_project.sample_file("a.jpg")).is_absolute()

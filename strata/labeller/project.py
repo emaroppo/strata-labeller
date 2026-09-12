@@ -24,7 +24,7 @@ import os
 import re
 import tomllib
 from dataclasses import dataclass, field, fields
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from strata.modelling import ModelError, resolve
 from strata.modelling.model import Model
@@ -38,27 +38,6 @@ PROJECT_ENV_VAR = "AUTO_LABELLER_PROJECT"
 PROJECTS_DIR = "projects"
 
 CUSTOM_LABEL_CONFIG = "label_config.xml"
-
-# The baselines have moved twice: out of auto_labeller when the packages were
-# namespaced, and out of the labeller when they became strata.modelling's.
-# A project.toml written before either still resolves rather than failing
-# with an import error that says nothing about what to change.
-LEGACY_MODEL_REFS: dict[str, str] = {
-    f"{old}:{name}": f"strata.modelling.baselines.{module}:{name}"
-    for old, module in (
-        ("auto_labeller.models.classifier", "classifier"),
-        ("auto_labeller.models.text_classifier", "text_classifier"),
-        ("strata.labeller.models.classifier", "classifier"),
-        ("strata.labeller.models.text_classifier", "text_classifier"),
-    )
-    for name in (
-        "MulticlassClassifier",
-        "MultiLabelClassifier",
-        "PresenceClassifier",
-        "TextClassifier",
-        "TextSpanTagger",
-    )
-}
 
 
 class ProjectError(Exception):
@@ -175,17 +154,6 @@ class DataSpec:
 @dataclass
 class LabelStudioSpec:
     project_id: int | None = None
-    # Host directory mounted into the Label Studio container, and the name
-    # it has under LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT. Sample URLs are
-    # built from the sample path relative to this mount.
-    #
-    # The prefix says "images" for every project, including ones labelling
-    # documents, and it stays that way: it is written into every task URL a
-    # reviewer's queue already holds, and read back to recognise which
-    # sample a task is. A URL written one way and read another orphans the
-    # lot of them, so changing it is 'relink', not an edit.
-    local_files_root: str = "data"
-    local_files_prefix: str = "images"
 
 
 @dataclass
@@ -335,14 +303,6 @@ class Project:
         return self.root / "runs"
 
     @property
-    def dataset_path(self) -> Path:
-        return self.root / "dataset.json"
-
-    @property
-    def checkpoints_dir(self) -> Path:
-        return self.root / "checkpoints"
-
-    @property
     def rounds_dir(self) -> Path:
         return self.root / "rounds"
 
@@ -359,18 +319,6 @@ class Project:
     def source_dir(self) -> Path:
         """Where this project's corpus arrives, before it is converted."""
         return _resolve(self.root, self.data.source_root)
-
-    @property
-    def local_files_root(self) -> Path:
-        return _resolve(self.root, self.label_studio.local_files_root)
-
-    def sample_file(self, sample_path: str) -> Path:
-        """Absolute path of a sample's file (sample paths are data-root relative)."""
-        return self.data_dir / sample_path
-
-    def relative_sample_path(self, path: Path) -> str:
-        """Inverse of :meth:`sample_file` — an absolute path to a sample path."""
-        return str(path.resolve().relative_to(self.data_dir.resolve()))
 
     @property
     def feature_specs(self) -> list:
@@ -402,46 +350,9 @@ class Project:
         except SampleTypeError as e:
             raise ProjectError(f"[data] type: {e}") from None
 
-    # -- Label Studio local-files URL mapping --------------------------
-
-    def _data_rel_to_mount(self) -> PurePosixPath:
-        data, mount = self.data_dir.resolve(), self.local_files_root.resolve()
-        try:
-            rel = data.relative_to(mount)
-        except ValueError:
-            raise ProjectError(
-                f"[data] root ({data}) must live inside "
-                f"[label_studio] local_files_root ({mount}), which is the "
-                f"directory mounted into the Label Studio container."
-            ) from None
-        return PurePosixPath(rel.as_posix())
-
-    def mount_relative_path(self, sample_path: str) -> str:
-        """Sample path as Label Studio sees it, relative to the mounted root."""
-        return str(self._data_rel_to_mount() / sample_path)
-
-    def sample_path_from_mount(self, mount_relative: str) -> str:
-        """Inverse of :meth:`mount_relative_path`."""
-        prefix = self._data_rel_to_mount()
-        rel = PurePosixPath(mount_relative)
-        if prefix.parts and rel.parts[: len(prefix.parts)] == prefix.parts:
-            rel = PurePosixPath(*rel.parts[len(prefix.parts) :])
-        return str(rel)
-
     # ------------------------------------------------------------------
     # Model
     # ------------------------------------------------------------------
-
-    @property
-    def model_ref(self) -> str:
-        """The model reference, with pre-move spellings translated.
-
-        A property rather than a step inside :meth:`load_model`, because a
-        training request carries the reference instead of the model and would
-        otherwise get the untranslated one — the same rule applied in two
-        places is a rule applied in one of them.
-        """
-        return LEGACY_MODEL_REFS.get(self.model.ref, self.model.ref)
 
     def load_model(self) -> Model:
         """Instantiate the project's model with its configured parameters.
@@ -456,16 +367,10 @@ class Project:
         one surfaces.
         """
         try:
-            model_cls = resolve(self.model_ref, root=self.root)
+            model_cls = resolve(self.model.ref, root=self.root)
         except ModelError as exc:
             raise ProjectError(str(exc)) from exc
         return model_cls(**self.model.params)
-
-    def latest_checkpoint(self) -> Path | None:
-        if not self.checkpoints_dir.exists():
-            return None
-        checkpoints = sorted(self.checkpoints_dir.glob("round_*.pt"))
-        return checkpoints[-1] if checkpoints else None
 
     # ------------------------------------------------------------------
     # Mutation

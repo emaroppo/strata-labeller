@@ -1,6 +1,5 @@
 """Classification: one or more classes for a whole sample."""
 
-import math
 
 from strata.labels import Choices
 
@@ -84,27 +83,3 @@ class ClassificationSchema(LabelSchema):
                 "value": {"choices": list(target)},
             }
         ]
-
-    def encode_output(self, output) -> list[Result]:
-        return self.encode_target(list(output.values))
-
-    # ------------------------------------------------------------------
-    # Active learning
-    # ------------------------------------------------------------------
-
-    def score(self, output) -> float:
-        return max(output.confidences, default=0.0)
-
-    def uncertainty(self, output) -> float:
-        """Least-confident: the lower the top confidence, the sooner to review."""
-        return 1.0 - self.score(output)
-
-    @staticmethod
-    def entropy(confidences: list[float]) -> float:
-        return -sum(c * math.log(c + 1e-10) for c in confidences if c > 0)
-
-    def classes_in_use(self, results_lists: list[list[Result]]) -> list[str]:
-        seen: set[str] = set()
-        for results in results_lists:
-            seen.update(self.decode_target(results))
-        return sorted(seen)

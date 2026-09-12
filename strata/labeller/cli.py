@@ -1419,7 +1419,7 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
                 dataset_version=ref.version,
                 annotation_digest=ref.annotation_digest,
                 catalog_id=catalog.id,
-                model=project.model_ref,
+                model=project.model.ref,
                 # Both sets, because only the host knows whether it has a
                 # parent — and a cold run wants the longer schedule
                 params=project.model.params,

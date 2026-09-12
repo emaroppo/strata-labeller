@@ -138,14 +138,6 @@ def test_model_params_reach_the_model(ready):
     assert json.loads(result.run.checkpoint.read_text())["note"] == "from params"
 
 
-def test_a_ref_from_before_the_move_reaches_the_model(ready):
-    # The training request carries the reference rather than the model, so it
-    # needs the same translation load_model does — a rule applied in two
-    # places is a rule applied in one of them
-    project, catalog = ready(ref="auto_labeller.models.classifier:PresenceClassifier")
-    assert project.model_ref.startswith("strata.modelling.baselines.classifier")
-
-
 def test_a_registered_name_works_as_a_ref(ready, monkeypatch):
     project, catalog = ready(ref="presence")
     pytest.importorskip("timm", reason="needs the image extra")

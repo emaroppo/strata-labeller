@@ -8,7 +8,7 @@ else.
 
 from strata.labels import Box, Boxes
 
-from .base import LabelSchema, Result, _confidences, strip_volatile
+from .base import LabelSchema, Result, strip_volatile
 from .media import IMAGE, Media
 from .render import render_template
 
@@ -98,31 +98,3 @@ class BBoxSchema(LabelSchema):
             }
             for box in target
         ]
-
-    def encode_output(self, output) -> list[Result]:
-        return self.encode_target(list(output.values))
-
-    def score(self, output) -> float:
-        # A detection is only as trustworthy as its weakest box; an empty
-        # prediction claims nothing, so it scores zero
-        return min(_confidences(output), default=0.0)
-
-    def uncertainty(self, output) -> float:
-        """Boxes sitting near the decision threshold are the informative ones.
-
-        An image with no boxes at all is maximally uncertain: either the
-        model found nothing, or it missed everything, and only a human
-        settles which.
-        """
-        scores = _confidences(output)
-        if not scores:
-            return 1.0
-        return max(1.0 - abs(s - 0.5) * 2.0 for s in scores)
-
-    def classes_in_use(self, results_lists: list[list[Result]]) -> list[str]:
-        seen: set[str] = set()
-        for results in results_lists:
-            for box in self.decode_target(results):
-                if box.label:
-                    seen.add(box.label)
-        return sorted(seen)

@@ -1,14 +1,13 @@
 """What a label schema is, and the types every schema speaks.
 
-A schema owns everything specific to a task type: the Label Studio config it
-generates, how annotations are stored, how they reach a model, and how a
-prediction's uncertainty is measured. Nothing else in the codebase knows
-whether a project labels classes, boxes or masks.
+A schema owns what is specific to a task type at the Label Studio boundary:
+the labeling config it generates, and the translation between Label Studio
+results and the :mod:`strata.labels` values a catalog stores. Nothing else
+in the labeller knows whether a project labels classes, boxes or spans.
 
-Annotations are stored as canonicalized Label Studio results — the wire
-format with the volatile fields removed. Storing what Label Studio speaks
-keeps predictions and annotations one shape and makes conversion tools
-(label-studio-converter and friends) apply directly.
+Ranking a prediction for review is not a schema's business: see
+:mod:`strata.labeller.active_learning`, which reads the confidences a value
+carries.
 """
 
 from string import Template
@@ -25,16 +24,6 @@ class TemplateSyntax(Template):
     """``@name`` placeholders, so Label Studio's own ``$image`` survives."""
 
     delimiter = "@"
-
-
-class Prediction:
-    """A model's output for one sample, in storage form."""
-
-    path: str
-    results: list[Result]
-    score: float = 0.0
-    # Higher means review this sooner
-    uncertainty: float = 0.0
 
 
 @runtime_checkable
@@ -76,27 +65,6 @@ class LabelSchema(Protocol):
     def encode_target(self, target: Any) -> list[Result]:
         """The inverse of :meth:`decode_target`."""
         ...
-
-    def encode_output(self, output: Any) -> list[Result]:
-        """A model's output to stored/wire results."""
-        ...
-
-    def score(self, output: Any) -> float:
-        """Confidence, as Label Studio displays and sorts on it."""
-        ...
-
-    def uncertainty(self, output: Any) -> float:
-        """How badly this sample needs a human; higher is sooner."""
-        ...
-
-    def classes_in_use(self, results_lists: list[list[Result]]) -> list[str]:
-        """Every class actually present in the given annotations."""
-        ...
-
-
-def _confidences(output) -> list[float]:
-    """Per-item confidence, positional against the values."""
-    return [float(c) for c in getattr(output, "confidences", None) or []]
 
 
 def strip_volatile(result: dict, keep: tuple[str, ...] = ()) -> Result:

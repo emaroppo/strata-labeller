@@ -14,7 +14,7 @@ off, which is what every existing project means.
 
 from strata.labels import Span, Spans
 
-from .base import LabelSchema, Result, _confidences, strip_volatile
+from .base import LabelSchema, Result, strip_volatile
 from .media import TEXT, Media
 from .render import render_template
 
@@ -110,29 +110,3 @@ class SpanSchema(LabelSchema):
             }
             for span in target
         ]
-
-    def encode_output(self, output) -> list[Result]:
-        return self.encode_target(list(output.values))
-
-    def score(self, output) -> float:
-        # As trustworthy as its least certain span; claiming nothing scores zero
-        return min(_confidences(output), default=0.0)
-
-    def uncertainty(self, output) -> float:
-        """Spans near the decision threshold are the informative ones.
-
-        A document the model found nothing in is maximally uncertain: it
-        either contains nothing or the model missed everything, and only a
-        reader settles which.
-        """
-        scores = _confidences(output)
-        if not scores:
-            return 1.0
-        return max(1.0 - abs(s - 0.5) * 2.0 for s in scores)
-
-    def classes_in_use(self, results_lists: list[list[Result]]) -> list[str]:
-        seen: set[str] = set()
-        for results in results_lists:
-            for span in self.decode_target(results):
-                seen.update(label for label in span.labels if label)
-        return sorted(seen)

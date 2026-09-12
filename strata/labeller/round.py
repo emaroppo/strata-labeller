@@ -90,7 +90,7 @@ def run_round(
             # rather than to the dataset it happens to be trained on. An
             # absolute ref also resolves from anywhere, which is what a
             # request has to do once it crosses a wire.
-            model=absolute(project.model_ref, project.root),
+            model=absolute(project.model.ref, project.root),
             params=project.model.params_for(cold),
             parent_run_id=previous.id if previous else None,
         ),
