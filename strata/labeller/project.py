@@ -134,13 +134,8 @@ class DataSpec:
     # "frames": video frames, one folder per video — near-duplicate frames
     # must not straddle the train/val split, so whole videos move together.
     kind: str = "images"
-    #: What this job's model is told about a sample besides its bytes.
-    #:
-    #: A role rather than a fact about the data: the same annotation is a
-    #: target for the project that owns it and a feature for this one, and
-    #: only these lines differ. Each names its source explicitly —
-    #: ``label_set`` or ``metadata`` — because a bare name would have to
-    #: guess between them, and guessing wrong reads a different value.
+    #: What this job's model is told about a sample besides its bytes, each
+    #: naming its source, ``label_set`` or ``metadata`` (``docs/adr/0011``):
     #:
     #:     [[data.features]]
     #:     name = "species"
