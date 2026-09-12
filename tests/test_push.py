@@ -87,7 +87,7 @@ def stage(make_project, tmp_path, monkeypatch):
     cache = PredictionCache.local(project.runs_dir)
     by_name = {}
     for sample_id, path in zip(ids, paths, strict=True):
-        row = catalog.by_checksum(_checksum(catalog, sample_id))
+        row = catalog.samples.by_checksum(_checksum(catalog, sample_id))
         cache.put(
             run.id,
             {row.checksum: ChoicesPrediction(

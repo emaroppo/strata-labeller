@@ -25,7 +25,7 @@ def stocked(catalog, files):
     label_set_id = catalog.label_sets.create(
         "presence", ClassificationSchema(classes=["cat"])
     )
-    return catalog, catalog.unlabelled(label_set_id, EVERYTHING)
+    return catalog, catalog.samples.unlabelled(label_set_id, EVERYTHING)
 
 
 def task(task_id: int, url: str, **extra) -> dict:

@@ -245,7 +245,7 @@ def _warn_on_composition_drift(project: Project, catalog, schema) -> None:
     """
     declared_media = schema.media.name
     declared_subtype = type(project.sample_type()).subtype()
-    held = catalog.composition(project.collections)
+    held = catalog.samples.composition(project.collections)
     where = ", ".join(project.collections)
 
     other_media = {m: n for (m, _), n in held.items() if m != declared_media}
@@ -409,9 +409,9 @@ def list_projects_cmd() -> None:
                 pass
             else:
                 where = project.collections
-                annotated = catalog.labelled(label_set_id, where)
-                queued = catalog.unlabelled(label_set_id, where)
-                skipped = catalog.skipped(label_set_id, where)
+                annotated = catalog.samples.labelled(label_set_id, where)
+                queued = catalog.samples.unlabelled(label_set_id, where)
+                skipped = catalog.samples.skipped(label_set_id, where)
                 total = str(len(annotated) + len(queued) + len(skipped))
                 labeled = str(len(annotated))
         table.add_row(
@@ -483,8 +483,8 @@ def class_add(
             label_set_id, _ = catalog.label_sets.get(project.label_set_name)
         except CatalogError:
             return
-        labelled = len(catalog.labelled(label_set_id, project.collections))
-        skipped = len(catalog.skipped(label_set_id, project.collections))
+        labelled = len(catalog.samples.labelled(label_set_id, project.collections))
+        skipped = len(catalog.samples.skipped(label_set_id, project.collections))
         if labelled:
             console.print(
                 f"[dim]{labelled} sample(s) were labelled before this class "
@@ -546,7 +546,7 @@ def class_list(
         # From the class index rather than by decoding every annotation,
         # which is what that table exists for
         table.add_row(
-            name, str(len(catalog.with_class(label_set_id, name, project.collections)))
+            name, str(len(catalog.samples.with_class(label_set_id, name, project.collections)))
         )
     console.print(table)
 
@@ -581,7 +581,7 @@ def unskip(
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     label_set_id, _ = _label_set_for(catalog, project)
 
-    skipped = catalog.skipped(label_set_id, project.collections)
+    skipped = catalog.samples.skipped(label_set_id, project.collections)
     if not skipped:
         console.print("[yellow]Nothing is skipped.[/yellow]")
         return
@@ -640,9 +640,9 @@ def init(
     schema = _schema_for(project, catalog)
     # Answered first: with a limit, the point is to carry what is already
     # known rather than to fill the project with unreviewed samples
-    samples = catalog.labelled(label_set_id, project.collections) + catalog.unlabelled(
+    samples = catalog.samples.labelled(
         label_set_id, project.collections
-    )
+    ) + catalog.samples.unlabelled(label_set_id, project.collections)
     if limit is not None:
         samples = samples[:limit]
 
@@ -757,8 +757,8 @@ def ingest(
         raise typer.Exit(1)
 
     where = project.collections
-    before = len(catalog.unlabelled(label_set_id, where)) + len(
-        catalog.labelled(label_set_id, where)
+    before = len(catalog.samples.unlabelled(label_set_id, where)) + len(
+        catalog.samples.labelled(label_set_id, where)
     )
     # Grouped, because a group is one transaction and one group_id. Ungrouped
     # files share a bucket, so a plain image project is a handful of batches
@@ -803,10 +803,10 @@ def ingest(
                     _error(str(e))
                     raise typer.Exit(1) from None
 
-    after = len(catalog.unlabelled(label_set_id, where)) + len(
-        catalog.labelled(label_set_id, where)
+    after = len(catalog.samples.unlabelled(label_set_id, where)) + len(
+        catalog.samples.labelled(label_set_id, where)
     )
-    skipped_count = len(catalog.skipped(label_set_id, where))
+    skipped_count = len(catalog.samples.skipped(label_set_id, where))
     console.print(
         f"[green]{len(found)} file(s) scanned, {after - before} new[/green] "
         f"into {catalog_root}"
@@ -1390,7 +1390,7 @@ def push(
             )
         save_task_map(project, ls_project_id, task_map, catalog.id)
 
-    pool = catalog.unlabelled(label_set_id, project.collections)
+    pool = catalog.samples.unlabelled(label_set_id, project.collections)
     if not pool:
         console.print("[yellow]Nothing is waiting for review.[/yellow]")
         return
@@ -1475,7 +1475,7 @@ def push(
         already = {s.id for s in ranked}
         disputed = [
             row
-            for row in (catalog.by_checksum(c["checksum"]) for c in conflicts)
+            for row in (catalog.samples.by_checksum(c["checksum"]) for c in conflicts)
             if row is not None and row.id not in already
         ]
         if disputed:

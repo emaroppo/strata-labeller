@@ -49,8 +49,8 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
         ],
     )
     # Sixteen answered, four still awaiting review
-    assert len(catalog.labelled(label_set_id, EVERYTHING)) == 16
-    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 4
+    assert len(catalog.samples.labelled(label_set_id, EVERYTHING)) == 16
+    assert len(catalog.samples.unlabelled(label_set_id, EVERYTHING)) == 4
 
     dataset_id = catalog.create_dataset("demo", label_set_id, collections=EVERYTHING)
     materialised = catalog.materialise(dataset_id, tmp_path / "materialised")
@@ -69,7 +69,7 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
     # The split the catalog decided is the split the model was handed
     assert run.metrics["n_train"] + run.metrics["n_val"] == 16
 
-    queue = catalog.unlabelled(label_set_id, EVERYTHING)
+    queue = catalog.samples.unlabelled(label_set_id, EVERYTHING)
     pool = [catalog.blobs.path_for(s.location) for s in queue]
     assert len(predict(PredictRequest(run_id=run.id, paths=pool), store)) == 4
 

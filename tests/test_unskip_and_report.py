@@ -60,8 +60,8 @@ def test_unskip_returns_samples_to_the_queue(workspace):
     assert run_cmd(project, "unskip").exit_code == 0
     # The queue is the absence of a row, so the row is deleted rather than
     # flagged
-    assert catalog.skipped(label_set_id, EVERYTHING) == []
-    assert len(catalog.unlabelled(label_set_id, EVERYTHING)) == 6
+    assert catalog.samples.skipped(label_set_id, EVERYTHING) == []
+    assert len(catalog.samples.unlabelled(label_set_id, EVERYTHING)) == 6
 
 
 def test_unskip_honours_a_limit(workspace):
@@ -70,7 +70,7 @@ def test_unskip_honours_a_limit(workspace):
         catalog.annotations.skip(ids[i], label_set_id)
 
     run_cmd(project, "unskip", "--limit", "2")
-    assert len(catalog.skipped(label_set_id, EVERYTHING)) == 2
+    assert len(catalog.samples.skipped(label_set_id, EVERYTHING)) == 2
 
 
 def test_unskip_leaves_annotations_alone(workspace):
@@ -82,7 +82,7 @@ def test_unskip_leaves_annotations_alone(workspace):
     # A skip is the only state this undoes; discarding an answer by accident
     # would be far worse
     assert catalog.annotations.annotation_of(ids[0], label_set_id) == Choices(values=["cat"])
-    assert len(catalog.labelled(label_set_id, EVERYTHING)) == 1
+    assert len(catalog.samples.labelled(label_set_id, EVERYTHING)) == 1
 
 
 def test_unskip_with_nothing_skipped_says_so(workspace):

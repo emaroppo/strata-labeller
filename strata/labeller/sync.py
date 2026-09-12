@@ -149,7 +149,7 @@ def relink(
         data = task.get("data") or {}
         url = data.get(data_key, "")
         checksum = addressing.checksum_from(url)
-        sample = catalog.by_checksum(checksum) if checksum else None
+        sample = catalog.samples.by_checksum(checksum) if checksum else None
         if sample is None:
             report.unrecognised.append(url)
             continue
@@ -176,7 +176,7 @@ def rebuild_task_map(
     for task in tasks:
         url = (task.get("data") or {}).get(data_key, "")
         checksum = addressing.checksum_from(url)
-        sample = catalog.by_checksum(checksum) if checksum else None
+        sample = catalog.samples.by_checksum(checksum) if checksum else None
         if sample is None:
             unrecognised.append(url)
             continue
@@ -257,7 +257,7 @@ def pull_annotations(
     for task in exported:
         url = (task.get("data") or {}).get(schema.data_key, "")
         checksum = addressing.checksum_from(url)
-        sample = catalog.by_checksum(checksum) if checksum else None
+        sample = catalog.samples.by_checksum(checksum) if checksum else None
         if sample is None:
             report.unrecognised.append(url)
             continue

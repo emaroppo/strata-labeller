@@ -134,5 +134,5 @@ root = "{tmp_path / 'text'}"
     # Separate corpora, and separate identities — which is what lets a run,
     # a merge and a task map each say which one they belong to
     assert images.id != text.id
-    assert len(images.unlabelled(images.label_sets.get("cats")[0], "*")) == 2
-    assert len(text.unlabelled(text.label_sets.get("notes")[0], "*")) == 3
+    assert len(images.samples.unlabelled(images.label_sets.get("cats")[0], "*")) == 2
+    assert len(text.samples.unlabelled(text.label_sets.get("notes")[0], "*")) == 3

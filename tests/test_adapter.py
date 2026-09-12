@@ -94,7 +94,7 @@ def test_a_prediction_crosses_as_its_values(schema):
 
 def test_a_url_addresses_the_blob(catalog, stocked, tmp_path):
     _, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
+    [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
     url = blob_url(sample, "blobs")
     # The checksum is in the path, so the URL names one sample rather than
     # matching a string that might mean several things
@@ -104,14 +104,14 @@ def test_a_url_addresses_the_blob(catalog, stocked, tmp_path):
 
 def test_a_url_round_trips_to_its_sample(catalog, stocked):
     _, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
+    [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
     url = blob_url(sample, "blobs")
     assert checksum_from_url(url, "blobs") == sample.checksum
 
 
 def test_a_url_survives_the_bytes_moving(catalog, stocked):
     _, label_set_id = stocked
-    [sample] = catalog.unlabelled(label_set_id, EVERYTHING)[:1]
+    [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
     before = blob_url(sample, "blobs")
 
     # What repacking into shards does to a row. Every task in Label Studio
@@ -163,7 +163,7 @@ def test_a_path_under_the_prefix_that_is_not_a_digest_names_no_blob():
 
 def test_a_task_carries_the_sample_it_came_from(catalog, stocked, schema):
     ids, label_set_id = stocked
-    samples = catalog.unlabelled(label_set_id, EVERYTHING)
+    samples = catalog.samples.unlabelled(label_set_id, EVERYTHING)
     tasks = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
     assert {t.sample_id for t in tasks} == set(ids)
 
@@ -171,7 +171,11 @@ def test_a_task_carries_the_sample_it_came_from(catalog, stocked, schema):
 def test_a_task_points_at_the_right_key_for_the_media(catalog, stocked, schema):
     _, label_set_id = stocked
     [task] = build_tasks(
-        catalog.unlabelled(label_set_id, EVERYTHING)[:1], catalog, label_set_id, schema, ADDRESSING
+        catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1],
+        catalog,
+        label_set_id,
+        schema,
+        ADDRESSING,
     )
     assert schema.data_key in task.data
 
@@ -179,7 +183,11 @@ def test_a_task_points_at_the_right_key_for_the_media(catalog, stocked, schema):
 def test_an_unannotated_task_carries_no_annotation(catalog, stocked, schema):
     _, label_set_id = stocked
     [task] = build_tasks(
-        catalog.unlabelled(label_set_id, EVERYTHING)[:1], catalog, label_set_id, schema, ADDRESSING
+        catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1],
+        catalog,
+        label_set_id,
+        schema,
+        ADDRESSING,
     )
     assert task.annotations == []
     assert not task.answered
@@ -189,7 +197,7 @@ def test_an_unannotated_task_carries_no_annotation(catalog, stocked, schema):
 def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.annotations.annotate(ids[0], label_set_id, Choices(values=["cat"]))
-    samples = [s for s in catalog.labelled(label_set_id, EVERYTHING)]
+    samples = [s for s in catalog.samples.labelled(label_set_id, EVERYTHING)]
     [task] = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
 
     # Label Studio is a view of the catalog rather than a second copy, so
@@ -201,7 +209,7 @@ def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
 def test_an_empty_annotation_still_arrives_as_answered(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.annotations.annotate(ids[0], label_set_id, Choices())
-    samples = catalog.labelled(label_set_id, EVERYTHING)
+    samples = catalog.samples.labelled(label_set_id, EVERYTHING)
     [task] = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
 
     # An empty result list is the answer "none of these apply", and it has
@@ -216,6 +224,10 @@ def test_a_skipped_sample_has_no_annotation_to_carry(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.annotations.skip(ids[0], label_set_id)
     tasks = build_tasks(
-        catalog.unlabelled(label_set_id, EVERYTHING), catalog, label_set_id, schema, ADDRESSING
+        catalog.samples.unlabelled(label_set_id, EVERYTHING),
+        catalog,
+        label_set_id,
+        schema,
+        ADDRESSING,
     )
     assert all(t.sample_id != ids[0] for t in tasks)
