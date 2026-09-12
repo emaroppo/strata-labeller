@@ -1,14 +1,8 @@
-"""How Label Studio addresses a sample.
+"""How Label Studio addresses a sample: the key a task is read from, and the template name.
 
-Not what a file *is* — that is a sample type, and it lives in the catalog
-because it is a fact about the data rather than about the tool collecting
-it. What is left here is Label Studio's wire format: the key its config
-reads a task from, and the name that selects a template.
-
-Media is orthogonal to the task: classification applies to an image or a
-document alike, while boxes only make sense on images and character spans
-only on text. The valid combinations are the template registry, not a
-product of the two.
+Not what a file *is*; that is the catalog's sample type. Media is
+orthogonal to the task, and the valid combinations are the template
+registry. See ``docs/adr/0013``.
 """
 
 from dataclasses import dataclass

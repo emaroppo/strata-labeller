@@ -89,13 +89,8 @@ class LSClient:
     ) -> dict[int, int]:
         """Create tasks from :class:`adapter.Task` and map sample id -> task id.
 
-        Chunked, because a first import on a real corpus is tens of thousands
-        of tasks and one request that size times out. A chunk that fails
-        leaves the ones before it created, which is why the map is returned
-        as it goes and a re-run skips what already exists.
-
-        Returns the mapping rather than caching it here: the catalog knows
-        what a sample is, and this class should not.
+        Chunked; a chunk that fails leaves the ones before it created, so
+        the map is returned as it goes and a re-run skips what exists.
         """
         mapping: dict[int, int] = {}
         for i in range(0, len(tasks), chunk_size):

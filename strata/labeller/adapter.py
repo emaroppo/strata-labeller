@@ -70,25 +70,13 @@ def prediction_to_results(prediction: Prediction, schema: LabelSchema) -> list[d
 class Addressing:
     """How a task refers to its sample, in both directions.
 
-    One object rather than three parameters because the two directions have
-    to agree: a URL written one way and read another silently orphans every
-    task, and that failure surfaces as an empty export rather than as an
-    error.
-
-    Two forms coexist on purpose. ``/data/local-files/`` is what Label
-    Studio serves off a mount, and every task created before the serving API
-    uses it; an HTTP base URL is what replaces it. Reading accepts both, so
-    the changeover is a setting rather than a migration, and old tasks keep
-    resolving until they are relinked.
+    One object so the two directions cannot disagree. Writes the mount
+    form or, with ``base_url``, a signed HTTP URL; reads both, so old tasks
+    keep resolving until relinked. See ``docs/adr/0013``.
     """
 
-    #: What Label Studio serves the blob mount under. Only used for local
-    #: URLs, and the reason it survives is those existing tasks.
-    #:
-    #: Nothing here reads it as a media. A project's own setting still says
-    #: "images" because it is a directory name on a mount that reviewers'
-    #: tasks already point at — changing the string orphans every one of
-    #: them, which is a relink rather than a rename.
+    #: What Label Studio serves the blob mount under. A directory name that
+    #: existing tasks point at, so changing it is a relink, not a rename.
     prefix: str = "blobs"
     #: The serving API, e.g. ``http://minipc:8081``. Empty means the mount.
     base_url: str = ""
