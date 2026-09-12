@@ -15,8 +15,8 @@ import json
 from pathlib import Path
 from typing import ClassVar
 
-from strata.catalog.builtin_types import Text
-from strata.catalog.preparers import Prepared, Preparer
+from strata.catalog.types.builtin_types import Text
+from strata.catalog.types.preparers import Prepared, Preparer
 from strata.labels import Span, Spans
 
 

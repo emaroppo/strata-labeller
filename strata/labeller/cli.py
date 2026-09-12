@@ -832,8 +832,8 @@ def prepare(
     Writes the files and an index of what the conversion knew into the
     project's data root. Then run 'ingest', which catalogues them.
     """
-    from strata.catalog.preparers import PreparerError, available, for_source, resolve
-    from strata.catalog.preparers import run as run_preparer
+    from strata.catalog.types.preparers import PreparerError, available, for_source, resolve
+    from strata.catalog.types.preparers import run as run_preparer
 
     project = _load_project(project_path)
     source_dir = source or project.source_dir

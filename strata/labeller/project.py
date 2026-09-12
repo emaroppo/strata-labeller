@@ -316,7 +316,7 @@ class Project:
     @property
     def feature_specs(self) -> list:
         """The declarations, validated. Empty for a project with none."""
-        from strata.catalog.features import FeatureSpec
+        from strata.catalog.versions.features import FeatureSpec
 
         return [FeatureSpec.from_dict(raw) for raw in self.data.features]
 
@@ -335,7 +335,7 @@ class Project:
 
     def sample_type(self):
         """The type itself, resolved from what is installed."""
-        from strata.catalog.sample_types import SampleTypeError, resolve
+        from strata.catalog.types.sample_types import SampleTypeError, resolve
 
         name = self.sample_type_name
         try:

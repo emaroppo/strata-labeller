@@ -134,7 +134,7 @@ def test_a_host_on_another_catalog_is_refused_before_anything_is_frozen(
     import typer
     from sqlalchemy import func, select
 
-    from strata.catalog import tables as t
+    from strata.catalog.index import tables as t
     from strata.modelling.client import Trainer
 
     project, catalog = featured

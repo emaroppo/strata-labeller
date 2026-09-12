@@ -18,7 +18,7 @@ from importlib.metadata import EntryPoint
 import pytest
 from typer.testing import CliRunner
 
-from strata.catalog.prepared import PreparedIndex
+from strata.catalog.types.prepared import PreparedIndex
 from strata.labeller.cli import app
 
 runner = CliRunner()
@@ -38,8 +38,8 @@ NOTES = [
 @pytest.fixture(autouse=True)
 def stub_plugins(monkeypatch):
     """Register the stand-ins, beside whatever the environment really has."""
-    import strata.catalog.preparers as preparers
-    import strata.catalog.sample_types as sample_types
+    import strata.catalog.types.preparers as preparers
+    import strata.catalog.types.sample_types as sample_types
 
     real_types = sample_types.entries()
     monkeypatch.setattr(

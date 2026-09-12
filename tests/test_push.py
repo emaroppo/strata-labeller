@@ -114,7 +114,7 @@ def stage(make_project, tmp_path, monkeypatch):
 def _checksum(catalog, sample_id):
     from sqlalchemy import select
 
-    from strata.catalog import tables as t
+    from strata.catalog.index import tables as t
 
     with catalog.engine.connect() as conn:
         return conn.execute(

@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
 from strata.catalog import Catalog, SampleRow, blob_path
-from strata.catalog.signing import DEFAULT_TTL, sign, window_expiry
+from strata.catalog.storage.signing import DEFAULT_TTL, sign, window_expiry
 from strata.labels import AnyValue, Choices, Prediction
 
 from .schemas import LabelSchema
