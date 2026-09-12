@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from strata.catalog import Catalog, SampleRow
 from strata.labels import Choices
 
+from ..project import Project
 from .adapter import Addressing, Task, build_tasks, from_results
-from .project import Project
 from .schemas import LabelSchema
 
 

@@ -29,8 +29,8 @@ from pathlib import Path
 from strata.modelling import ModelError, resolve
 from strata.modelling.model import Model
 
-from . import schemas
-from .schemas import LabelSchema
+from .labelstudio import schemas
+from .labelstudio.schemas import LabelSchema
 
 PROJECT_FILE = "project.toml"
 PROJECT_ENV_VAR = "AUTO_LABELLER_PROJECT"

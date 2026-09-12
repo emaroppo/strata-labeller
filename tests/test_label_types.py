@@ -8,11 +8,11 @@ which is the point: it can be stored and trained on, but not yet reviewed.
 
 import pytest
 
-from strata.labeller.active_learning import certainty, least_confident
-from strata.labeller.adapter import prediction_to_results
-from strata.labeller.schemas.bbox import BBoxSchema as LSBBox
-from strata.labeller.schemas.classification import ClassificationSchema as LSChoices
-from strata.labeller.schemas.span import SpanSchema as LSSpan
+from strata.labeller.labelstudio.adapter import prediction_to_results
+from strata.labeller.labelstudio.schemas.bbox import BBoxSchema as LSBBox
+from strata.labeller.labelstudio.schemas.classification import ClassificationSchema as LSChoices
+from strata.labeller.labelstudio.schemas.span import SpanSchema as LSSpan
+from strata.labeller.review.active_learning import certainty, least_confident
 from strata.labels.examples import EXAMPLES
 
 each_type = pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)

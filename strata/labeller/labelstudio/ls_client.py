@@ -3,9 +3,9 @@ from collections.abc import Callable
 from label_studio_sdk import PredictionRequest
 from label_studio_sdk.client import LabelStudio
 
+from ..config import Settings
+from ..project import Project
 from . import label_config
-from .config import Settings
-from .project import Project
 
 
 class LSClient:

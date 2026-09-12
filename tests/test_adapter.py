@@ -8,7 +8,7 @@ to conflate, an empty answer and no answer.
 import pytest
 
 from strata.catalog import EVERYTHING
-from strata.labeller.adapter import (
+from strata.labeller.labelstudio.adapter import (
     LOCAL_FILES,
     Addressing,
     blob_url,
@@ -81,7 +81,7 @@ def test_the_control_names_come_from_the_schema(schema):
 
 
 def test_a_prediction_crosses_as_its_values(schema):
-    from strata.labeller.adapter import prediction_to_results
+    from strata.labeller.labelstudio.adapter import prediction_to_results
 
     prediction = ChoicesPrediction(values=["cat"], confidences=[0.9])
     assert prediction_to_results(prediction, schema)[0]["value"]["choices"] == ["cat"]

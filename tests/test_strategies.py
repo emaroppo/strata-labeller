@@ -7,7 +7,7 @@ review time, which is why they live here and not with the value types.
 
 import pytest
 
-from strata.labeller.active_learning import (
+from strata.labeller.review.active_learning import (
     STRATEGIES,
     entropy,
     least_confident,

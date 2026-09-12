@@ -7,8 +7,8 @@ these work on the payloads the SDK hands over and hands back.
 import pytest
 
 from strata.catalog import EVERYTHING, Catalog
-from strata.labeller.adapter import Addressing, blob_url
-from strata.labeller.sync import (
+from strata.labeller.labelstudio.adapter import Addressing, blob_url
+from strata.labeller.labelstudio.sync import (
     load_task_map,
     pull_annotations,
     rebuild_task_map,
@@ -312,7 +312,7 @@ def test_an_undeclared_class_is_found_whatever_kind_of_value_carries_it(tmp_path
     a TypeError comparing Span objects instead of naming the class nobody
     declared — and it raised on every span export, declared or not.
     """
-    from strata.labeller.schemas.span import SpanSchema as LSSpan
+    from strata.labeller.labelstudio.schemas.span import SpanSchema as LSSpan
 
     catalog = Catalog.local(tmp_path / "catalog")
     source = tmp_path / "doc.txt"

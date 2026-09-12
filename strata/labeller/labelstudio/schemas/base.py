@@ -6,7 +6,7 @@ results and the :mod:`strata.labels` values a catalog stores. Nothing else
 in the labeller knows whether a project labels classes, boxes or spans.
 
 Ranking a prediction for review is not a schema's business: see
-:mod:`strata.labeller.active_learning`, which reads the confidences a value
+:mod:`strata.labeller.review.active_learning`, which reads the confidences a value
 carries.
 """
 

@@ -7,14 +7,14 @@ model's output has to reach Label Studio in the shape it expects.
 
 import pytest
 
-from strata.labeller import schemas
-from strata.labeller.schemas import (
+from strata.labeller.labelstudio import schemas
+from strata.labeller.labelstudio.schemas import (
     BBoxSchema,
     ClassificationSchema,
     SpanSchema,
     strip_volatile,
 )
-from strata.labeller.schemas.media import IMAGE, TEXT
+from strata.labeller.labelstudio.schemas.media import IMAGE, TEXT
 from strata.labels import (
     Box,
     Span,

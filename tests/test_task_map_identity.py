@@ -23,14 +23,14 @@ import json
 import pytest
 
 from strata.catalog import Catalog
-from strata.labeller.project import Project
-from strata.labeller.sync import (
+from strata.labeller.labelstudio.sync import (
     TaskMapError,
     load_task_map,
     save_task_map,
     task_map_catalog,
     task_map_path,
 )
+from strata.labeller.project import Project
 
 A = "20260101T000000-aaaaaaaa"
 B = "20260202T000000-bbbbbbbb"

@@ -90,7 +90,7 @@ def _load_project(path: Path | None) -> Project:
 
 def _ls_client(settings: Settings, project: Project, config_path: Path):
     """Build a Label Studio client, failing early on a missing token."""
-    from ..ls_client import LSClient
+    from ..labelstudio.ls_client import LSClient
 
     if not settings.label_studio.api_key:
         _error(
@@ -108,7 +108,7 @@ def _addressing(settings, config=None):
     while reading local ones would orphan every task, and the symptom is an
     empty export rather than an error.
     """
-    from ..adapter import AdapterError, Addressing
+    from ..labelstudio.adapter import AdapterError, Addressing
 
     config = config or settings.catalogs.default
     with _exit_on(AdapterError):
@@ -191,7 +191,7 @@ def _task_map(project, ls_project_id: int, catalog):
     One place, so the refusal of another catalog's map reads the same
     everywhere and an adopted map is said out loud.
     """
-    from ..sync import TaskMapError, load_task_map, task_map_catalog
+    from ..labelstudio.sync import TaskMapError, load_task_map, task_map_catalog
 
     with _exit_on(TaskMapError):
         mapping = load_task_map(project, ls_project_id, catalog.id)

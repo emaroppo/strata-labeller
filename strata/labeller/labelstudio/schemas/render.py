@@ -4,7 +4,7 @@ from importlib import resources
 
 from .base import TemplateSyntax
 
-TEMPLATE_PACKAGE = "strata.labeller.label_configs"
+TEMPLATE_PACKAGE = "strata.labeller.labelstudio.label_configs"
 
 
 def read_template(name: str) -> str:

@@ -58,7 +58,7 @@ def new(
 @app.command()
 def templates() -> None:
     """List the available label config templates."""
-    from .. import schemas
+    from ..labelstudio import schemas
 
     table = Table(title="Label config templates")
     table.add_column("Template", style="cyan")
@@ -166,7 +166,7 @@ def class_add(
     hand-tuned layout survives. Refresh your Label Studio tab afterwards and
     the new option is there.
     """
-    from ..label_config import LabelConfigError
+    from ..labelstudio.label_config import LabelConfigError
 
     project = _load_project(project_path)
     settings = _settings(config_path)

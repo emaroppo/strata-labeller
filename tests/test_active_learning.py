@@ -25,7 +25,7 @@ def scored(*confidences):
 
 
 def test_least_confident_comes_first():
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     pool = [Sample(1, "a" * 64), Sample(2, "b" * 64), Sample(3, "c" * 64)]
     order = rank(
@@ -37,7 +37,7 @@ def test_least_confident_comes_first():
 
 
 def test_an_unscored_sample_is_left_out():
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     pool = [Sample(1, "a" * 64), Sample(2, "b" * 64)]
     order = rank(pool, {"a" * 64: scored(0.9)})
@@ -47,13 +47,13 @@ def test_an_unscored_sample_is_left_out():
 
 
 def test_nothing_scored_ranks_nothing():
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     assert rank([Sample(1, "a" * 64)], {}) == []
 
 
 def test_certainty_is_the_inverse_of_least_confident():
-    from strata.labeller.active_learning import certainty, least_confident
+    from strata.labeller.review.active_learning import certainty, least_confident
 
     p = scored(0.3, 0.85, 0.6)
     # The number shown beside a pre-annotation and the order it arrives in
@@ -63,7 +63,7 @@ def test_certainty_is_the_inverse_of_least_confident():
 
 
 def test_certainty_is_not_the_first_confidence():
-    from strata.labeller.active_learning import certainty
+    from strata.labeller.review.active_learning import certainty
 
     # Confidences are positional against values, so the first one is
     # whichever class or box happened to come first — meaningless alone
@@ -71,7 +71,7 @@ def test_certainty_is_not_the_first_confidence():
 
 
 def test_nothing_asserted_is_no_certainty():
-    from strata.labeller.active_learning import certainty
+    from strata.labeller.review.active_learning import certainty
     from strata.labels import ChoicesPrediction
 
     assert certainty(ChoicesPrediction()) == 0.0
@@ -110,7 +110,7 @@ def test_empty_predictions_do_not_take_the_whole_queue():
     project, fifty documents of a few dozen characters each, while twelve
     thousand with real predictions sat unreachable behind them.
     """
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     samples, scores = _pool(n_found=100, n_nothing=100)
     top = rank(samples, scores)[:50]
@@ -120,7 +120,7 @@ def test_empty_predictions_do_not_take_the_whole_queue():
 
 def test_the_share_holds_at_every_prefix():
     """A caller taking the top N gets the same mix as one taking all of it."""
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     samples, scores = _pool(n_found=100, n_nothing=100)
     ranked = rank(samples, scores, empty_share=0.2)
@@ -132,7 +132,7 @@ def test_the_share_holds_at_every_prefix():
 def test_nothing_is_still_reviewed_eventually():
     # Not zero: a document the model missed everything in is worth seeing,
     # and only a reader can tell that from one that is genuinely empty
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     samples, scores = _pool(n_found=100, n_nothing=100)
     ranked = rank(samples, scores)
@@ -141,14 +141,14 @@ def test_nothing_is_still_reviewed_eventually():
 
 
 def test_a_pool_of_only_empties_is_still_ordered():
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     samples, scores = _pool(n_found=0, n_nothing=5)
     assert len(rank(samples, scores)) == 5
 
 
 def test_a_pool_with_nothing_empty_is_untouched():
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     samples, scores = _pool(n_found=5, n_nothing=0)
     assert len(rank(samples, scores)) == 5
@@ -157,7 +157,7 @@ def test_a_pool_with_nothing_empty_is_untouched():
 def test_a_share_outside_a_proportion_is_refused():
     import pytest
 
-    from strata.labeller.active_learning import rank
+    from strata.labeller.review.active_learning import rank
 
     samples, scores = _pool(n_found=2, n_nothing=2)
     with pytest.raises(ValueError, match="proportion"):
@@ -180,7 +180,7 @@ def test_density_ranks_by_how_much_there_is_to_confirm():
     document's score is its least certain span, so one carrying fifty of
     them almost surely holds a weak one and never ranks as confident.
     """
-    from strata.labeller.active_learning import density, rank
+    from strata.labeller.review.active_learning import density, rank
 
     samples = [Sample(i, f"{i:064x}") for i in range(3)]
     scores = {
@@ -199,7 +199,7 @@ def test_density_counts_confident_spans_not_every_guess():
     wrong span costs what marking a missing one does, so that batch would
     have been slower than a blank page.
     """
-    from strata.labeller.active_learning import density, rank
+    from strata.labeller.review.active_learning import density, rank
 
     prolific = _spans(*([0.3] * 100))
     careful = _spans(*([0.95] * 10))
@@ -212,7 +212,7 @@ def test_density_counts_confident_spans_not_every_guess():
 
 
 def test_density_of_an_empty_prediction_is_nothing_to_check():
-    from strata.labeller.active_learning import density
+    from strata.labeller.review.active_learning import density
     from strata.labels import SpansPrediction
 
     assert density(SpansPrediction(values=[], confidences=[])) == 0.0

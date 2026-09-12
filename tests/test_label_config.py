@@ -6,7 +6,7 @@ that matter here are about what an edit leaves alone.
 
 import pytest
 
-from strata.labeller.label_config import (
+from strata.labeller.labelstudio.label_config import (
     LabelConfigError,
     add_class,
     find_control,

@@ -8,8 +8,8 @@ describable.
 import pytest
 
 from strata.catalog import EVERYTHING
-from strata.labeller.adapter import Addressing, blob_url
-from strata.labeller.sync import relink
+from strata.labeller.labelstudio.adapter import Addressing, blob_url
+from strata.labeller.labelstudio.sync import relink
 from strata.labels import ClassificationSchema
 
 SECRET = "shared with the server"
@@ -81,7 +81,7 @@ def test_a_served_task_re_signs(stocked, monkeypatch):
     stale = SERVED.url_for(samples[0])
 
     # A queue that sat long enough for the signature to move on
-    import strata.labeller.adapter as adapter
+    import strata.labeller.labelstudio.adapter as adapter
 
     monkeypatch.setattr(adapter, "window_expiry", lambda ttl=0: 9_999_999_999)
     report = relink([task(1, stale)], catalog, SERVED, "image")

@@ -89,7 +89,7 @@ def init(
     view of the catalog rather than a second copy of it. That is what makes
     a project disposable: delete it, run this again, lose nothing.
     """
-    from ..sync import save_task_map, tasks_to_push
+    from ..labelstudio.sync import save_task_map, tasks_to_push
 
     project = _load_project(project_path)
     settings = _settings(config_path)
@@ -264,10 +264,10 @@ def push(
     from strata.modelling import PredictionCache, PredictRequest, RunStore
     from strata.modelling import predict as run_predict
 
-    from .. import queue
-    from ..active_learning import STRATEGIES, certainty
-    from ..adapter import prediction_to_results
-    from ..sync import rebuild_task_map, save_task_map, tasks_to_push
+    from ..labelstudio.adapter import prediction_to_results
+    from ..labelstudio.sync import rebuild_task_map, save_task_map, tasks_to_push
+    from ..review import queue
+    from ..review.active_learning import STRATEGIES, certainty
 
     if strategy not in STRATEGIES:
         _error(f"Unknown strategy {strategy!r}. Available: {', '.join(sorted(STRATEGIES))}.")
@@ -414,7 +414,7 @@ def export_annotations(
     exporting halfway through a review stamps the seed's own guesses as
     ground truth. ``--reviewed-only`` keeps back anything nobody opened.
     """
-    from ..sync import pull_annotations
+    from ..labelstudio.sync import pull_annotations
 
     project = _load_project(project_path)
     settings = _settings(config_path)
@@ -484,7 +484,7 @@ def relink(
     before the catalog points at a real image that nothing here can identify,
     and rewriting it would destroy the only record of what it showed.
     """
-    from ..sync import relink as plan_relink
+    from ..labelstudio.sync import relink as plan_relink
 
     project = _load_project(project_path)
     settings = _settings(config_path)
