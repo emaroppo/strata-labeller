@@ -9,42 +9,12 @@ arrive as constructor arguments, and a failure reaches the caller as a
 """
 
 import re
+import shutil
 
 import pytest
+from toy_model import TOY_SOURCE
 
 from strata.labeller.project import Project, ProjectError
-
-TOY_MODEL = '''
-from pathlib import Path
-
-from strata.labels import ChoicesPrediction
-from strata.modelling import Model
-
-
-class ToyModel(Model):
-    """A model with no ML dependency at all."""
-
-    task = "classification"
-    version = "1"
-
-    def __init__(self, num_epochs: int = 3, note: str = "default"):
-        self.num_epochs = num_epochs
-        self.note = note
-        self.classes: list[str] = []
-
-    def finetune(self, train, classes, val=None, on_epoch=None):
-        self.classes = classes
-        return {"loss": 0.0}
-
-    def predict(self, paths, on_batch=None, *, features=None):
-        return [ChoicesPrediction(values=["cat"], confidences=[0.87]) for _ in paths]
-
-    def save(self, path: Path) -> None:
-        ...
-
-    def load(self, path: Path) -> None:
-        ...
-'''
 
 
 def set_ref(project: Project, ref: str, params: str | None = None) -> Project:
@@ -69,14 +39,14 @@ def set_ref(project: Project, ref: str, params: str | None = None) -> Project:
 
 @pytest.fixture
 def toy_project(project) -> Project:
-    (project.root / "model.py").write_text(TOY_MODEL)
-    return set_ref(project, "model.py:ToyModel", 'num_epochs = 7\nnote = "from params"\n')
+    shutil.copyfile(TOY_SOURCE, project.root / "model.py")
+    return set_ref(project, "model.py:Toy", 'num_epochs = 7\nnote = "from params"\n')
 
 
 def test_a_file_ref_resolves_inside_the_project(toy_project, monkeypatch, tmp_path):
     # Relative to the project root, not to wherever the command was run from
     monkeypatch.chdir(tmp_path)
-    assert type(toy_project.load_model()).__name__ == "ToyModel"
+    assert type(toy_project.load_model()).__name__ == "Toy"
 
 
 def test_model_params_reach_the_constructor(toy_project):

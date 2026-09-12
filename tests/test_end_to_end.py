@@ -9,6 +9,9 @@ It needs no ML framework: the model is nine lines and imports nothing.
 """
 
 import json
+import shutil
+
+from toy_model import TOY_SOURCE
 
 from strata.catalog import EVERYTHING, Catalog
 from strata.modelling import PredictRequest, RunStore, TrainRequest, predict, train
@@ -17,36 +20,6 @@ from strata.modelling import PredictRequest, RunStore, TrainRequest, predict, tr
 def split_of(directory) -> dict[int, str]:
     manifest = json.loads((directory / "manifest.json").read_text())
     return {s["id"]: s["split"] for s in manifest["samples"]}
-
-TOY_MODEL = '''
-import json
-from pathlib import Path
-
-from strata.labels import ChoicesPrediction
-from strata.modelling import Model
-
-
-class Toy(Model):
-    task = "classification"
-    version = "1"
-
-    def __init__(self):
-        self.classes = []
-
-    def finetune(self, train, classes, val=None, on_epoch=None):
-        self.classes = list(classes)
-        return {"accuracy": 0.5, "n_train": float(len(train)), "n_val": float(len(val or []))}
-
-    def predict(self, paths, on_batch=None, *, features=None):
-        return [ChoicesPrediction(values=self.classes[:1], confidences=[0.5]) for _ in paths]
-
-    def save(self, path):
-        Path(path).write_text(json.dumps(self.classes))
-
-    def load(self, path):
-        self.classes = json.loads(Path(path).read_text())
-'''
-
 
 def test_a_project_becomes_a_trained_run(project, tmp_path):
     # 20 files, 16 of them labelled — the shape of a project a few rounds in
@@ -84,7 +57,7 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
     assert len(manifest["samples"]) == 16
     assert 0 < sum(s["split"] == "val" for s in manifest["samples"]) < 16
 
-    (materialised / "toy.py").write_text(TOY_MODEL)
+    shutil.copyfile(TOY_SOURCE, materialised / "toy.py")
     store = RunStore.local(tmp_path / "runs")
     run = train(TrainRequest(dataset_dir=materialised, model="toy.py:Toy"), store)
 
@@ -120,7 +93,7 @@ def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
     first_dir = catalog.materialise(
         catalog.create_dataset("demo", label_set_id, collections=EVERYTHING), tmp_path / "v1"
     )
-    (first_dir / "toy.py").write_text(TOY_MODEL)
+    shutil.copyfile(TOY_SOURCE, first_dir / "toy.py")
     first = train(TrainRequest(dataset_dir=first_dir, model="toy.py:Toy"), store)
     before = split_of(first_dir)
 
@@ -132,7 +105,7 @@ def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
     second_dir = catalog.materialise(
         catalog.create_dataset("demo", label_set_id, collections=EVERYTHING), tmp_path / "v2"
     )
-    (second_dir / "toy.py").write_text(TOY_MODEL)
+    shutil.copyfile(TOY_SOURCE, second_dir / "toy.py")
     second = train(
         TrainRequest(dataset_dir=second_dir, model="toy.py:Toy", parent_run_id=first.id), store
     )

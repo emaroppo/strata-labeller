@@ -6,45 +6,13 @@ and a round continues the previous one unless told not to.
 """
 
 import json
+import shutil
 
 import pytest
+from toy_model import TOY_SOURCE
 
 from strata.catalog import Catalog, CatalogError
 from strata.labeller.round import RoundError, describe, run_round
-
-TOY_MODEL = '''
-import json
-from pathlib import Path
-
-from strata.labels import ChoicesPrediction
-from strata.modelling import Model
-
-
-class Toy(Model):
-    task = "classification"
-    version = "1"
-
-    def __init__(self, num_epochs: int = 4, batch_size: int = 16, lr: float = 5e-5,
-                 note: str = "default"):
-        self.num_epochs = num_epochs
-        self.note = note
-        self.classes = []
-
-    def finetune(self, train, classes, val=None, on_epoch=None):
-        self.classes = list(classes)
-        return {"accuracy": 0.5, "n_train": float(len(train)), "n_val": float(len(val or []))}
-
-    def predict(self, paths, on_batch=None, *, features=None):
-        return [ChoicesPrediction(values=self.classes[:1], confidences=[0.5]) for _ in paths]
-
-    def save(self, path):
-        Path(path).write_text(json.dumps({"classes": self.classes, "note": self.note}))
-
-    def load(self, path):
-        payload = json.loads(Path(path).read_text())
-        self.classes = payload["classes"]
-        self.note = payload["note"]
-'''
 
 
 def stock(project, catalog, labelled: int, total: int):
@@ -82,7 +50,7 @@ def ready(project, tmp_path):
     """A project with a stocked catalog and a model it can reach."""
 
     def _make(labelled: int = 16, total: int = 20, ref: str = "toy.py:Toy"):
-        (project.root / "toy.py").write_text(TOY_MODEL)
+        shutil.copyfile(TOY_SOURCE, project.root / "toy.py")
 
         toml = project.root / "project.toml"
         toml.write_text(toml.read_text().replace('ref = "multilabel"', f'ref = "{ref}"'))
@@ -275,7 +243,7 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
     """
     from strata.labels import Choices
 
-    (project.root / "toy.py").write_text(TOY_MODEL)
+    shutil.copyfile(TOY_SOURCE, project.root / "toy.py")
     toml = project.root / "project.toml"
     toml.write_text(
         toml.read_text()
