@@ -181,12 +181,6 @@ def _print_train_record(record) -> None:
 
 #: What "how is it going" means per task. A model may report anything it
 #: likes alongside; this is only which one the history plots by default.
-HEADLINE_METRIC = {
-    "classification": "val_accuracy",
-    "span": "val_span_f1",
-}
-
-
 @app.command()
 def report(
     project_path: Path | None = ProjectOption,
@@ -203,24 +197,15 @@ def report(
     """Show the training history, or one run in detail.
 
     Read from the run store rather than from round folders, so a metric
-    across rounds is one query.
-
-    ``--json`` writes the same query to stdout as JSON and nothing else, so
-    it pipes. It carries more than the table does — every metric rather than
-    the one plotted, and each run's ``params`` and ``classes`` — because the
-    table's job is to be read and this one's is to be computed on. Those two
-    fields are what let a consumer decide whether two runs are even
-    comparable: a project whose ``[model.params]`` reshape the task can
-    produce a history that looks like progress and is not, and the table's
-    delta column cannot tell.
-
-    A change is shown only where one run actually continues the one above:
-    a warm-started number means something against its parent and nothing
-    against a run from another lineage. Rows marked unchained continue
-    nothing in the store — either a genuine cold start, or a round imported
-    from before the store existed, whose lineage was never recorded.
+    across rounds is one query. ``--json`` writes the same query to stdout
+    and nothing else, so it pipes; it carries every metric and each run's
+    ``params`` and ``classes``, which are what let a consumer decide
+    whether two runs are even comparable. A change is shown only where one
+    run actually continues the one above.
     """
     from strata.modelling import RunStore
+
+    from .. import history
 
     project = _load_project(project_path)
     if not (project.runs_dir / "runs.db").exists():
@@ -228,11 +213,7 @@ def report(
         raise typer.Exit(1)
 
     store = RunStore.local(project.runs_dir)
-
-    # The headline number differs by task, and defaulting to the
-    # classification one meant this command reported nothing at all for a
-    # span project — every run had metrics, just not that name.
-    metric = metric or HEADLINE_METRIC.get(project.schema.task, "val_accuracy")
+    metric = metric or history.headline_metric(project.schema.task)
 
     if run_id is not None:
         run = store.get(run_id)
@@ -240,25 +221,13 @@ def report(
             _error(f"No run with id {run_id}")
             raise typer.Exit(1)
         if as_json:
-            _emit_json(
-                {
-                    "run": _run_json(run),
-                    "chain": [_run_json(r) for r in store.chain(run.id)],
-                    # Only here, never in the history: there are as many of
-                    # these as epochs times metrics, and the history is a
-                    # list of runs rather than a list of curves.
-                    "curve": [
-                        {"epoch": epoch, **reported}
-                        for epoch, reported in store.curve(run.id)
-                    ],
-                }
-            )
+            _emit_json(history.run_detail(store, run))
             return
         _print_run(store, run)
         return
 
-    history = store.history(project.dataset_name, metric)
-    if not history:
+    rows = history.history(store, project.dataset_name, metric)
+    if not rows:
         _error(
             f"No run recorded {metric!r} for '{project.dataset_name}'. "
             + (
@@ -270,58 +239,8 @@ def report(
         )
         raise typer.Exit(1)
 
-    # Computed once, rendered twice. The delta rule below is the whole
-    # reason this is not a plain dump of the store, and a JSON consumer
-    # reimplementing it from the raw rows would get it subtly wrong.
-    rows: list[dict] = []
-    seen: dict[int, float] = {}
-    versions: dict[int, int] = {}
-    for run_num, version, value in history:
-        run = store.get(run_num)
-        parent = run.parent_run_id
-        # Against its own parent, and only when both were scored on the same
-        # held-out samples. A dataset version going backwards means the
-        # lineage crossed into the catalog from the old layout, where the
-        # split was recomputed every round — comparing those produced a
-        # +0.10 that measured nothing but a change of validation set.
-        before, now = versions.get(parent), version
-        comparable = (
-            parent in seen
-            and before is not None
-            and now is not None
-            and before <= now
-        )
-        rows.append(
-            {
-                "run": run,
-                "value": value,
-                "version": version,
-                "delta": (value - seen[parent]) if comparable else None,
-                "warm": bool(parent),
-            }
-        )
-        seen[run_num] = value
-        versions[run_num] = version
-
     if as_json:
-        _emit_json(
-            {
-                "dataset": project.dataset_name,
-                "metric": metric,
-                "runs": [
-                    {
-                        **_run_json(row["run"]),
-                        "value": row["value"],
-                        # Null rather than absent, and null rather than zero:
-                        # "this cannot be compared to its parent" is not the
-                        # same statement as "it did not move".
-                        "delta": row["delta"],
-                        "lineage": "warm" if row["warm"] else "unchained",
-                    }
-                    for row in rows
-                ],
-            }
-        )
+        _emit_json(history.history_json(project.dataset_name, metric, rows))
         return
 
     table = Table(title=f"{project.dataset_name} — {metric}")
@@ -331,33 +250,13 @@ def report(
     table.add_column("Δ", justify="right")
     table.add_column("Lineage")
     for row in rows:
-        version = row["version"]
-        # Whether it continued, not what from. An id is a timestamp and a
-        # host now, and two of them in one row of a table is a row of
-        # ellipses — the chain itself is what `report --run` is for.
-        lineage = "warm" if row["warm"] else "[yellow]unchained[/yellow]"
-        shown = f"v{version}" if version is not None else "[dim]—[/dim]"
-        delta = f"{row['delta']:+.4f}" if row["delta"] is not None else ""
-        table.add_row(
-            row["run"].short, shown, f"{row['value']:.4f}", delta, lineage
-        )
+        # Whether it continued, not what from: two ids in one row of a table
+        # is a row of ellipses, and the chain itself is what `--run` is for.
+        lineage = "warm" if row.warm else "[yellow]unchained[/yellow]"
+        shown = f"v{row.version}" if row.version is not None else "[dim]—[/dim]"
+        delta = f"{row.delta:+.4f}" if row.delta is not None else ""
+        table.add_row(row.run.short, shown, f"{row.value:.4f}", delta, lineage)
     console.print(table)
-
-
-def _run_json(run) -> dict:
-    """One run, as something to compute on rather than to read.
-
-    Everything the store holds, including ``params`` and ``classes``. Those
-    are the fields that answer whether two runs are asking the same
-    question: a metric moved by changing the data, the model, or what the
-    model was told to do, and only the last of those is invisible in a
-    table of numbers.
-    """
-    data = run.model_dump(mode="json")
-    # Not a field on the model, and the one thing a caller would otherwise
-    # have to reimplement the id format to get.
-    data["short"] = run.short
-    return data
 
 
 def _emit_json(payload: dict) -> None:
