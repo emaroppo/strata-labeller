@@ -122,8 +122,8 @@ def test_span_offsets_recover_the_source_text():
     document = "Ada met Bob in Rome"
     schema = SpanSchema(["PERSON", "PLACE"])
     spans = [
-        Span(label="PERSON", start=0, end=3, text="Ada"),
-        Span(label="PLACE", start=15, end=19, text="Rome"),
+        Span(labels=["PERSON"], start=0, end=3, text="Ada"),
+        Span(labels=["PLACE"], start=15, end=19, text="Rome"),
     ]
     decoded = schema.decode_target(schema.encode_target(spans))
     for span in decoded:
@@ -135,9 +135,9 @@ def test_span_decode_sorts_into_reading_order():
     schema = SpanSchema(["X"])
     encoded = schema.encode_target(
         [
-            Span(label="X", start=10, end=12, text="th"),
-            Span(label="X", start=0, end=3, text="Ada"),
-            Span(label="X", start=10, end=11, text="t"),
+            Span(labels=["X"], start=10, end=12, text="th"),
+            Span(labels=["X"], start=0, end=3, text="Ada"),
+            Span(labels=["X"], start=10, end=11, text="t"),
         ]
     )
     decoded = schema.decode_target(encoded)

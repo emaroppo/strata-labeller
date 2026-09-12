@@ -93,7 +93,7 @@ def _pool(n_found: int, n_nothing: int):
         samples.append(Sample(i, c))
         # Deliberately unsure, but not as "uncertain" as an empty one
         scores[c] = SpansPrediction(
-            values=[Span(label="PER", start=0, end=3, text="abc")], confidences=[0.5]
+            values=[Span(labels=["PER"], start=0, end=3, text="abc")], confidences=[0.5]
         )
     for i in range(n_nothing):
         c = f"e{i:063x}"
@@ -168,7 +168,7 @@ def _spans(*confidences):
     from strata.labels import Span, SpansPrediction
 
     return SpansPrediction(
-        values=[Span(label="PER", start=i, end=i + 1) for i in range(len(confidences))],
+        values=[Span(labels=["PER"], start=i, end=i + 1) for i in range(len(confidences))],
         confidences=list(confidences),
     )
 
