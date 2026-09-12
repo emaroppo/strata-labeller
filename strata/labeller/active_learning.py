@@ -1,12 +1,9 @@
 """Ordering the review queue so the most informative samples come first.
 
-The strategies live here rather than with the value types, because which one
-to use is a choice about how to spend review time and not a fact about what
-a prediction is. A prediction carries its confidences; what to make of them
-is active learning's business.
-
-Each takes a strata.labels prediction and returns a number where higher
-means "ask a human sooner".
+Each strategy takes a strata.labels prediction and returns a number where
+higher means "ask a human sooner". They live here, not with the value
+types, because which to use is a choice about review time. See
+``docs/adr/0012``.
 """
 
 import math
@@ -60,35 +57,12 @@ CONFIDENT = 0.9
 
 
 def density(prediction: Value, threshold: float = CONFIDENT) -> float:
-    """How much the model is asking to have *confirmed*.
+    """How much the model is asking to have *confirmed*: spans over :data:`CONFIDENT`.
 
-    The others answer "what would teach the model most per document". This
-    answers "where is a reviewer's hour worth most", and early on those are
-    not the same question.
-
-    Uncertainty sampling avoids dense predictions, and for spans it does so
-    structurally: a document scores as its *least* certain span, so anything
-    carrying fifty of them almost surely holds a weak one and can never rank
-    as confident. Measured on one project, the pool averaged 22 predicted
-    spans a document while an uncertainty-ranked batch of sixty averaged
-    under one — and reviewing those sparse ones yielded a tenth of the
-    training signal per hour that dense ones had.
-
-    **Counting every span was the wrong measure**, and the first version of
-    this did. It selected the documents the model was most wrong about: the
-    densest was 400 spans across 3,896 characters, one per ten, including a
-    hundred and ten phone numbers in a political email and organisations cut
-    to "Campaign" and "federal". Deleting a wrong span costs what marking a
-    missing one does, so that batch would have been slower than a blank page.
-
-    Confidence separates the two cleanly. In that document only 37 spans
-    cleared 0.9; ranking on the confident ones instead puts forward a
-    document with 221 spans of which 187 are confident. Same idea, and it
-    stops rewarding a model for guessing more.
-
-    Right while a training set is being built, wrong once it exists: a model
-    already good at these documents learns nothing from another. Name it
-    deliberately, and stop naming it when that turns.
+    Where a reviewer's hour is worth most while a training set is being
+    built, and the wrong strategy once it exists. Counts confident spans,
+    not all of them, so a model is not rewarded for guessing more. See
+    ``docs/adr/0012``.
     """
     confidences = _confidences(prediction)
     if not confidences:
@@ -120,35 +94,12 @@ def _asserted_something(prediction: Value) -> bool:
 
 
 def rank(samples, scores, strategy=None, empty_share: float = DEFAULT_EMPTY_SHARE):
-    """Order a review pool, least confident first, dropping the unscored.
+    """Order a review pool by ``strategy``, dropping the unscored.
 
-    Separate from the command because this is where the wiring meets: three
-    producers of predictions — a cache, a local handler, a remote host — and
-    a ranking that sorts on whatever they agree to hand over. They have to
-    agree, and nothing here can tell whether they do.
-
-    A sample nobody scored is left out rather than sorted on a default. Its
-    place in a queue that claims to be least-confident-first would be a
-    fiction, and the sample is still unlabelled, so it comes back next time.
-
-    **Two questions, not one.** "Correct what I found" and "confirm there is
-    nothing here" are different requests, and every strategy above scores a
-    prediction with nothing in it at exactly 1.0 — so they arrive as a block
-    of ties at the very front and monopolise the queue rather than competing
-    for it. Measured on one span project: 684 documents the model found
-    nothing in took the whole of a fifty-task batch, while 12,333 documents
-    with real predictions to correct were unreachable behind them. Every one
-    of the fifty was a message of a few dozen characters that genuinely
-    contained nothing.
-
-    So they are drawn as two pools in a declared proportion. Both are still
-    ordered by the strategy; what changes is that neither can crowd the
-    other out.
-
-    This never bit classification because a classifier cannot return an
-    empty prediction — the image baseline falls back to its best guess when
-    nothing clears the threshold — so the rule was written for a case that
-    could not arise until a task could honestly assert nothing.
+    Samples the model found nothing in are drawn as a second pool, in the
+    ``empty_share`` proportion, holding at every prefix of the result. A
+    sample nobody scored is left out; it is still unlabelled and comes
+    back next time. See ``docs/adr/0012``.
     """
     if not 0.0 <= empty_share <= 1.0:
         raise ValueError(f"empty_share is a proportion, got {empty_share}")
