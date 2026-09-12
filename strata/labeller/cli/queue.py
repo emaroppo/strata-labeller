@@ -5,8 +5,6 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
-from strata.labels import feature_digest
-
 from ..project import ProjectError
 from ._remote import _follow, _trainer
 from ._shared import (
@@ -68,9 +66,7 @@ def unskip(
         if len(task_ids) < len(selected):
             # Ordinary rather than a fault: a skipped sample need never have
             # reached Label Studio, and push will create its task when it does
-            console.print(
-                f"[dim]{len(selected) - len(task_ids)} had no task there yet.[/dim]"
-            )
+            console.print(f"[dim]{len(selected) - len(task_ids)} had no task there yet.[/dim]")
 
     moved = catalog.annotations.unskip(label_set_id, [s.id for s in selected])
     console.print(
@@ -121,9 +117,7 @@ def init(
         # signed URLs to the serving API, a local storage connection points
         # at a mount this deployment no longer has, and configuring one
         # would suggest the mount still matters.
-        client.setup_local_storage(
-            ls_project_id, path=f"/label-studio/data/{config.blobs_prefix}"
-        )
+        client.setup_local_storage(ls_project_id, path=f"/label-studio/data/{config.blobs_prefix}")
 
     tasks, _ = tasks_to_push(
         samples, catalog, label_set_id, schema, _addressing(settings, config), {}
@@ -175,9 +169,7 @@ def _run_for_push(
         # now costs one request; not checking costs a pool fetched and
         # scored before anything notices.
         found = (
-            trainer.run(run_id)
-            if run_id
-            else trainer.latest_run(project.dataset_name, catalog_id)
+            trainer.run(run_id) if run_id else trainer.latest_run(project.dataset_name, catalog_id)
         )
 
     if found is None:
@@ -234,9 +226,7 @@ def _remote_predictions(
 def push(
     project_path: Path | None = ProjectOption,
     config_path: Path = ConfigOption,
-    limit: int | None = typer.Option(
-        None, help="Review only the top-N, most uncertain first"
-    ),
+    limit: int | None = typer.Option(None, help="Review only the top-N, most uncertain first"),
     run_id: str | None = typer.Option(None, help="Predict with this run (default: latest)"),
     predictions: bool = typer.Option(
         True, "--predictions/--no-predictions", help="Attach pre-annotations"
@@ -271,18 +261,16 @@ def push(
     Predictions come from a recorded run, so what a reviewer sees is tied to
     a checkpoint that resolves back to the data behind it.
     """
-    from strata.modelling import PredictRequest, RunStore
+    from strata.modelling import PredictionCache, PredictRequest, RunStore
     from strata.modelling import predict as run_predict
 
-    from ..active_learning import STRATEGIES, certainty, rank
+    from .. import queue
+    from ..active_learning import STRATEGIES, certainty
     from ..adapter import prediction_to_results
     from ..sync import rebuild_task_map, save_task_map, tasks_to_push
 
     if strategy not in STRATEGIES:
-        _error(
-            f"Unknown strategy {strategy!r}. Available: "
-            f"{', '.join(sorted(STRATEGIES))}."
-        )
+        _error(f"Unknown strategy {strategy!r}. Available: {', '.join(sorted(STRATEGIES))}.")
         raise typer.Exit(1)
 
     project = _load_project(project_path)
@@ -314,101 +302,67 @@ def push(
         console.print("[yellow]Nothing is waiting for review.[/yellow]")
         return
 
-    ranked, scored = pool, {}
     store = RunStore.local(project.runs_dir)
     remote = bool(settings.modelling.url)
-
-    # Everything below deals in checksum -> ChoicesPrediction. The local
-    # handler returns a ScoredPath wrapping one, and unwrapping it in some
-    # places but not others is how a cache came to hold values that read
-    # back empty.
     scores: dict[str, object] = {}
     scoring_run = _run_for_push(settings, project, store, run_id, remote, catalog.id)
 
     if predictions and scoring_run is not None:
-        checksums = [s.checksum for s in pool]
-        # What the model is to be told about each sample, and — the same
-        # values — what keeps a cached answer the answer. A prediction is a
-        # function of a checkpoint, some bytes and these; keyed on the
-        # first two alone, a correction upstream would be served the score
-        # it invalidated.
         specs = project.feature_specs
-        resolved = catalog.features_for([s.id for s in pool], specs) if specs else {}
-        by_checksum = {s.checksum: resolved.get(s.id, {}) for s in pool}
-        if specs:
-            uncovered = [s for s in pool if not by_checksum.get(s.checksum)]
-            if uncovered:
-                # Skipped and said out loud rather than scored on a blank.
-                # The danger is the silence: a queue that only surfaces
-                # covered samples never gets the rest labelled, so the gap
-                # sustains itself.
-                console.print(
-                    f"[yellow]{len(uncovered):,} sample(s) carry no value for "
-                    f"{', '.join(f.name for f in specs)} and cannot be scored — "
-                    f"they stay out of this queue until they do.[/yellow]"
-                )
-                dropped = {s.checksum for s in uncovered}
-                pool = [s for s in pool if s.checksum not in dropped]
-                checksums = [s.checksum for s in pool]
-        digests = {c: feature_digest(f) for c, f in by_checksum.items()}
+        pool, coverage = queue.feature_values(catalog, pool, specs)
+        if coverage.uncovered:
+            console.print(
+                f"[yellow]{len(coverage.uncovered):,} sample(s) carry no value for "
+                f"{', '.join(f.name for f in specs)} and cannot be scored — "
+                f"they stay out of this queue until they do.[/yellow]"
+            )
         if remote:
             # The host keeps its own cache, keyed on its own run ids — which
             # is the only place that key means anything.
             scores = _remote_predictions(
-                settings, scoring_run, checksums, by_checksum
+                settings, scoring_run, [s.checksum for s in pool], coverage.by_checksum
             )
         else:
-            from strata.modelling import PredictionCache
-
-            cache = PredictionCache.local(project.runs_dir)
-            scores = cache.get(scoring_run, checksums, digests)
-            missing = [s for s in pool if s.checksum not in scores]
-            if scores:
-                console.print(
-                    f"[dim]{len(scores):,} prediction(s) reused from run "
-                    f"{scoring_run}; {len(missing):,} to make[/dim]"
-                )
-            if missing:
-                with console.status(f"Predicting with run {scoring_run}..."):
-                    fresh = run_predict(
-                        PredictRequest(
-                            run_id=scoring_run,
-                            paths=_local_paths(catalog_root, missing),
-                            features=[by_checksum[s.checksum] for s in missing],
-                        ),
+            with console.status(f"Predicting with run {scoring_run}..."):
+                scored = queue.score_locally(
+                    store,
+                    PredictionCache.local(project.runs_dir),
+                    scoring_run,
+                    pool,
+                    coverage,
+                    paths_for=lambda missing: _local_paths(catalog_root, missing),
+                    predict=lambda paths, features: run_predict(
+                        PredictRequest(run_id=scoring_run, paths=paths, features=features),
                         store,
-                    )
-                made = {s.checksum: p.value for s, p in zip(missing, fresh, strict=True)}
-                cache.put(scoring_run, made, digests)
-                scores.update(made)
-
-        ranked = rank(pool, scores, STRATEGIES[strategy], empty_share=empty_share)
-        scored = {s.id: scores[s.checksum] for s in ranked}
+                    ),
+                )
+            if scored.reused:
+                console.print(
+                    f"[dim]{scored.reused:,} prediction(s) reused from run "
+                    f"{scoring_run}; {scored.made:,} to make[/dim]"
+                )
+            scores = scored.scores
     elif predictions:
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
 
-    # Disputed samples have an answer, so they are not in the pool; they
-    # are added, and first, ahead of the ranking. See docs/adr/0009.
-    conflicts = catalog.annotations.conflicts(label_set_id, project.collections)
-    if conflicts:
-        already = {s.id for s in ranked}
-        disputed = [
-            row
-            for row in (catalog.samples.by_checksum(c["checksum"]) for c in conflicts)
-            if row is not None and row.id not in already
-        ]
-        if disputed:
-            ranked = disputed + ranked
-            console.print(
-                f"[yellow]{len(disputed)} sample(s) were answered two ways — "
-                f"pushed first so they are looked at again[/yellow]"
-            )
-
-    if limit is not None:
-        ranked = ranked[:limit]
+    planned = queue.plan(
+        pool,
+        scores,
+        STRATEGIES[strategy],
+        empty_share=empty_share,
+        disputed_rows=queue.disputed(
+            catalog, label_set_id, project.collections, exclude={s.id for s in pool}
+        ),
+        limit=limit,
+    )
+    if planned.disputed:
+        console.print(
+            f"[yellow]{planned.disputed} sample(s) were answered two ways — "
+            f"pushed first so they are looked at again[/yellow]"
+        )
 
     tasks, report = tasks_to_push(
-        ranked, catalog, label_set_id, schema, addressing, task_map
+        planned.ranked, catalog, label_set_id, schema, addressing, task_map
     )
     created = client.import_catalog_tasks(ls_project_id, tasks)
     task_map.update(created)
@@ -419,10 +373,15 @@ def push(
         + (f", {report.already_present} already there" if report.already_present else "")
     )
 
-    if scored:
+    if planned.scored:
         payload = [
-            (s.id, prediction_to_results(scored[s.id], schema), certainty(scored[s.id]))
-            for s in ranked
+            (
+                s.id,
+                prediction_to_results(planned.scored[s.id], schema),
+                certainty(planned.scored[s.id]),
+            )
+            for s in planned.ranked
+            if s.id in planned.scored
         ]
         pushed = client.push_catalog_predictions(
             ls_project_id,
@@ -544,12 +503,13 @@ def relink(
         tasks = client.list_tasks(ls_project_id)
     report = plan_relink(tasks, catalog, addressing, schema.data_key)
 
-    console.print(f"  {report.total:,} task(s): {len(report.changes):,} to repoint, "
-                  f"{report.unchanged:,} already current")
+    console.print(
+        f"  {report.total:,} task(s): {len(report.changes):,} to repoint, "
+        f"{report.unchanged:,} already current"
+    )
     if report.unrecognised:
         console.print(
-            f"  [yellow]{len(report.unrecognised):,} name no sample and are "
-            f"left alone[/yellow]"
+            f"  [yellow]{len(report.unrecognised):,} name no sample and are left alone[/yellow]"
         )
         for url in report.unrecognised[:3]:
             console.print(f"    [dim]{escape(url)}[/dim]")
