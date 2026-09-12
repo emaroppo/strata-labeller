@@ -370,13 +370,15 @@ def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch)
     )
     (version_dir / MANIFEST_NAME).write_text(manifest_on_disk.model_dump_json())
 
-    class Refuses:
-        id = "20260101T000000-aaaaaaaa"
-
-        def dataset_named(self, dataset_id):
+    class Datasets:
+        def named(self, dataset_id):
             from strata.catalog import DatasetRef
 
             return DatasetRef(project.dataset_name, 2, None)
+
+    class Refuses:
+        id = "20260101T000000-aaaaaaaa"
+        datasets = Datasets()
 
         def materialise(self, *args, **kwargs):
             raise AssertionError("refetched a version already on disk")

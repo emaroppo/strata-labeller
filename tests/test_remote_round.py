@@ -160,7 +160,7 @@ def test_the_request_says_what_its_dataset_id_means(featured, host):
     _remote_round(project, catalog)
 
     request = host["request"]
-    ref = catalog.dataset_named(request.dataset_id)
+    ref = catalog.datasets.named(request.dataset_id)
     assert (request.dataset_name, request.dataset_version) == (ref.name, ref.version)
     assert request.annotation_digest == ref.annotation_digest
     assert request.catalog_id == catalog.id
