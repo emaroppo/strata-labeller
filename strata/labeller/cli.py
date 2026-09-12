@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from pathlib import Path
 
 import typer
@@ -52,12 +53,34 @@ def _error(message: str) -> None:
     console.print(escape(message), style="red")
 
 
-def _load_project(path: Path | None) -> Project:
+@contextmanager
+def _exit_on(*errors: type[Exception]):
+    """Report a refusal and stop. Anything not named is a crash, and stays one."""
     try:
-        return Project.load(path)
-    except ProjectError as e:
+        yield
+    except errors as e:
         _error(str(e))
         raise typer.Exit(1) from None
+
+
+def _progress(
+    *, bar: bool = False, elapsed: bool = False, remaining: bool = False, transient: bool = False
+) -> Progress:
+    """A progress display in the house style: a spinner and a description,
+    then only what the caller can actually measure."""
+    columns = [SpinnerColumn(), TextColumn("[progress.description]{task.description}")]
+    if bar:
+        columns += [BarColumn(), MofNCompleteColumn()]
+    if elapsed:
+        columns.append(TimeElapsedColumn())
+    if remaining:
+        columns.append(TimeRemainingColumn())
+    return Progress(*columns, console=console, transient=transient)
+
+
+def _load_project(path: Path | None) -> Project:
+    with _exit_on(ProjectError):
+        return Project.load(path)
 
 
 def _ls_client(settings: Settings, project: Project, config_path: Path):
@@ -83,15 +106,12 @@ def _addressing(settings, config=None):
     from .adapter import AdapterError, Addressing
 
     config = config or settings.catalogs.default
-    try:
+    with _exit_on(AdapterError):
         return Addressing(
             prefix=config.blobs_prefix,
             base_url=config.serve_url,
             secret=config.blob_secret,
         )
-    except AdapterError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
 
 def _local_paths(root: Path, samples) -> list[Path]:
@@ -173,11 +193,8 @@ def _settings(config_path: Path = Path("config.toml")):
     """
     from strata.catalog.config import CatalogConfigError
 
-    try:
+    with _exit_on(CatalogConfigError):
         return Settings.load(config_path)
-    except CatalogConfigError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
 
 def _task_map(project, ls_project_id: int, catalog):
@@ -190,11 +207,8 @@ def _task_map(project, ls_project_id: int, catalog):
     """
     from .sync import TaskMapError, load_task_map, task_map_catalog
 
-    try:
+    with _exit_on(TaskMapError):
         mapping = load_task_map(project, ls_project_id, catalog.id)
-    except TaskMapError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     if mapping and task_map_catalog(project, ls_project_id) is None:
         console.print(
@@ -214,11 +228,8 @@ def _catalog_config(settings, name: str = ""):
     """
     from strata.catalog.config import CatalogConfigError
 
-    try:
+    with _exit_on(CatalogConfigError):
         return settings.catalogs.named(name)
-    except CatalogConfigError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
 
 def _catalog_if_any(settings, name: str = ""):
@@ -331,7 +342,7 @@ def new(
     if len(directory.parts) == 1 and not directory.is_absolute():
         directory = Path(PROJECTS_DIR) / directory
     directory.mkdir(parents=True, exist_ok=True)
-    try:
+    with _exit_on(ProjectError):
         project = Project.create(
             directory,
             name=name,
@@ -339,9 +350,6 @@ def new(
             choice="single" if single else "multiple",
             template=template,
         )
-    except ProjectError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     console.print(f"[green]Created project '{project.name}' in {directory}[/green]")
     console.print(f"  Put {project.schema.media.name} files in {project.data_dir}, then run:")
@@ -561,14 +569,11 @@ def class_add(
     project = _load_project(project_path)
     settings = _settings(config_path)
 
-    try:
+    with _exit_on(ProjectError):
         # No inference from what is in use: the label set holds the class
         # list now, and guessing it from annotations was how an unpinned
         # project got one before there was anywhere to pin it
         classes = project.add_classes(names)
-    except ProjectError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
     console.print(f"[green]Added {', '.join(names)}[/green] — classes: {', '.join(classes)}")
 
     _add_to_label_set(project, settings, classes)
@@ -773,14 +778,7 @@ def init(
     tasks, _ = tasks_to_push(
         samples, catalog, label_set_id, schema, _addressing(settings, config), {}
     )
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
+    with _progress(bar=True, elapsed=True) as progress:
         bar = progress.add_task("Importing tasks", total=len(tasks))
         mapping = client.import_catalog_tasks(
             ls_project_id, tasks, on_progress=lambda n: progress.advance(bar, n)
@@ -828,11 +826,8 @@ def ingest(
     settings = _settings(config_path)
     data_dir = project.data_dir
 
-    try:
+    with _exit_on(ProjectError):
         sample_type = project.sample_type()
-    except ProjectError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     if not data_dir.exists():
         _error(f"Data root does not exist: {data_dir}")
@@ -890,15 +885,7 @@ def ingest(
     for path in found:
         by_group.setdefault(sample_type.group_id_for(path, data_dir), []).append(path)
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
+    with _progress(bar=True, elapsed=True, remaining=True) as progress:
         bar = progress.add_task("Ingesting", total=len(found))
         for group_id, paths in by_group.items():
             for i in range(0, len(paths), batch):
@@ -1027,15 +1014,7 @@ def prepare(
         raise typer.Exit(1)
 
     out_dir = project.data_dir
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeElapsedColumn(),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
+    with _progress(bar=True, elapsed=True, remaining=True) as progress:
         bar = progress.add_task(f"Preparing with '{cls.name}'", total=len(found))
         try:
             index = run_preparer(
@@ -1103,15 +1082,7 @@ def train(
         # Materialising used to be a hard link away and over before anyone
         # looked. Pulling shards out of a bucket is minutes, and minutes of
         # nothing is indistinguishable from a hang.
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TimeRemainingColumn(),
-            console=console,
-            transient=True,
-        ) as progress:
+        with _progress(bar=True, remaining=True, transient=True) as progress:
             bar = progress.add_task("Materialising", total=None)
             materialising = True
 
@@ -1163,7 +1134,7 @@ def _run_for_push(
     from .remote import RemoteError, Trainer
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
-    try:
+    with _exit_on(RemoteError):
         # Asked for by id or not, the host is the one that knows. Checking
         # now costs one request; not checking costs a pool fetched and
         # scored before anything notices.
@@ -1172,9 +1143,6 @@ def _run_for_push(
             if run_id
             else trainer.latest_run(project.dataset_name, catalog_id)
         )
-    except RemoteError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     if found is None:
         return None
@@ -1201,23 +1169,13 @@ def _remote_predictions(
     from strata.labels import AnyPrediction
     from strata.modelling.service import PredictionRequest
 
-    from .remote import RemoteError, Trainer
+    from .remote import RemoteError
 
-    if not settings.modelling.token:
-        _error(
-            "No token for the modelling host. Set $STRATA_MODELLING_TOKEN to "
-            "the same value it was started with."
-        )
-        raise typer.Exit(1)
-
-    trainer = Trainer(settings.modelling.url, settings.modelling.token)
-    try:
+    trainer = _trainer(settings)
+    with _exit_on(RemoteError):
         job = trainer.predict(
             PredictionRequest(run_id=run_id, checksums=checksums, features=features or {})
         )
-    except RemoteError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     console.print(f"Scoring {len(checksums):,} sample(s) as job [bold]{job['id']}[/bold]")
     result = _follow(trainer, job["id"])
@@ -1246,12 +1204,31 @@ def _reattach(settings, job_id: str) -> None:
         raise typer.Exit(1)
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
-    result = _follow(trainer, job_id)
+    _print_run_result(_follow(trainer, job_id))
+
+
+def _trainer(settings):
+    """The modelling host's client, refused without the token it was started with."""
+    from .remote import Trainer
+
+    if not settings.modelling.token:
+        _error(
+            "No token for the modelling host. Set $STRATA_MODELLING_TOKEN to "
+            "the same value it was started with."
+        )
+        raise typer.Exit(1)
+    return Trainer(settings.modelling.url, settings.modelling.token)
+
+
+def _print_run_result(result: dict) -> None:
+    """A finished remote round: the run, its parent, and its metrics."""
     run = result["run"]
     console.print(
         f"[green]Run {run['id']}[/green]"
         + (f", continuing run {run['parent_run_id']}" if run.get("parent_run_id") else " (cold)")
     )
+    if result.get("materialised"):
+        console.print(f"  [dim]{result['materialised']:,} sample(s) materialised there[/dim]")
     for metric, value in sorted(result.get("metrics", {}).items()):
         console.print(f"  {metric}: {value}")
 
@@ -1264,15 +1241,9 @@ def _follow(trainer, job_id: str) -> dict:
     """
     from .remote import RemoteError
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        # Elapsed, because every stage looks identical while it is running
-        # and the long one looks identical to a stalled one
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
+    # Elapsed, because every stage looks identical while it is running
+    # and the long one looks identical to a stalled one
+    with _progress(elapsed=True, transient=True) as progress:
         bar = progress.add_task("Waiting for the host...")
 
         def show(job: dict) -> None:
@@ -1371,14 +1342,9 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     """
     from strata.modelling.service import RoundRequest
 
-    from .remote import RemoteError, Trainer
+    from .remote import RemoteError
 
-    if not settings.modelling.token:
-        _error(
-            "No token for the modelling host. Set $STRATA_MODELLING_TOKEN to "
-            "the same value it was started with."
-        )
-        raise typer.Exit(1)
+    trainer = _trainer(settings)
 
     label_set_id, _ = _label_set_for(catalog, project)
     labelled = catalog.labelled(label_set_id, project.collections)
@@ -1392,12 +1358,8 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     # Asked before anything is frozen. A host on another catalog would refuse
     # the round anyway; asking first says which machine to repoint, and
     # leaves no dataset version behind for a round that never ran.
-    trainer = Trainer(settings.modelling.url, settings.modelling.token)
-    try:
+    with _exit_on(RemoteError):
         served = trainer.served_catalog()
-    except RemoteError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
     if served.get("id") != catalog.id:
         config = _catalog_config(settings, project.catalog.name)
         _error(_on_another_catalog("The modelling host", served, catalog, config))
@@ -1409,7 +1371,7 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     ref = catalog.dataset_named(dataset_id)
     console.print(f"Dataset {ref.name} v{ref.version} → {settings.modelling.url}")
 
-    try:
+    with _exit_on(RemoteError):
         job = trainer.submit(
             RoundRequest(
                 dataset_id=dataset_id,
@@ -1430,25 +1392,13 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
                 features=[spec.as_dict() for spec in project.feature_specs],
             )
         )
-    except RemoteError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     # Printed before following, and printed plainly: from here the round is
     # the host's problem, and this id is how to ask after it from anywhere.
     console.print(f"Job [bold]{job['id']}[/bold] accepted. Training continues there.")
     console.print(f"  [dim]Reattach any time: auto-labeller train --job {job['id']}[/dim]\n")
 
-    result = _follow(trainer, job["id"])
-    run = result["run"]
-    console.print(
-        f"[green]Run {run['id']}[/green]"
-        + (f", continuing run {run['parent_run_id']}" if run.get("parent_run_id") else " (cold)")
-    )
-    if result.get("materialised"):
-        console.print(f"  [dim]{result['materialised']:,} sample(s) materialised there[/dim]")
-    for metric, value in sorted(result.get("metrics", {}).items()):
-        console.print(f"  {metric}: {value}")
+    _print_run_result(_follow(trainer, job["id"]))
     console.print(
         "[dim]The run and its checkpoint live on that host, which is where the "
         "next round will warm-start from.[/dim]"
@@ -1517,11 +1467,8 @@ def push(
     addressing = _addressing(settings, _catalog_config(settings, project.catalog.name))
     schema = _schema_for(project, catalog)
 
-    try:
+    with _exit_on(ProjectError):
         ls_project_id = project.require_ls_project_id(settings.label_studio.url)
-    except ProjectError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     client = _ls_client(settings, project, config_path)
     task_map = _task_map(project, ls_project_id, catalog)
@@ -1697,11 +1644,8 @@ def export_annotations(
     label_set_id, label_schema = _label_set_for(catalog, project)
     schema = _schema_for(project, catalog)
 
-    try:
+    with _exit_on(ProjectError):
         ls_project_id = project.require_ls_project_id(settings.label_studio.url)
-    except ProjectError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     client = _ls_client(settings, project, config_path)
     with console.status("Exporting from Label Studio (slow on large projects)..."):
@@ -2182,13 +2126,10 @@ def runs_merge(
     source = RunStore.local(source_dir)
     target = RunStore.local(project.runs_dir)
 
-    try:
+    with _exit_on(StoreMergeError):
         report = merge_stores(
             source, target, checkpoints=checkpoints, dry_run=not apply
         )
-    except StoreMergeError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     if not report.runs and not report.already_present:
         console.print(f"No runs in {source_dir}.")
@@ -2246,23 +2187,14 @@ def catalog_merge(
     # A copy is the same corpus, so it reads the same bytes this catalog does
     source = Catalog.connect(from_url, blobs_for(_catalog_config(settings, catalog_name)))
 
-    try:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed:,}/{task.total:,}"),
-            console=console,
-        ) as progress:
+    with _exit_on(MergeError):
+        with _progress(bar=True) as progress:
             bar = progress.add_task("Merging", total=1)
 
             def tick(done: int, total: int) -> None:
                 progress.update(bar, completed=done, total=total)
 
             report = merge_annotations(source, target, dry_run=not apply, on_progress=tick)
-    except MergeError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     if not report.total and not report.unknown_label_sets:
         console.print(f"Nothing to merge from {from_url}.")
@@ -2312,23 +2244,14 @@ def catalog_copy(
     # Only the index moves: the copy points at exactly the same bytes
     target = Catalog.connect(to_url, blobs_for(_catalog_config(settings, catalog_name)))
 
-    try:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+    with _exit_on(CopyError):
+        with _progress() as progress:
             bar = progress.add_task("Copying")
 
             def tick(table: str, count: int) -> None:
                 progress.update(bar, description=f"Copying {table} ({count:,})")
 
             report = copy_index(source, target, on_progress=tick)
-    except CopyError as e:
-        # Outside the live display, or the message lands under a spinner
-        # that never gets a chance to clear
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     for name, count in report.copied.items():
         console.print(f"  {name:<18} {count:>9,}")
@@ -2367,11 +2290,8 @@ def relink(
     schema = _schema_for(project, catalog)
 
     client = _ls_client(settings, project, config_path)
-    try:
+    with _exit_on(ProjectError):
         ls_project_id = project.require_ls_project_id(settings.label_studio.url)
-    except ProjectError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     where = addressing.base_url or f"the {addressing.prefix} mount"
     console.print(f"[bold]Label Studio project {ls_project_id}[/bold] → {where}\n")
@@ -2397,13 +2317,7 @@ def relink(
         console.print("\n[green]Nothing to do.[/green]")
         return
 
-    with Progress(
-        SpinnerColumn(),
-        BarColumn(),
-        MofNCompleteColumn(),
-        TimeRemainingColumn(),
-        console=console,
-    ) as progress:
+    with _progress(bar=True, remaining=True) as progress:
         bar = progress.add_task("Repointing", total=len(report.changes))
         done = 0
         for task_id, data in report.changes:
@@ -2473,7 +2387,7 @@ def catalog_repack(
         f"bucket={config.s3_bucket} shards={shard_mb} MB\n"
     )
 
-    try:
+    with _exit_on(RepackError):
         if dry_run:
             report = repack_blobs(catalog, target, source=source, dry_run=True)
             shards = -(-report.bytes // target.shard_bytes) if report.bytes else 0
@@ -2486,11 +2400,7 @@ def catalog_repack(
             console.print("\n[dim]Nothing was written.[/dim]")
             return
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+        with _progress() as progress:
             bar = progress.add_task("Packing")
 
             def tick(report) -> None:
@@ -2506,9 +2416,6 @@ def catalog_repack(
             report = repack_blobs(
                 catalog, target, source=source, verify=verify, on_progress=tick
             )
-    except RepackError as e:
-        _error(str(e))
-        raise typer.Exit(1) from None
 
     console.print(
         f"[green]{report.samples:,} sample(s) packed[/green] into "
