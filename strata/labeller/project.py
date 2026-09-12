@@ -516,9 +516,9 @@ class Project:
             "[data]\n"
             'root = "data/raw"  # files live here; may be an absolute path\n'
             f'type = "{_scaffold_type(template)}"'
-            "  # a registered sample type; see 'auto-labeller types'\n"
+            "  # a registered sample type; see 'strata-catalog types'\n"
             "# Where a corpus arrives if it needs converting first — mail,\n"
-            "# video. See 'auto-labeller preparers' and 'prepare'.\n"
+            "# video. See 'strata-catalog preparers' and 'prepare'.\n"
             '# source_root = "data/source"\n'
             "\n"
             "[model]\n"

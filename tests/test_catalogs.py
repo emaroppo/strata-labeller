@@ -57,17 +57,6 @@ blobs_prefix = "blobs-emails"
     assert _addressing(settings, settings.catalogs.named("main")).prefix == "blobs"
 
 
-def test_a_credential_in_the_file_stops_a_command_saying_where_it_goes(tmp_path):
-    from typer.testing import CliRunner
-
-    from strata.labeller.cli import app
-
-    config = _write(tmp_path, '[catalog]\ns3_secret_key = "oops"\n')
-    result = CliRunner().invoke(app, ["catalogs", "--config", str(config)])
-    assert result.exit_code == 1
-    assert "STRATA_S3_SECRET_KEY" in result.output
-
-
 # ----------------------------------------------------------------------
 # What a project asks for
 # ----------------------------------------------------------------------

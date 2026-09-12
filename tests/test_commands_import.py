@@ -30,7 +30,6 @@ COMMANDS = [
     ["report"],
     ["unskip", "--all"],
     ["class", "list"],
-    ["catalog-stats"],
 ]
 
 
