@@ -23,8 +23,9 @@ import pytest
 #: Which strata packages each may import.
 ALLOWED = {
     "labels": set(),
-    "catalog": {"labels"},
-    "modelling": {"labels", "catalog"},
+    "common": set(),
+    "catalog": {"labels", "common"},
+    "modelling": {"labels", "catalog", "common"},
     "labeller": {"labels", "catalog", "modelling"},
 }
 
@@ -32,6 +33,10 @@ ALLOWED = {
 FORBIDDEN = {
     "labels": {"torch", "timm", "transformers", "sqlalchemy", "boto3",
                "fastapi", "label_studio_sdk"},
+    # Thin by design: nothing but what its extras name, and never the
+    # frameworks or the value types, or every consumer would carry them.
+    "common": {"torch", "timm", "transformers", "boto3", "fastapi",
+               "label_studio_sdk", "pydantic"},
     "catalog": {"torch", "timm", "transformers", "label_studio_sdk"},
     "modelling": {"label_studio_sdk"},
     "labeller": set(),
