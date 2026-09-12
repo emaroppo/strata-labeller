@@ -1474,14 +1474,8 @@ def push(
     elif predictions:
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
 
-    # Added to the queue rather than reordered within it. A disputed sample
-    # has an answer, so it is not unlabelled and would never appear — which
-    # is the whole reason a conflict needs recording rather than leaving the
-    # two answers to settle themselves.
-    #
-    # And first, ahead of the uncertainty ranking: where it would land there
-    # depends on the model's opinion, which has no bearing on two people
-    # disagreeing.
+    # Disputed samples have an answer, so they are not in the pool; they
+    # are added, and first, ahead of the ranking. See docs/adr/0009.
     conflicts = catalog.conflicts(label_set_id, project.collections)
     if conflicts:
         already = {s.id for s in ranked}
