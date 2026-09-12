@@ -79,7 +79,7 @@ def test_a_machine_left_on_another_catalog_fails_naming_it(setup):
 
 def test_an_index_that_wants_a_password_says_so(tmp_path, monkeypatch):
     """Not a traceback: the likeliest reason, on a machine that just switched."""
-    from strata.labeller import cli
+    from strata.labeller.cli import hosts
 
     def refuse(settings, name=""):
         raise RuntimeError(
@@ -87,7 +87,7 @@ def test_an_index_that_wants_a_password_says_so(tmp_path, monkeypatch):
             "fe_sendauth: no password supplied"
         )
 
-    monkeypatch.setattr(cli, "_catalog_if_any", refuse)
+    monkeypatch.setattr(hosts, "_catalog_if_any", refuse)
     monkeypatch.delenv("PGPASSWORD", raising=False)
     config = tmp_path / "config.toml"
     config.write_text('[catalog]\nurl = "postgresql+psycopg://strata@db:5432/strata"\n')

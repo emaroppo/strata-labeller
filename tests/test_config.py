@@ -16,7 +16,7 @@ def test_a_configured_index_wins_over_a_local_file(tmp_path, monkeypatch):
     reporting counts from a file nobody was writing to any more, and `train`
     trained on it.
     """
-    from strata.labeller.cli import _catalog_if_any
+    from strata.labeller.cli._shared import _catalog_if_any
     from strata.labeller.config import Settings
 
     monkeypatch.chdir(tmp_path)
@@ -33,7 +33,7 @@ def test_a_configured_index_wins_over_a_local_file(tmp_path, monkeypatch):
 
 
 def test_a_local_file_is_used_when_nothing_is_configured(tmp_path, monkeypatch):
-    from strata.labeller.cli import _catalog_if_any
+    from strata.labeller.cli._shared import _catalog_if_any
     from strata.labeller.config import Settings
 
     monkeypatch.chdir(tmp_path)

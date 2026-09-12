@@ -43,7 +43,7 @@ root = "text"
 
 def test_task_urls_use_each_catalogs_own_mount(tmp_path):
     """One catalog's tasks read off `blobs`, another's off `blobs-emails`, in one Label Studio."""
-    from strata.labeller.cli import _addressing
+    from strata.labeller.cli._shared import _addressing
 
     settings = Settings.load(_write(tmp_path, """
 [catalog.main]

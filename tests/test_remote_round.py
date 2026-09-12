@@ -107,11 +107,11 @@ def host(featured, tmp_path, monkeypatch):
 
 
 def _remote_round(project, catalog):
-    from strata.labeller import cli
+    from strata.labeller.cli import training
     from strata.labeller.config import ModellingConfig, Settings
 
     settings = Settings(modelling=ModellingConfig(url="http://gpu:8082", token="t"))
-    cli._remote_round(project, catalog, settings, fresh=False, val_ratio=0.25)
+    training._remote_round(project, catalog, settings, fresh=False, val_ratio=0.25)
 
 
 def test_a_remote_round_trains_on_the_features_the_project_declares(featured, host):
