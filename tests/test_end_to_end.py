@@ -21,20 +21,23 @@ def split_of(directory) -> dict[int, str]:
     manifest = json.loads((directory / "manifest.json").read_text())
     return {s["id"]: s["split"] for s in manifest["samples"]}
 
+def _ingested(project, tmp_path, n: int = 20):
+    """A catalog holding n of the project's images, each named for its file."""
+    paths = []
+    for i in range(n):
+        path = project.data_dir / f"img{i:03d}.jpg"
+        path.write_bytes(f"image {i}".encode())
+        paths.append(path)
+    catalog = Catalog.local(tmp_path / "catalog")
+    ids = catalog.ingest(paths, media="image", metadata_for=lambda p: {"source_path": p.name})
+    return catalog, ids
+
+
 def test_a_project_becomes_a_trained_run(project, tmp_path):
     # 20 files, 16 of them labelled — the shape of a project a few rounds in
     from strata.labels import Choices
 
-    paths = []
-    for i in range(20):
-        path = project.data_dir / f"img{i:03d}.jpg"
-        path.write_bytes(f"image {i}".encode())
-        paths.append(path)
-
-    catalog = Catalog.local(tmp_path / "catalog")
-    ids = catalog.ingest(
-        paths, media="image", metadata_for=lambda p: {"source_path": p.name}
-    )
+    catalog, ids = _ingested(project, tmp_path)
     label_set_id = catalog.create_label_set(
         "demo", project.schema.catalog_schema()
     )
@@ -74,16 +77,7 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
 def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
     from strata.labels import Choices
 
-    paths = []
-    for i in range(20):
-        path = project.data_dir / f"img{i:03d}.jpg"
-        path.write_bytes(f"image {i}".encode())
-        paths.append(path)
-
-    catalog = Catalog.local(tmp_path / "catalog")
-    ids = catalog.ingest(
-        paths, media="image", metadata_for=lambda p: {"source_path": p.name}
-    )
+    catalog, ids = _ingested(project, tmp_path)
     label_set_id = catalog.create_label_set("demo", project.schema.catalog_schema())
     catalog.annotate_many(
         label_set_id, [(i, Choices(values=["cat"])) for i in ids[:12]]

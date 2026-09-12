@@ -26,15 +26,8 @@ def schema(project):
 
 
 @pytest.fixture
-def stocked(tmp_path):
-    catalog = Catalog.local(tmp_path / "catalog")
-    root = tmp_path / "raw"
-    root.mkdir(exist_ok=True)
-    paths = []
-    for i in range(5):
-        path = root / f"img{i}.jpg"
-        path.write_bytes(f"image {i}".encode())
-        paths.append(path)
+def stocked(catalog, files):
+    paths = files(5)
     ids = catalog.ingest(paths, media="image")
     label_set_id = catalog.create_label_set(
         "presence", ClassificationSchema(classes=["cat", "dog"])
@@ -319,7 +312,6 @@ def test_an_undeclared_class_is_found_whatever_kind_of_value_carries_it(tmp_path
     a TypeError comparing Span objects instead of naming the class nobody
     declared — and it raised on every span export, declared or not.
     """
-    from strata.catalog import Catalog
     from strata.labeller.schemas.span import SpanSchema as LSSpan
 
     catalog = Catalog.local(tmp_path / "catalog")

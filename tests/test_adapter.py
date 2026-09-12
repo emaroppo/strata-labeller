@@ -7,7 +7,7 @@ to conflate, an empty answer and no answer.
 
 import pytest
 
-from strata.catalog import EVERYTHING, Catalog
+from strata.catalog import EVERYTHING
 from strata.labeller.adapter import (
     LOCAL_FILES,
     Addressing,
@@ -28,22 +28,11 @@ def schema(project):
 
 
 @pytest.fixture
-def catalog(tmp_path):
-    return Catalog.local(tmp_path / "catalog")
-
-
-@pytest.fixture
-def stocked(catalog, tmp_path):
+def stocked(catalog, files):
     """A catalog with samples and a label set over them."""
     from strata.labels import ClassificationSchema
 
-    root = tmp_path / "raw"
-    root.mkdir(exist_ok=True)
-    paths = []
-    for i in range(4):
-        path = root / f"img{i}.jpg"
-        path.write_bytes(f"image {i}".encode())
-        paths.append(path)
+    paths = files(4)
     ids = catalog.ingest(paths, media="image")
     label_set_id = catalog.create_label_set(
         "presence", ClassificationSchema(classes=["cat", "dog"])

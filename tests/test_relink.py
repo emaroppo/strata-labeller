@@ -7,7 +7,7 @@ describable.
 
 import pytest
 
-from strata.catalog import EVERYTHING, Catalog
+from strata.catalog import EVERYTHING
 from strata.labeller.adapter import Addressing, blob_url
 from strata.labeller.sync import relink
 from strata.labels import ClassificationSchema
@@ -19,15 +19,8 @@ SERVED = Addressing(prefix="blobs", base_url="http://minipc:8081", secret=SECRET
 
 
 @pytest.fixture
-def stocked(tmp_path):
-    catalog = Catalog.local(tmp_path / "catalog")
-    root = tmp_path / "raw"
-    root.mkdir()
-    paths = []
-    for i in range(3):
-        path = root / f"img{i}.jpg"
-        path.write_bytes(f"image {i}".encode())
-        paths.append(path)
+def stocked(catalog, files):
+    paths = files(3)
     catalog.ingest(paths, media="image", metadata_for=lambda p: {"source_path": str(p)})
     label_set_id = catalog.create_label_set(
         "presence", ClassificationSchema(classes=["cat"])

@@ -18,6 +18,7 @@ import pytest
 # see failures with nothing to do with what they changed.
 os.environ.pop("FORCE_COLOR", None)
 
+from strata.catalog import Catalog  # noqa: E402
 from strata.labeller.project import PROJECT_ENV_VAR, Project  # noqa: E402
 
 
@@ -58,3 +59,25 @@ def sample_image(project) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"not really a jpeg")
     return path
+
+
+@pytest.fixture
+def catalog(tmp_path) -> Catalog:
+    return Catalog.local(tmp_path / "catalog")
+
+
+@pytest.fixture
+def files(tmp_path):
+    """Make n files with distinct contents, so checksums differ."""
+
+    def _make(n: int = 10, prefix: str = "img", suffix: str = ".jpg") -> list[Path]:
+        root = tmp_path / "raw"
+        root.mkdir(exist_ok=True)
+        paths = []
+        for i in range(n):
+            path = root / f"{prefix}{i:03d}{suffix}"
+            path.write_bytes(f"contents of {prefix}{i}".encode())
+            paths.append(path)
+        return paths
+
+    return _make
