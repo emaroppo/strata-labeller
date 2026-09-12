@@ -41,7 +41,7 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
     label_set_id = catalog.label_sets.create(
         "demo", project.schema.catalog_schema()
     )
-    catalog.annotate_many(
+    catalog.annotations.annotate_many(
         label_set_id,
         [
             (sample_id, Choices(values=["cat" if i % 2 else "dog"]))
@@ -79,7 +79,7 @@ def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
 
     catalog, ids = _ingested(project, tmp_path)
     label_set_id = catalog.label_sets.create("demo", project.schema.catalog_schema())
-    catalog.annotate_many(
+    catalog.annotations.annotate_many(
         label_set_id, [(i, Choices(values=["cat"])) for i in ids[:12]]
     )
     store = RunStore.local(tmp_path / "runs")
@@ -92,7 +92,7 @@ def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
     before = split_of(first_dir)
 
     # Label the rest and go round again
-    catalog.annotate_many(
+    catalog.annotations.annotate_many(
         label_set_id, [(i, Choices(values=["dog"])) for i in ids[12:]]
     )
 

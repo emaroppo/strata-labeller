@@ -203,7 +203,7 @@ def test_pushing_without_predictions_still_creates_tasks(stage):
 
 def test_a_labelled_sample_is_not_pushed_again(stage):
     project, config, fake, by_name, catalog, label_set_id = stage
-    catalog.annotate(by_name["confident"].id, label_set_id, Choices(values=["cat"]))
+    catalog.annotations.annotate(by_name["confident"].id, label_set_id, Choices(values=["cat"]))
 
     push(project, config)
 
@@ -253,8 +253,8 @@ def test_a_disputed_sample_is_pushed_first(stage):
 
     project, config, fake, by_name, catalog, label_set_id = stage
     settled = by_name["confident"]
-    catalog.annotate(settled.id, label_set_id, Choices(values=["cat"]))
-    catalog.record_conflict(
+    catalog.annotations.annotate(settled.id, label_set_id, Choices(values=["cat"]))
+    catalog.annotations.record_conflict(
         settled.id, label_set_id, Choices(values=["cat"]), Choices(values=["dog"])
     )
 

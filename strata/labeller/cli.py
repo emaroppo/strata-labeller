@@ -604,7 +604,7 @@ def unskip(
                 f"[dim]{len(selected) - len(task_ids)} had no task there yet.[/dim]"
             )
 
-    moved = catalog.unskip(label_set_id, [s.id for s in selected])
+    moved = catalog.annotations.unskip(label_set_id, [s.id for s in selected])
     console.print(
         f"[green]Returned {moved} sample(s) to the queue[/green] "
         f"({len(skipped) - moved} still skipped)"
@@ -1470,7 +1470,7 @@ def push(
 
     # Disputed samples have an answer, so they are not in the pool; they
     # are added, and first, ahead of the ranking. See docs/adr/0009.
-    conflicts = catalog.conflicts(label_set_id, project.collections)
+    conflicts = catalog.annotations.conflicts(label_set_id, project.collections)
     if conflicts:
         already = {s.id for s in ranked}
         disputed = [
@@ -1575,7 +1575,7 @@ def export_annotations(
         )
         raise typer.Exit(1)
 
-    written = catalog.annotate_many(label_set_id, items, source="human")
+    written = catalog.annotations.annotate_many(label_set_id, items, source="human")
     console.print(
         f"[green]{written.annotated} annotation(s) and {written.skipped} skip(s) "
         f"into the catalog[/green]"

@@ -188,7 +188,7 @@ def test_an_unannotated_task_carries_no_annotation(catalog, stocked, schema):
 
 def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
     ids, label_set_id = stocked
-    catalog.annotate(ids[0], label_set_id, Choices(values=["cat"]))
+    catalog.annotations.annotate(ids[0], label_set_id, Choices(values=["cat"]))
     samples = [s for s in catalog.labelled(label_set_id, EVERYTHING)]
     [task] = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
 
@@ -200,7 +200,7 @@ def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
 
 def test_an_empty_annotation_still_arrives_as_answered(catalog, stocked, schema):
     ids, label_set_id = stocked
-    catalog.annotate(ids[0], label_set_id, Choices())
+    catalog.annotations.annotate(ids[0], label_set_id, Choices())
     samples = catalog.labelled(label_set_id, EVERYTHING)
     [task] = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
 
@@ -214,7 +214,7 @@ def test_an_empty_annotation_still_arrives_as_answered(catalog, stocked, schema)
 
 def test_a_skipped_sample_has_no_annotation_to_carry(catalog, stocked, schema):
     ids, label_set_id = stocked
-    catalog.skip(ids[0], label_set_id)
+    catalog.annotations.skip(ids[0], label_set_id)
     tasks = build_tasks(
         catalog.unlabelled(label_set_id, EVERYTHING), catalog, label_set_id, schema, ADDRESSING
     )

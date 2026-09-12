@@ -43,7 +43,7 @@ def featured(project, tmp_path):
     label_set = catalog.label_sets.create(
         project.label_set_name, project.schema.catalog_schema()
     )
-    catalog.annotate_many(label_set, [(i, Choices(values=["cat"])) for i in ids])
+    catalog.annotations.annotate_many(label_set, [(i, Choices(values=["cat"])) for i in ids])
     return project, catalog
 
 

@@ -54,8 +54,8 @@ def report_cmd(project, *args):
 
 def test_unskip_returns_samples_to_the_queue(workspace):
     project, catalog, label_set_id, ids = workspace
-    catalog.skip(ids[0], label_set_id)
-    catalog.skip(ids[1], label_set_id)
+    catalog.annotations.skip(ids[0], label_set_id)
+    catalog.annotations.skip(ids[1], label_set_id)
 
     assert run_cmd(project, "unskip").exit_code == 0
     # The queue is the absence of a row, so the row is deleted rather than
@@ -67,7 +67,7 @@ def test_unskip_returns_samples_to_the_queue(workspace):
 def test_unskip_honours_a_limit(workspace):
     project, catalog, label_set_id, ids = workspace
     for i in range(4):
-        catalog.skip(ids[i], label_set_id)
+        catalog.annotations.skip(ids[i], label_set_id)
 
     run_cmd(project, "unskip", "--limit", "2")
     assert len(catalog.skipped(label_set_id, EVERYTHING)) == 2
@@ -75,13 +75,13 @@ def test_unskip_honours_a_limit(workspace):
 
 def test_unskip_leaves_annotations_alone(workspace):
     project, catalog, label_set_id, ids = workspace
-    catalog.annotate(ids[0], label_set_id, Choices(values=["cat"]))
-    catalog.skip(ids[1], label_set_id)
+    catalog.annotations.annotate(ids[0], label_set_id, Choices(values=["cat"]))
+    catalog.annotations.skip(ids[1], label_set_id)
 
     run_cmd(project, "unskip")
     # A skip is the only state this undoes; discarding an answer by accident
     # would be far worse
-    assert catalog.annotation_of(ids[0], label_set_id) == Choices(values=["cat"])
+    assert catalog.annotations.annotation_of(ids[0], label_set_id) == Choices(values=["cat"])
     assert len(catalog.labelled(label_set_id, EVERYTHING)) == 1
 
 

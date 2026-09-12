@@ -35,7 +35,7 @@ def stock(project, catalog, labelled: int, total: int):
         label_set_id = catalog.label_sets.create(
             project.label_set_name, project.schema.catalog_schema()
         )
-    catalog.annotate_many(
+    catalog.annotations.annotate_many(
         label_set_id,
         [
             (sample_id, Choices(values=["cat" if i % 2 else "dog"]))
@@ -275,7 +275,7 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
     label_set_id = catalog.label_sets.create(
         reloaded.label_set_name, reloaded.schema.catalog_schema()
     )
-    catalog.annotate_many(
+    catalog.annotations.annotate_many(
         label_set_id, [(i, Choices(values=["cat"])) for i in ids]
     )
 

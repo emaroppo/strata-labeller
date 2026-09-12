@@ -197,7 +197,7 @@ def build_tasks(
     """
     tasks = []
     for sample in samples:
-        value = catalog.annotation_of(sample.id, label_set_id)
+        value = catalog.annotations.annotation_of(sample.id, label_set_id)
         tasks.append(
             Task(
                 sample_id=sample.id,
