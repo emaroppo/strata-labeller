@@ -183,10 +183,8 @@ def _settings(config_path: Path = Path("config.toml")):
 def _task_map(project, ls_project_id: int, catalog):
     """The cached task map for this project, or an exit explaining itself.
 
-    Loaded through here rather than directly so that the refusal — a map
-    written against another catalog — reads the same wherever it happens,
-    and so that adopting a map from before identities were recorded is
-    said out loud rather than assumed.
+    One place, so the refusal of another catalog's map reads the same
+    everywhere and an adopted map is said out loud.
     """
     from .sync import TaskMapError, load_task_map, task_map_catalog
 
@@ -205,9 +203,7 @@ def _task_map(project, ls_project_id: int, catalog):
 def _catalog_config(settings, name: str = ""):
     """Look up a named catalog, or exit saying which names exist.
 
-    A name that resolves to nothing must not fall back to the default. The
-    ids in a catalog mean nothing outside it, so a job quietly reading the
-    wrong one is the failure this naming exists to prevent.
+    Never falls back to the default: see ``docs/adr/0008``.
     """
     from strata.catalog.config import CatalogConfigError
 

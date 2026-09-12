@@ -72,18 +72,8 @@ def load_task_map(
 ) -> dict[int, int]:
     """The cached sample id -> task id map, refusing another catalog's.
 
-    Sample ids are per-catalog integers. A map written against one catalog
-    and read against another is not wrong in any way a computer can see:
-    every id exists on both sides and names a different sample. Pushing
-    from it attaches a prediction to the wrong image; exporting through it
-    files a reviewer's answer against the wrong sample. Nothing raises, at
-    any layer, and the only symptom is accuracy that stops improving.
-
-    So a recorded identity that disagrees is refused. A map from before
-    this recorded one is adopted, because it was written by the same
-    project against whatever it was pointed at then — the caller says so
-    rather than hiding it, and ``push --rebuild-map`` settles any doubt by
-    matching tasks to samples by blob.
+    A map from before identities were recorded is adopted, and the caller
+    says so; ``push --rebuild-map`` settles any doubt. See ``docs/adr/0008``.
     """
     path = task_map_path(project, ls_project_id)
     if not path.exists():

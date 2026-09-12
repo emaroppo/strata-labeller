@@ -389,17 +389,10 @@ class Project:
     def ls_project_id(self, ls_url: str) -> int | None:
         """This project's queue on one Label Studio, if it has one.
 
-        Per instance, and kept in the project's state rather than in
-        project.toml, because a project.toml is copied between machines and
-        a Label Studio project id means nothing on another install. One
-        catalog project can have a queue on a desktop and another on a
-        laptop; they reconcile through the annotations, not through the
-        task ids.
-
-        Falls back to a project.toml written before this existed. That value
-        belongs to whichever instance created it, so a copied project.toml
-        carrying one is exactly the confusion this replaces — delete the
-        line once the machine that owns it has run init.
+        Per instance, in the project's state rather than its file, which is
+        copied between machines (``docs/adr/0008``). Falls back to a file
+        written before this existed; delete that line once the owning
+        machine has run init.
         """
         found = self._ls_projects().get(ls_url.rstrip("/"))
         if found is not None:
