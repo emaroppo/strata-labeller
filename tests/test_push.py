@@ -104,7 +104,7 @@ def stage(make_project, tmp_path, monkeypatch):
 
     fake = FakeLabelStudio()
     monkeypatch.setattr(
-        "strata.labeller.cli.queue._ls_client", lambda settings, project, config_path: fake
+        "strata.labeller.cli.push._ls_client", lambda settings, project, config_path: fake
     )
     project.save_ls_project_id("http://ls:8080", fake.create_project("demo"))
 

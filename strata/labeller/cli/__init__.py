@@ -8,6 +8,7 @@ from . import (
     data,  # noqa: F401
     hosts,  # noqa: F401
     projects,  # noqa: F401
+    push,  # noqa: F401
     queue,  # noqa: F401
     training,  # noqa: F401
 )
