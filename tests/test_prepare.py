@@ -41,10 +41,10 @@ def stub_plugins(monkeypatch):
     import strata.catalog.preparers as preparers
     import strata.catalog.sample_types as sample_types
 
-    real_types = sample_types._entries()
+    real_types = sample_types.entries()
     monkeypatch.setattr(
         preparers,
-        "_entries",
+        "entries",
         lambda: [
             EntryPoint("notes-json", "stub_corpus:NotesPreparer", preparers.ENTRY_POINT_GROUP),
             EntryPoint("frames-stub", "stub_corpus:FramesStub", preparers.ENTRY_POINT_GROUP),
@@ -52,7 +52,7 @@ def stub_plugins(monkeypatch):
     )
     monkeypatch.setattr(
         sample_types,
-        "_entries",
+        "entries",
         lambda: [
             *real_types,
             EntryPoint("note", "stub_corpus:Note", sample_types.ENTRY_POINT_GROUP),

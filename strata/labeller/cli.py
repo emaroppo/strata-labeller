@@ -1903,20 +1903,9 @@ def report(
         shown = f"v{version}" if version is not None else "[dim]—[/dim]"
         delta = f"{row['delta']:+.4f}" if row["delta"] is not None else ""
         table.add_row(
-            _short(row["run"].id), shown, f"{row['value']:.4f}", delta, lineage
+            row["run"].short, shown, f"{row['value']:.4f}", delta, lineage
         )
     console.print(table)
-
-
-def _short(run_id) -> str:
-    """A run id without its microseconds, for showing a person.
-
-    Full ids are what everything keys on; the microseconds are the part
-    nobody reads, and a table of thirty-character strings is a table nobody
-    reads either.
-    """
-    stamp, _, host = str(run_id).partition("-")
-    return f"{stamp[:15]}-{host}" if host else str(run_id)
 
 
 def _run_json(run) -> dict:
