@@ -76,7 +76,7 @@ def _remote_predictions(
 
     from strata.labels import AnyPrediction
     from strata.modelling.remote.client import RemoteError
-    from strata.modelling.remote.service import PredictionRequest
+    from strata.modelling.remote.wire import PredictionRequest
 
     trainer = _trainer(settings)
     with _exit_on(RemoteError):

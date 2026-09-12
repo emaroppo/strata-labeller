@@ -54,7 +54,7 @@ def host(featured, tmp_path, monkeypatch):
     Training itself is stood in for: it is covered where it lives, and what
     matters here is the directory the host would have trained from.
     """
-    import strata.modelling.remote.service as service
+    import strata.modelling.remote.rounds as rounds
     from strata.modelling import RunStore
     from strata.modelling.remote.client import Trainer
     from strata.modelling.requests import Run
@@ -78,12 +78,12 @@ def host(featured, tmp_path, monkeypatch):
 
     def submit(self, request):
         seen["request"] = request
-        service.run_round(
+        rounds.run_round(
             request, catalog, RunStore.local(tmp_path / "host-runs"), tmp_path / "host-datasets"
         )
         return {"id": "job"}
 
-    monkeypatch.setattr(service, "run_train", train)
+    monkeypatch.setattr(rounds, "run_train", train)
     monkeypatch.setattr(Trainer, "submit", submit)
     monkeypatch.setattr(
         Trainer, "served_catalog", lambda self: {"name": "default", "id": catalog.id}

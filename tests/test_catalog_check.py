@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 
 from strata.catalog import Catalog
 from strata.labeller.cli import app
-from strata.modelling.remote.service import PROTOCOL
+from strata.modelling.remote.wire import PROTOCOL
 
 ELSEWHERE = "20250101T000000-cccccccc"
 

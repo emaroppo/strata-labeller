@@ -48,8 +48,8 @@ FORBIDDEN = {
     "experiment": {"label_studio_sdk", "torch", "timm", "transformers"},
 }
 
-#: `modelling` may import `catalog`, but only from its service layer.
-CATALOG_IN_MODELLING = {"service.py"}
+#: `modelling` may import `catalog`, but only from its remote layer.
+CATALOG_IN_MODELLING = {"service.py", "rounds.py", "checks.py"}
 
 
 def _imports(path: pathlib.Path):
