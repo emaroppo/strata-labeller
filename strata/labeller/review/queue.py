@@ -85,7 +85,7 @@ def score_locally(
 
 def disputed(catalog, label_set_id: int, collections, exclude: set[int]) -> list[SampleRow]:
     """Samples two people answered differently, as rows, minus ``exclude``."""
-    conflicts = catalog.annotations.conflicts(label_set_id, collections)
+    conflicts = catalog.conflicts.disputed(label_set_id, collections)
     rows = (catalog.samples.by_checksum(c["checksum"]) for c in conflicts)
     return [row for row in rows if row is not None and row.id not in exclude]
 

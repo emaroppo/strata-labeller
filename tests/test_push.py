@@ -254,7 +254,7 @@ def test_a_disputed_sample_is_pushed_first(stage):
     project, config, fake, by_name, catalog, label_set_id = stage
     settled = by_name["confident"]
     catalog.annotations.annotate(settled.id, label_set_id, Choices(values=["cat"]))
-    catalog.annotations.record_conflict(
+    catalog.conflicts.record(
         settled.id, label_set_id, Choices(values=["cat"]), Choices(values=["dog"])
     )
 
