@@ -192,4 +192,4 @@ def prepare(
             f"are guesses, and nothing lands them in the catalog on its own."
             f"[/dim]"
         )
-    console.print(f"\nNext: auto-labeller ingest --project {project.name}")
+    console.print(f"\nNext: strata-labeller ingest --project {project.name}")

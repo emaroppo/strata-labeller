@@ -79,7 +79,7 @@ def _follow(trainer, job_id: str) -> dict:
             progress.stop()
             console.print(
                 f"[yellow]Stopped watching. The round is still running on the "
-                f"host.[/yellow]\n  auto-labeller train --job {job_id}"
+                f"host.[/yellow]\n  strata-labeller train --job {job_id}"
             )
             raise typer.Exit(0) from None
         except RemoteError as e:

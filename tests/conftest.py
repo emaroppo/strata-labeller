@@ -30,7 +30,7 @@ def make_project(tmp_path, monkeypatch):
     under ``projects/``), so tests run from a scratch directory rather than
     the repo.
 
-    It also reads $AUTO_LABELLER_PROJECT, which the compose environment sets.
+    It also reads $STRATA_PROJECT, which the compose environment sets.
     Left alone, a developer who has sourced .env sees discovery tests fail
     for a reason that has nothing to do with what they changed.
     """

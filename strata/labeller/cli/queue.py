@@ -131,7 +131,7 @@ def init(
     if len(mapping) != len(tasks):
         console.print(
             f"[yellow]{len(tasks) - len(mapping)} task(s) were created but could "
-            f"not be mapped. Run 'auto-labeller push --rebuild-map' to recover "
+            f"not be mapped. Run 'strata-labeller push --rebuild-map' to recover "
             f"the mapping by listing them.[/yellow]"
         )
 
@@ -200,7 +200,7 @@ def export_annotations(
         # partway through rather than at the end
         _error(
             f"Label(s) nobody declared: {', '.join(sorted(report.undeclared))}. "
-            f"Add them with 'auto-labeller class add', then export again."
+            f"Add them with 'strata-labeller class add', then export again."
         )
         raise typer.Exit(1)
 

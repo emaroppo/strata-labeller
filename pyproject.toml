@@ -21,7 +21,7 @@ strata-catalog = { workspace = true }
 strata-modelling = { workspace = true }
 
 [project.scripts]
-auto-labeller = "strata.labeller.cli:app"
+strata-labeller = "strata.labeller.cli:app"
 
 [build-system]
 requires = ["hatchling"]

@@ -41,7 +41,7 @@ from .labelstudio import schemas
 from .labelstudio.schemas import LabelSchema
 
 PROJECT_FILE = "project.toml"
-PROJECT_ENV_VAR = "AUTO_LABELLER_PROJECT"
+PROJECT_ENV_VAR = "STRATA_PROJECT"
 # Projects live side by side here, addressable by name: -p cats
 PROJECTS_DIR = "projects"
 
@@ -180,7 +180,7 @@ class Project:
             hint = (
                 f" Available: {', '.join(available)}."
                 if available
-                else f" Create one with 'auto-labeller new {root.name}'."
+                else f" Create one with 'strata-labeller new {root.name}'."
             )
             raise ProjectError(f"No {PROJECT_FILE} in {root}.{hint}")
         with open(toml_path, "rb") as f:
@@ -455,7 +455,7 @@ class Project:
         if found is None:
             raise ProjectError(
                 f"No Label Studio project on {ls_url} for this job. Run "
-                f"'auto-labeller init' — each instance keeps its own queue, so a "
+                f"'strata-labeller init' — each instance keeps its own queue, so a "
                 f"project set up elsewhere does not carry over."
             )
         return found

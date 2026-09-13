@@ -49,7 +49,7 @@ def migrate(project_root: Path) -> str:
             raise SystemExit(
                 f"Cannot tell what {toml_path} labels: template {template!r} is "
                 f"not one this knows. Set [data] type by hand — "
-                f"'auto-labeller types' lists what is installed."
+                f"'strata-labeller types' lists what is installed."
             )
 
     text = toml_path.read_text()

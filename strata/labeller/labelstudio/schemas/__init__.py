@@ -103,7 +103,7 @@ def from_label_config(xml: str) -> LabelSchema:
     known = ", ".join(sorted(CONTROL_TAGS))
     raise SchemaError(
         f"No supported labeling control in the config (looked for: {known}). "
-        "Label Studio supports more than auto-labeller does; a schema for "
+        "Label Studio supports more than strata does; a schema for "
         "this control would have to be added."
     )
 

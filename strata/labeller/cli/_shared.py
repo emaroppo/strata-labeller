@@ -19,7 +19,7 @@ from rich.progress import (
 from ..config import Settings
 from ..project import PROJECT_ENV_VAR, PROJECTS_DIR, Project, ProjectError
 
-app = typer.Typer(name="auto-labeller")
+app = typer.Typer(name="strata-labeller")
 
 
 #: The console rich itself hands out, not one of our own. Two Console
@@ -175,7 +175,7 @@ def _catalog_for(settings, config_path: Path, create: bool = False, name: str = 
         return open_catalog(config, create=create), Path(config.root)
     except CatalogMissing:
         _error(
-            f"No catalog at {config.root}. Run 'auto-labeller ingest' to make one, "
+            f"No catalog at {config.root}. Run 'strata-labeller ingest' to make one, "
             f"or point [catalog] root in {config_path} at an existing one."
         )
         raise typer.Exit(1) from None
@@ -312,6 +312,6 @@ def _label_set_for(catalog, project: Project):
     except CatalogError:
         _error(
             f"No label set named '{project.label_set_name}' in the catalog. "
-            f"Run 'auto-labeller ingest', or set [catalog] label_set."
+            f"Run 'strata-labeller ingest', or set [catalog] label_set."
         )
         raise typer.Exit(1) from None

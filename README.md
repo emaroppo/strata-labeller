@@ -111,17 +111,17 @@ Credentials come from the environment: `LABEL_STUDIO_API_KEY`, and
 repository root starts a Label Studio for development.
 
 ```bash
-auto-labeller new cats --class cat --class dog
+strata-labeller new cats --class cat --class dog
 cp -r /path/to/images/* projects/cats/data/raw/
-auto-labeller ingest -p cats
-auto-labeller init -p cats                 # creates the Label Studio project
+strata-labeller ingest -p cats
+strata-labeller init -p cats                 # creates the Label Studio project
 ```
 
 Then label a seed set and run `train`, `push`, `export` in a loop.
 
 ## Commands
 
-| `auto-labeller` | |
+| `strata-labeller` | |
 |---|---|
 | `new` | scaffold a project |
 | `templates` | list label config templates |

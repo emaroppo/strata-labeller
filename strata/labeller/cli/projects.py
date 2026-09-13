@@ -52,7 +52,7 @@ def new(
 
     console.print(f"[green]Created project '{project.name}' in {directory}[/green]")
     console.print(f"  Put {project.schema.media.name} files in {project.data_dir}, then run:")
-    console.print(f"    auto-labeller ingest --project {project.name}")
+    console.print(f"    strata-labeller ingest --project {project.name}")
 
 
 @app.command()
@@ -86,7 +86,7 @@ def list_projects_cmd() -> None:
     found = list_projects()
     if not found:
         console.print(
-            "[yellow]No projects yet. Create one with 'auto-labeller new <name>'.[/yellow]"
+            "[yellow]No projects yet. Create one with 'strata-labeller new <name>'.[/yellow]"
         )
         return
 
@@ -215,7 +215,7 @@ def class_add(
         if skipped:
             console.print(
                 f"[dim]{skipped} skipped sample(s) may contain it — "
-                f"'auto-labeller unskip' returns them to the queue.[/dim]"
+                f"'strata-labeller unskip' returns them to the queue.[/dim]"
             )
 
 
