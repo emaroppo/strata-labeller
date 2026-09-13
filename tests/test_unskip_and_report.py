@@ -151,6 +151,35 @@ def test_report_shows_the_projects_catalogs_history_only(runs, tmp_path):
     assert len(shown) == 2 and elsewhere.id not in shown
 
 
+def test_report_says_how_imported_labels_fared_under_review(runs, tmp_path):
+    from strata.catalog import Catalog
+    from strata.labels import Choices, ClassificationSchema
+
+    project, store = runs
+    a_run(store)
+    catalog = Catalog.local(tmp_path / "catalog")
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    paths = [raw / f"{i}.jpg" for i in range(3)]
+    for i, path in enumerate(paths):
+        path.write_bytes(f"image {i}".encode())
+    ids = catalog.ingest(paths, media="image")
+    label_set = catalog.label_sets.create(
+        project.label_set_name, ClassificationSchema(classes=["cat", "dog"])
+    )
+    catalog.annotations.annotate_many(
+        label_set, [(i, Choices(values=["cat"])) for i in ids], source="import", batch="pv"
+    )
+    # One confirmed, one corrected, one nobody looked at
+    catalog.annotations.annotate(ids[0], label_set, Choices(values=["cat"]))
+    catalog.annotations.annotate(ids[1], label_set, Choices(values=["dog"]))
+
+    payload = _json_of(report_cmd(project, "--json"))
+    assert payload["imports"] == {"pv": {"accepted": 1, "corrected": 1, "pending": 1}}
+    out = report_cmd(project).stdout
+    assert "Imported labels under review" in out
+
+
 def test_report_lists_the_history(runs):
     project, store = runs
     first = a_run(store, dataset_version=1, metrics={"val_accuracy": 0.80})

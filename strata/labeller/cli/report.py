@@ -87,8 +87,22 @@ def report(
         )
         raise typer.Exit(1)
 
+    from strata.catalog import CatalogError
+
+    try:
+        label_set_id, _ = catalog.label_sets.get(project.label_set_name)
+        reviews = catalog.annotations.review_counts(label_set_id)
+    except CatalogError:
+        # Runs but no label set yet — imported from before the catalog
+        reviews = {}
+
     if as_json:
-        _emit_json(history.history_json(project.dataset_name, metric, rows))
+        payload = history.history_json(project.dataset_name, metric, rows)
+        payload["imports"] = {
+            batch: {"accepted": c.accepted, "corrected": c.corrected, "pending": c.pending}
+            for batch, c in reviews.items()
+        }
+        _emit_json(payload)
         return
 
     table = Table(title=f"{project.dataset_name} — {metric}")
@@ -105,6 +119,19 @@ def report(
         delta = f"{row.delta:+.4f}" if row.delta is not None else ""
         table.add_row(row.run.short, shown, f"{row.value:.4f}", delta, lineage)
     console.print(table)
+
+    if reviews:
+        # How the labels that arrived with the corpus fared under review,
+        # per import: the number a labelling-time claim rests on
+        imports = Table(title="Imported labels under review")
+        imports.add_column("Batch")
+        imports.add_column("Accepted", justify="right")
+        imports.add_column("Corrected", justify="right")
+        imports.add_column("Pending", justify="right")
+        for batch, c in reviews.items():
+            name = batch or "[dim]unnamed[/dim]"
+            imports.add_row(name, str(c.accepted), str(c.corrected), str(c.pending))
+        console.print(imports)
 
 
 def _emit_json(payload: dict) -> None:

@@ -135,11 +135,26 @@ def push(
             "the whole queue."
         ),
     ),
+    review_imports: bool = typer.Option(
+        False,
+        "--review-imports",
+        help=(
+            "Spot-review imported labels instead: the samples whose label arrived "
+            "with the corpus and nobody confirmed, those the model disagrees with "
+            "most first, shown with the imported label as the pre-annotation"
+        ),
+    ),
 ) -> None:
     """Send unreviewed samples to Label Studio, least confident first.
 
     Predictions come from a recorded run, so what a reviewer sees is tied to
     a checkpoint that resolves back to the data behind it.
+
+    With ``--review-imports`` the queue is the imported labels nobody has
+    confirmed. Imports are trusted and trained on; this is for tracking
+    down the ones a poor result points at. The ranking is how far the
+    model's prediction is from the imported label, and what the reviewer
+    sees is the import itself, to confirm or correct. Export records which.
     """
     from strata.modelling import PredictionCache, PredictRequest, RunStore
     from strata.modelling import predict as run_predict
@@ -147,7 +162,7 @@ def push(
     from ..labelstudio.adapter import prediction_to_results
     from ..labelstudio.sync import rebuild_task_map, save_task_map, tasks_to_push
     from ..review import queue
-    from ..review.active_learning import STRATEGIES, certainty
+    from ..review.active_learning import STRATEGIES, against, certainty, disagreement
 
     if strategy not in STRATEGIES:
         _error(f"Unknown strategy {strategy!r}. Available: {', '.join(sorted(STRATEGIES))}.")
@@ -177,10 +192,18 @@ def push(
             )
         save_task_map(project, ls_project_id, task_map, catalog.id)
 
-    pool = catalog.samples.unlabelled(label_set_id, project.collections)
-    if not pool:
-        console.print("[yellow]Nothing is waiting for review.[/yellow]")
-        return
+    if review_imports:
+        pool = catalog.samples.unreviewed(label_set_id, project.collections)
+        if not pool:
+            console.print("[yellow]No imported label is waiting to be confirmed.[/yellow]")
+            return
+        imported = catalog.annotations.values_of(label_set_id, [s.id for s in pool])
+        labels = {s.checksum: imported[s.id] for s in pool if s.id in imported}
+    else:
+        pool = catalog.samples.unlabelled(label_set_id, project.collections)
+        if not pool:
+            console.print("[yellow]Nothing is waiting for review.[/yellow]")
+            return
 
     store = RunStore.local(project.runs_dir)
     remote = bool(settings.modelling.url)
@@ -225,16 +248,26 @@ def push(
     elif predictions:
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
 
-    planned = queue.plan(
-        pool,
-        scores,
-        STRATEGIES[strategy],
-        empty_share=empty_share,
-        disputed_rows=queue.disputed(
-            catalog, label_set_id, project.collections, exclude={s.id for s in pool}
-        ),
-        limit=limit,
-    )
+    if review_imports:
+        # Ranked by how far the model is from the imported label, not by
+        # how unsure it is; and nothing disputed joins this queue, since a
+        # dispute is two people and this is one person and a corpus
+        ordering = against(labels)
+        scores = {c: ordering.bind(c, p) for c, p in scores.items() if c in labels}
+        planned = queue.plan(pool, scores, ordering, empty_share=1.0, limit=limit)
+        if not scores and limit is not None:
+            planned = queue.plan(pool, {}, ordering, empty_share=1.0, limit=limit)
+    else:
+        planned = queue.plan(
+            pool,
+            scores,
+            STRATEGIES[strategy],
+            empty_share=empty_share,
+            disputed_rows=queue.disputed(
+                catalog, label_set_id, project.collections, exclude={s.id for s in pool}
+            ),
+            limit=limit,
+        )
     if planned.disputed:
         console.print(
             f"[yellow]{planned.disputed} sample(s) were answered two ways — "
@@ -252,6 +285,32 @@ def push(
         f"[green]{report.pushed} task(s) created[/green]"
         + (f", {report.already_present} already there" if report.already_present else "")
     )
+
+    if review_imports:
+        # What the reviewer sees is the imported label, to confirm or
+        # correct; the score beside it is the model's distance from it
+        payload = [
+            (
+                s.id,
+                schema.encode_target(list(labels[s.checksum].values)),
+                (
+                    disagreement(planned.scored[s.id], labels[s.checksum])
+                    if s.id in planned.scored
+                    else 1.0
+                ),
+            )
+            for s in planned.ranked
+            if s.checksum in labels
+        ]
+        pushed = client.push_catalog_predictions(
+            ls_project_id,
+            payload,
+            task_map,
+            model_version="import" + (f"-vs-run-{scoring_run}" if scoring_run else ""),
+            replace_existing=refresh,
+        )
+        console.print(f"[green]{pushed} imported label(s) attached for review[/green]")
+        return
 
     if planned.scored:
         payload = [

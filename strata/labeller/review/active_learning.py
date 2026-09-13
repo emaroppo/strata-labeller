@@ -131,6 +131,47 @@ def rank(samples, scores, strategy=None, empty_share: float = DEFAULT_EMPTY_SHAR
     return merged
 
 
+def disagreement(prediction: Value, label: Value) -> float:
+    """How far the model's prediction is from a label the corpus arrived with.
+
+    For a spot review of imported labels: imports are trusted and trained
+    on, and the ones worth a person's look are those the model disagrees
+    with most. One minus the model's mean confidence in the classes the
+    label asserts, so a class the model never named counts as zero
+    confidence. Classification only; a label with no classes, or a
+    prediction with no confidences, is maximally suspect, since nothing
+    can vouch for it.
+    """
+    asserted = list(getattr(label, "values", None) or [])
+    named = list(getattr(prediction, "values", None) or [])
+    confidences = _confidences(prediction)
+    if not asserted or not confidences or len(confidences) != len(named):
+        return 1.0
+    by_class = dict(zip(named, confidences, strict=True))
+    return 1.0 - sum(by_class.get(c, 0.0) for c in asserted) / len(asserted)
+
+
+def against(labels: dict[str, Value]):
+    """A ranking strategy over predictions paired with the labels they are checked against.
+
+    ``rank`` scores a prediction on its own; a disagreement needs the label
+    too. The pairing is by the prediction object, which the queue holds one
+    of per sample, so this binds each to its label before ranking.
+    """
+    paired: dict[int, Value] = {}
+
+    def bind(checksum: str, prediction: Value) -> Value:
+        paired[id(prediction)] = labels[checksum]
+        return prediction
+
+    def strategy(prediction: Value) -> float:
+        label = paired.get(id(prediction))
+        return disagreement(prediction, label) if label is not None else 1.0
+
+    strategy.bind = bind  # type: ignore[attr-defined]
+    return strategy
+
+
 def certainty(prediction: Value) -> float:
     """How sure the model was of its best assertion.
 

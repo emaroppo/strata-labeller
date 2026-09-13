@@ -275,6 +275,46 @@ def test_an_unknown_strategy_says_what_there_is(stage):
     assert fake.tasks == {}
 
 
+def test_review_imports_sends_what_the_model_disagrees_with_most(stage):
+    """A spot review of labels that arrived with the corpus.
+
+    Imports are trusted and trained on; the ones worth a look are those the
+    model is furthest from. What the reviewer sees is the import itself.
+    """
+    project, config, fake, by_name, catalog, label_set_id = stage
+    # The corpus said: confident is a cat, torn and vague are dogs. The
+    # model gives "cat" 0.02 for confident, 0.50 for torn's dog, 0.40 for
+    # vague's dog — so confident is the suspect one
+    catalog.annotations.annotate_many(
+        label_set_id,
+        [
+            (by_name["confident"].id, Choices(values=["cat"])),
+            (by_name["torn"].id, Choices(values=["dog"])),
+            (by_name["vague"].id, Choices(values=["dog"])),
+        ],
+        source="import",
+        batch="pv-1",
+    )
+    assert push(project, config).stdout.strip().startswith("Nothing is waiting")
+
+    result = push(project, config, "--review-imports", "--limit", "1")
+
+    assert result.exit_code == 0, result.output
+    [(task_id, task)] = fake.tasks.items()
+    assert by_name["confident"].checksum in task["data"]["image"]
+    [shown] = fake.predictions[task_id]
+    # The import, not the model's guess, and the distance beside it
+    assert [r["value"]["choices"] for r in shown["result"]] == [["cat"]]
+    assert shown["score"] == pytest.approx(0.98)
+    assert shown["model_version"].startswith("import")
+
+
+def test_review_imports_with_nothing_imported_says_so(stage):
+    project, config, fake, _, _, _ = stage
+    result = push(project, config, "--review-imports")
+    assert "No imported label" in result.stdout and not fake.tasks
+
+
 def test_a_disputed_sample_is_pushed_first(stage):
     """Ahead of the uncertainty ranking, not within it.
 
