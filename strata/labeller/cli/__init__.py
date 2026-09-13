@@ -7,10 +7,12 @@ what registers their commands on it, in the order they are listed.
 from . import (
     data,  # noqa: F401
     hosts,  # noqa: F401
+    importer,  # noqa: F401
     projects,  # noqa: F401
     push,  # noqa: F401
     queue,  # noqa: F401
-    training,  # noqa: F401
+    report,  # noqa: F401
+    train,  # noqa: F401
 )
 from ._shared import app
 
