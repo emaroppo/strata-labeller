@@ -29,8 +29,14 @@ class HistoryRow:
     warm: bool
 
 
-def history(store, dataset: str, metric: str) -> list[HistoryRow]:
+def history(
+    store, dataset: str, metric: str, catalog_id: str | None = None
+) -> list[HistoryRow]:
     """One row per run that recorded ``metric`` over ``dataset``, oldest first.
+
+    Within ``catalog_id`` when given: a project's run store can hold runs
+    from a catalog it no longer names, and a delta across the two
+    measures nothing.
 
     The delta rule is the whole reason this is not a plain dump of the
     store: a warm-started number means something against its parent and
@@ -42,7 +48,7 @@ def history(store, dataset: str, metric: str) -> list[HistoryRow]:
     rows: list[HistoryRow] = []
     seen: dict[str, float] = {}
     versions: dict[str, int | None] = {}
-    for run_id, version, value in store.history(dataset, metric):
+    for run_id, version, value in store.history(dataset, metric, catalog_id):
         run = store.get(run_id)
         parent = run.parent_run_id
         before, now = versions.get(parent), version

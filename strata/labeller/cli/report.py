@@ -7,9 +7,12 @@ import typer
 from rich.table import Table
 
 from ._shared import (
+    ConfigOption,
     ProjectOption,
+    _catalog_for,
     _error,
     _load_project,
+    _settings,
     app,
     console,
 )
@@ -20,6 +23,7 @@ from ._shared import (
 @app.command()
 def report(
     project_path: Path | None = ProjectOption,
+    config_path: Path = ConfigOption,
     metric: str | None = typer.Option(
         None, help="Which metric to plot (default: this task's headline one)"
     ),
@@ -38,6 +42,11 @@ def report(
     ``params`` and ``classes``, which are what let a consumer decide
     whether two runs are even comparable. A change is shown only where one
     run actually continues the one above.
+
+    The history is the project's catalog's: the run store can hold runs
+    from a catalog the project no longer names, and a delta across the two
+    measures nothing. The catalog is opened for its identity, the way
+    ``train`` opens it to freeze a version.
     """
     from strata.modelling import RunStore
 
@@ -49,6 +58,9 @@ def report(
         raise typer.Exit(1)
 
     store = RunStore.local(project.runs_dir)
+    settings = _settings(config_path)
+    catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
+    within = catalog.id
     metric = metric or history.headline_metric(project.schema.task)
 
     if run_id is not None:
@@ -62,13 +74,13 @@ def report(
         _print_run(store, run)
         return
 
-    rows = history.history(store, project.dataset_name, metric)
+    rows = history.history(store, project.dataset_name, metric, within)
     if not rows:
         _error(
             f"No run recorded {metric!r} for '{project.dataset_name}'. "
             + (
                 f"Try --metric {', --metric '.join(available)}, "
-                if (available := store.metric_names(project.dataset_name))
+                if (available := store.metric_names(project.dataset_name, within))
                 else ""
             )
             + "or --run to inspect one."

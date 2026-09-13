@@ -12,7 +12,7 @@ class _Store:
         self._runs = {r.id: r for r in runs}
         self._rows = rows
 
-    def history(self, dataset, metric):
+    def history(self, dataset, metric, catalog_id=None):
         return self._rows
 
     def get(self, run_id):

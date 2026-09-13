@@ -43,7 +43,8 @@ def run_cmd(project, *args):
 
 
 def report_cmd(project, *args):
-    # report reads the project's own run store; it needs no host config
+    # The run store is the project's own; the host config names the catalog
+    # whose history it is, and config.toml in the working directory is it
     return runner.invoke(app, ["report", "-p", str(project.root), *args])
 
 
@@ -117,8 +118,10 @@ def runs(project, tmp_path, monkeypatch):
     (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
     toml = project.root / "project.toml"
     toml.write_text(toml.read_text() + '\n[catalog]\ndataset = "demo"\n')
+    from strata.catalog import Catalog
     from strata.labeller.project import Project
 
+    Catalog.local(tmp_path / "catalog")
     return Project.load(project.root), RunStore.local(project.runs_dir)
 
 
@@ -128,6 +131,23 @@ def test_report_needs_a_run_store(project, tmp_path, monkeypatch):
     result = report_cmd(project)
     assert result.exit_code == 1
     assert "No runs recorded" in result.stdout
+
+
+def test_report_shows_the_projects_catalogs_history_only(runs, tmp_path):
+    from strata.catalog import Catalog
+
+    project, store = runs
+    own = Catalog.local(tmp_path / "catalog").id
+    # Three runs over one dataset name: this catalog's, one from before
+    # catalogs had identities, and one from a catalog this project no
+    # longer names. A delta across the last would measure nothing.
+    a_run(store, catalog_id=own, metrics={"val_accuracy": 0.70})
+    a_run(store, catalog_id=None, metrics={"val_accuracy": 0.75})
+    elsewhere = a_run(store, catalog_id="other-catalog", metrics={"val_accuracy": 0.99})
+
+    payload = _json_of(report_cmd(project, "--json"))
+    shown = [r["id"] for r in payload["runs"]]
+    assert len(shown) == 2 and elsewhere.id not in shown
 
 
 def test_report_lists_the_history(runs):
