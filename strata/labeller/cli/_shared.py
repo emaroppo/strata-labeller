@@ -101,16 +101,25 @@ def _ls_client(settings: Settings, project: Project, config_path: Path):
     return LSClient(settings, project)
 
 
-def _addressing(settings, config=None):
-    """How this host writes and reads task image URLs.
+def _addressing(settings, config):
+    """How this host writes and reads task image URLs, for one catalog.
 
     One place, because the two directions have to agree: pushing HTTP URLs
     while reading local ones would orphan every task, and the symptom is an
     empty export rather than an error.
+
+    ``config`` is the project's catalog, and there is no default. Falling
+    back to the host's default catalog was how two callers signed URLs with
+    the wrong catalog's secret: right on every host with one catalog,
+    wrong on a host with several, and nothing to say which.
     """
     from ..labelstudio.adapter import AdapterError, Addressing
 
-    config = config or settings.catalogs.default
+    if config is None:
+        raise TypeError(
+            "_addressing needs the project's catalog config; the host's default "
+            "catalog is not a stand-in for it."
+        )
     with _exit_on(AdapterError):
         return Addressing(
             prefix=config.blobs_prefix,

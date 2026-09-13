@@ -165,6 +165,40 @@ def test_the_score_shown_is_the_confidence_ranked_on(stage):
     assert prediction["score"] == pytest.approx(0.40)
 
 
+def test_a_push_addresses_the_projects_catalog_not_the_hosts_default(
+    stage, tmp_path, monkeypatch
+):
+    """Two catalogs on two blob servers, and the project on the one that is
+    not the host's default. Every task has to point at the project's."""
+    project, config, fake, _, _, _ = stage
+    monkeypatch.setenv("STRATA_BLOB_SECRET", "s")
+    config.write_text(
+        '[label_studio]\nurl = "http://ls:8080"\napi_key = "t"\n'
+        '[catalog]\ndefault = "main"\n'
+        f'[catalog.main]\nroot = "{tmp_path / "main-catalog"}"\n'
+        'serve_url = "http://main:8081"\n'
+        f'[catalog.emails]\nroot = "{tmp_path / "catalog"}"\n'
+        'serve_url = "http://emails:8081"\n'
+    )
+    toml = project.root / "project.toml"
+    toml.write_text(toml.read_text() + '\n[catalog]\nname = "emails"\n')
+
+    result = push(project, config)
+
+    assert result.exit_code == 0, result.output
+    urls = [task["data"]["image"] for task in fake.tasks.values()]
+    assert len(urls) == 3
+    assert all(url.startswith("http://emails:8081/blob/") for url in urls), urls
+
+
+def test_addressing_has_no_default_catalog():
+    # The fallback was the fault: right with one catalog, wrong with several
+    from strata.labeller.cli._shared import _addressing
+
+    with pytest.raises(TypeError, match="not a stand-in"):
+        _addressing(settings=None, config=None)
+
+
 def test_a_second_push_creates_nothing_new(stage):
     project, config, fake, _, _, _ = stage
 
