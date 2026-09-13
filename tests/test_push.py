@@ -181,7 +181,7 @@ def test_a_push_addresses_the_projects_catalog_not_the_hosts_default(
         'serve_url = "http://emails:8081"\n'
     )
     toml = project.root / "project.toml"
-    toml.write_text(toml.read_text() + '\n[catalog]\nname = "emails"\n')
+    toml.write_text(toml.read_text().replace("[catalog]\n", '[catalog]\nname = "emails"\n'))
 
     result = push(project, config)
 

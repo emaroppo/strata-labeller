@@ -117,7 +117,8 @@ def runs(project, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
     toml = project.root / "project.toml"
-    toml.write_text(toml.read_text() + '\n[catalog]\ndataset = "demo"\n')
+    # The scaffold writes a [catalog] section; the dataset name goes in it
+    toml.write_text(toml.read_text().replace("[catalog]\n", '[catalog]\ndataset = "demo"\n'))
     from strata.catalog import Catalog
     from strata.labeller.project import Project
 

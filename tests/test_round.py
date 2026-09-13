@@ -249,6 +249,8 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
         toml.read_text()
         .replace('ref = "multilabel"', 'ref = "toy.py:Toy"')
         .replace('type = "image"', 'type = "frames"')
+        # The project asks for it; the catalog enforces no grouping on its own
+        .replace('# group_by = "video"', 'group_by = "video"')
     )
     from strata.labeller.project import Project
 
@@ -265,11 +267,9 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(f"image {i}".encode())
             paths.append(path)
-        # One group per video: a group is one call, because it is one
-        # transaction and one group_id
         ids += catalog.ingest(
             paths, media="image", subtype="frames",
-            group_id=f"vid{video}", collections=reloaded.collections,
+            metadata={"video": f"vid{video}"}, collections=reloaded.collections,
             metadata_for=lambda p: {"source_path": p.name},
         )
     label_set_id = catalog.label_sets.create(

@@ -126,6 +126,7 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
                 label_set=project.label_set_name,
                 collections=project.collections,
                 val_ratio=val_ratio,
+                group_by=project.catalog.group_by or None,
             ),
             CatalogContext(catalog, project.datasets_dir),
         )

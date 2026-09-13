@@ -47,36 +47,34 @@ def ingest_files(
     batch: int,
     on_sample: Callable[[Path], None] | None = None,
 ) -> int:
-    """Register ``found`` in ``catalog`` as ``sample_type`` says; returns the groups touched.
+    """Register ``found`` in ``catalog`` as ``sample_type`` says; returns the batches written.
 
-    Grouped, because a group is one transaction and one group id; ungrouped
-    files share a bucket, so a plain image project is a handful of batches
-    rather than one per file. A chunk that fails leaves the ones before it
-    committed, so a re-run after fixing the file carries on.
+    In batches, because a batch is one transaction: a chunk that fails
+    leaves the ones before it committed, so a re-run after fixing the file
+    carries on. What a sample is grouped by, if anything, is in the metadata
+    the type records — a frame's video — and nothing here treats it apart.
     """
-    by_group: dict[str | None, list[Path]] = {}
-    for path in found:
-        by_group.setdefault(sample_type.group_id_for(path, data_dir), []).append(path)
+    paths = list(found)
     canonicalise = sample_type.canonicalise if type(sample_type).canonicalises() else None
-    for group_id, paths in by_group.items():
-        for start in range(0, len(paths), batch):
-            chunk = paths[start : start + batch]
-            sources = {p: str(p.relative_to(data_dir)) for p in chunk}
-            catalog.ingest(
-                chunk,
-                media=sample_type.media,
-                subtype=type(sample_type).subtype(),
-                group_id=group_id,
-                # What only the type knows, plus where it came from
-                metadata_for=lambda p: {
-                    "source_path": sources[p],
-                    **sample_type.metadata_for(p, data_dir),
-                },
-                canonicalise=canonicalise,
-                collections=collections,
-                on_sample=on_sample,
-            )
-    return len(by_group)
+    batches = 0
+    for start in range(0, len(paths), batch):
+        chunk = paths[start : start + batch]
+        sources = {p: str(p.relative_to(data_dir)) for p in chunk}
+        catalog.ingest(
+            chunk,
+            media=sample_type.media,
+            subtype=type(sample_type).subtype(),
+            # What only the type knows, plus where it came from
+            metadata_for=lambda p: {
+                "source_path": sources[p],
+                **sample_type.metadata_for(p, data_dir),
+            },
+            canonicalise=canonicalise,
+            collections=collections,
+            on_sample=on_sample,
+        )
+        batches += 1
+    return batches
 
 
 def catalogued(catalog, label_set_id: int, collections) -> tuple[int, int]:

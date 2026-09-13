@@ -57,6 +57,7 @@ def run_round(
                 label_set=project.label_set_name,
                 collections=project.collections,
                 val_ratio=val_ratio,
+                group_by=project.catalog.group_by or None,
             ),
             context,
         )

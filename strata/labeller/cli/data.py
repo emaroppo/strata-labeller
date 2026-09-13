@@ -83,7 +83,7 @@ def ingest(
     with _progress(bar=True, elapsed=True, remaining=True) as progress:
         bar = progress.add_task("Ingesting", total=len(scanned.found))
         try:
-            groups = corpus.ingest_files(
+            corpus.ingest_files(
                 catalog,
                 sample_type,
                 data_dir,
@@ -103,7 +103,7 @@ def ingest(
         f"[green]{len(scanned.found)} file(s) scanned, {after - before} new[/green] "
         f"into {catalog_root}"
     )
-    console.print(f"  {after + skipped} sample(s) catalogued, {groups} group(s) touched")
+    console.print(f"  {after + skipped} sample(s) catalogued")
 
 
 @app.command()

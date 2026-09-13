@@ -115,6 +115,12 @@ class CatalogSpec:
     #: stop being asked about a batch while keeping what it already
     #: answered, skip the rest of it instead.
     collections: list[str] = field(default_factory=list)
+    #: A metadata key whose values stay on one side of a split — ``video``
+    #: for frames, so consecutive near-duplicates are never split across
+    #: train and validation. Empty means no grouping: every sample is its
+    #: own. A grouping is only ever what a project asks for; the catalog
+    #: records it as data and enforces nothing on its own.
+    group_by: str = ""
 
 
 @dataclass
@@ -514,6 +520,11 @@ class Project:
             "# Where a corpus arrives if it needs converting first — mail,\n"
             "# video. See 'strata-catalog preparers' and 'prepare'.\n"
             '# source_root = "data/source"\n'
+            "\n"
+            "[catalog]\n"
+            "# A metadata key whose values stay on one side of a split:\n"
+            '# "video" for frames. Empty, every sample is its own group.\n'
+            '# group_by = "video"\n'
             "\n"
             "[model]\n"
             '# "model.py:MyModel" to use a model carried by this project\n'

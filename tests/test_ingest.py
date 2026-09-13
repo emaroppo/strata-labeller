@@ -82,22 +82,24 @@ def test_new_files_are_picked_up_on_a_second_run(workspace, tmp_path):
     assert len(catalog.samples.unlabelled(label_set_id, EVERYTHING)) == 6
 
 
-def test_frames_are_grouped_by_folder(workspace, tmp_path):
+def test_frames_record_their_folder_as_their_video(workspace, tmp_path):
     project = workspace(4, folder="vid1", sample_type="frames")
     run(project)
 
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_sets.get(project.name)
-    assert {s.group_id for s in catalog.samples.unlabelled(label_set_id, EVERYTHING)} == {"vid1"}
+    rows = catalog.samples.unlabelled(label_set_id, EVERYTHING)
+    assert {s.metadata["video"] for s in rows} == {"vid1"}
 
 
-def test_plain_images_get_no_group(workspace, tmp_path):
+def test_plain_images_record_no_grouping(workspace, tmp_path):
     project = workspace(4)
     run(project)
 
     catalog = catalog_at(tmp_path)
     label_set_id, _ = catalog.label_sets.get(project.name)
-    assert {s.group_id for s in catalog.samples.unlabelled(label_set_id, EVERYTHING)} == {None}
+    rows = catalog.samples.unlabelled(label_set_id, EVERYTHING)
+    assert all("video" not in s.metadata for s in rows)
 
 
 def test_the_source_path_is_recorded(workspace, tmp_path):
