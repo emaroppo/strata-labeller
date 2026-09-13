@@ -1,22 +1,30 @@
-"""The project construct: a self-contained, portable labelling job.
+"""The project construct: the durable job, as a file that names what it is made of.
 
-A project is a directory holding everything that belongs to one labelling
-job — the data, the label schema, the annotations, the model and its
-checkpoints — so it can be picked up and moved somewhere else once the
-labelling is done. Machine-level settings (Label Studio URL, API key) stay
-outside it, in ``config.toml``; they describe your laptop, not the job.
+A project is a directory whose ``project.toml`` names a catalog, the
+collections it draws samples from, the label set it labels them under, and
+the model it trains. The samples and the annotations are not here — they
+live in the catalog, which outlives any project — and neither is the tool:
+machine-level settings (Label Studio, the catalogs a host can reach, the
+modelling host) stay in ``config.toml``, which describes the machine and
+not the job. What is here is what this project did with the catalog:
 
     projects/my-project/
-    ├── project.toml            # this file's schema
-    ├── dataset.json            # samples + annotations
-    ├── data/raw/…              # the samples: images, documents, …
-    ├── model.py                # optional project-local model
-    ├── checkpoints/            # round_001.pt, …
-    ├── rounds/round_001/       # metadata.json, labeled.json
+    ├── project.toml            # this file's schema: catalog, label set, model
+    ├── model.py                # optional: a model carried by this project
+    ├── label_config.xml        # template = "custom" only
+    ├── data/raw/…              # a corpus before ingest; [data] root, may be elsewhere
+    ├── data/source/…           # a corpus before conversion, when it needs one
+    ├── datasets/               # materialised dataset versions, files by checksum
+    ├── runs/                   # the run store: runs.db, checkpoints/
+    ├── experiments/            # the ledger of experiment files run over this project
+    ├── rounds/                 # pre-catalog rounds, read by import-rounds only
     └── .state/                 # Label Studio bookkeeping, not part of a handoff
 
-Sample paths in ``dataset.json`` are relative to ``[data] root``, so moving
-the files or the project never rewrites the dataset.
+Handing someone the directory hands them the job's definition and its
+record, not its data: a run names the dataset version and the model
+version it came from, and those resolve in the catalog. A project is
+addressed by name under ``projects/`` or by path, and an experiment file
+references one the same way.
 """
 
 import json
