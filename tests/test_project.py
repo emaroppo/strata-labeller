@@ -78,6 +78,31 @@ def test_a_project_from_before_types_says_how_to_migrate(project):
     with pytest.raises(ProjectError, match="migrate_project_type"):
         reloaded.sample_type_name
 
+def test_a_project_declares_the_split_its_corpus_arrived_with(project):
+    toml = project.root / "project.toml"
+    toml.write_text(
+        toml.read_text().replace(
+            "# [catalog.split]\n", '[catalog.split]\nkey = "bench"\nholdout = ["test"]\n'
+        )
+    )
+    given = Project.load(project.root).catalog.given_split
+    assert (given.key, given.holdout, given.val) == ("bench", ["test"], [])
+    # Nothing declared, nothing given
+    assert project.catalog.given_split is None
+
+
+def test_a_split_naming_one_set_on_both_sides_is_refused(project):
+    toml = project.root / "project.toml"
+    toml.write_text(
+        toml.read_text().replace(
+            "# [catalog.split]\n",
+            '[catalog.split]\nkey = "bench"\nholdout = ["test"]\nval = ["test"]\n',
+        )
+    )
+    with pytest.raises(ProjectError, match="both held out and validation"):
+        Project.load(project.root).catalog.given_split
+
+
 def test_a_custom_project_must_not_declare_classes_twice(make_project):
     project = make_project("custom", template="custom", classes=[])
     toml = project.root / "project.toml"

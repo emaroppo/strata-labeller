@@ -58,6 +58,7 @@ def run_round(
                 collections=project.collections,
                 val_ratio=val_ratio,
                 group_by=project.catalog.group_by or None,
+                given=project.catalog.given_split,
             ),
             context,
         )

@@ -121,6 +121,23 @@ class CatalogSpec:
     #: own. A grouping is only ever what a project asks for; the catalog
     #: records it as data and enforces nothing on its own.
     group_by: str = ""
+    #: A split the corpus arrived with, read off a metadata key: ``key``,
+    #: and which of its values are ``holdout`` and which ``val``. The
+    #: samples it names are fixed on that side when a version is frozen;
+    #: the rest are drawn by ratio. Empty means every side is drawn.
+    split: dict = field(default_factory=dict)
+
+    @property
+    def given_split(self):
+        """The split as the catalog reads it, or None when none is declared."""
+        if not self.split:
+            return None
+        from strata.catalog import GivenSplit
+
+        try:
+            return GivenSplit(**self.split)
+        except (TypeError, ValueError) as e:
+            raise ProjectError(f"[catalog.split]: {e}") from None
 
 
 @dataclass
@@ -525,6 +542,14 @@ class Project:
             "# A metadata key whose values stay on one side of a split:\n"
             '# "video" for frames. Empty, every sample is its own group.\n'
             '# group_by = "video"\n'
+            "\n"
+            "# A split the corpus arrived with, read off a metadata key each\n"
+            "# sample carries: which of its values are held out, which are\n"
+            "# validation. The rest is drawn by ratio.\n"
+            "# [catalog.split]\n"
+            '# key = "benchmark_split"\n'
+            '# holdout = ["test"]\n'
+            '# val = ["dev"]\n'
             "\n"
             "[model]\n"
             '# "model.py:MyModel" to use a model carried by this project\n'
