@@ -171,3 +171,47 @@ def test_registering_is_not_queueing(workspace, tmp_path):
     label_set_id, _ = catalog.label_sets.get(project.name)
     assert len(catalog.samples.unlabelled(label_set_id, EVERYTHING)) == 20
     assert len(catalog.samples.labelled(label_set_id, EVERYTHING)) == 0
+
+
+def test_labels_the_corpus_arrived_with_land_at_ingest(make_project, tmp_path):
+    """A prepared corpus is labelled the moment it is catalogued.
+
+    The index a preparer left beside the files is what ingest already reads
+    for metadata; the labels in it enter with the files, as an import batch
+    a person can spot-review later.
+    """
+    from strata.catalog import PreparedIndex, PreparedSample
+    from strata.labels import Choices
+
+    project = make_project("demo", classes=["cat", "dog"])
+    (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
+    project.data_dir.mkdir(parents=True, exist_ok=True)
+    for i in range(3):
+        (project.data_dir / f"img{i:03d}.jpg").write_bytes(f"image {i}".encode())
+    PreparedIndex(
+        samples={
+            "img000.jpg": PreparedSample(value=Choices(values=["cat"])),
+            "img001.jpg": PreparedSample(value=Choices(values=["dog"])),
+            "img002.jpg": PreparedSample(),
+        }
+    ).save(project.data_dir)
+
+    # The labels are part of what the corpus is, so landing them wants a name
+    result = run(project)
+    assert result.exit_code == 1
+    assert "--import" in result.output
+
+    result = run(project, "--import", "pv-1")
+    assert result.exit_code == 0, result.output
+    assert "2 label(s) landed as import 'pv-1'" in result.stdout
+
+    catalog = catalog_at(tmp_path)
+    label_set_id, _ = catalog.label_sets.get(project.name)
+    labelled = catalog.samples.labelled(label_set_id, EVERYTHING)
+    assert len(labelled) == 2
+    assert {s.id for s in catalog.samples.unreviewed(label_set_id, EVERYTHING)} == {
+        s.id for s in labelled
+    }
+    [answer] = catalog.annotations.history(labelled[0].id, label_set_id)
+    assert (answer.source, answer.batch) == ("import", "pv-1")
+    assert len(catalog.samples.unlabelled(label_set_id, EVERYTHING)) == 1

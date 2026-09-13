@@ -46,8 +46,8 @@ def ingest_files(
     collections,
     batch: int,
     on_sample: Callable[[Path], None] | None = None,
-) -> int:
-    """Register ``found`` in ``catalog`` as ``sample_type`` says; returns the batches written.
+) -> dict[Path, int]:
+    """Register ``found`` in ``catalog`` as ``sample_type`` says; returns each file's sample id.
 
     In batches, because a batch is one transaction: a chunk that fails
     leaves the ones before it committed, so a re-run after fixing the file
@@ -56,11 +56,11 @@ def ingest_files(
     """
     paths = list(found)
     canonicalise = sample_type.canonicalise if type(sample_type).canonicalises() else None
-    batches = 0
+    registered: dict[Path, int] = {}
     for start in range(0, len(paths), batch):
         chunk = paths[start : start + batch]
         sources = {p: str(p.relative_to(data_dir)) for p in chunk}
-        catalog.ingest(
+        ids = catalog.ingest(
             chunk,
             media=sample_type.media,
             subtype=type(sample_type).subtype(),
@@ -73,8 +73,48 @@ def ingest_files(
             collections=collections,
             on_sample=on_sample,
         )
-        batches += 1
-    return batches
+        registered.update(zip(chunk, ids, strict=True))
+    return registered
+
+
+def land_labels(catalog, label_set_id: int, data_dir: Path, registered: dict[Path, int], batch):
+    """Store the labels the prepared index carries for ``registered`` files, as one import.
+
+    A corpus that arrives labelled is labelled the moment it is catalogued:
+    the index beside the files is what a preparer wrote about them, and its
+    labels enter with them, under ``source="import"`` and the batch name
+    given. A file the index labels but ingest did not register is counted,
+    not guessed at. Returns what was written and how many were not there.
+    """
+    from strata.catalog import PreparedIndex
+    from strata.catalog.types.prepared import relative_key
+
+    index = PreparedIndex.load(data_dir)
+    if index is None:
+        return None, 0
+    by_name = {relative_key(path, data_dir): sample_id for path, sample_id in registered.items()}
+    items, missing = [], 0
+    for name, entry in index.samples.items():
+        if entry.value is None:
+            continue
+        if name not in by_name:
+            missing += 1
+            continue
+        items.append((by_name[name], entry.value))
+    if not items:
+        return None, missing
+    written = catalog.annotations.annotate_many(label_set_id, items, source="import", batch=batch)
+    return written, missing
+
+
+def labelled_in_index(data_dir: Path) -> int:
+    """How many entries of the prepared index beside ``data_dir`` carry a label."""
+    from strata.catalog import PreparedIndex
+
+    index = PreparedIndex.load(data_dir)
+    if index is None:
+        return 0
+    return sum(1 for entry in index.samples.values() if entry.value is not None)
 
 
 def catalogued(catalog, label_set_id: int, collections) -> tuple[int, int]:

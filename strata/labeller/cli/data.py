@@ -24,12 +24,23 @@ def ingest(
     project_path: Path | None = ProjectOption,
     config_path: Path = ConfigOption,
     batch: int = typer.Option(2000, help="Files per transaction"),
+    import_name: str | None = typer.Option(
+        None,
+        "--import",
+        help=(
+            "Land the labels the prepared corpus carries, under this batch name. "
+            "Required when the index beside the files labels any of them"
+        ),
+    ),
 ) -> None:
     """Scan the project's data root and register new files in the catalog.
 
-    Which files count, and how they group, comes from the project's sample
-    type. Registering is not queueing: the catalog holds the whole pool and
-    `push` sends only what you are about to review.
+    Which files count, and what is recorded about each, comes from the
+    project's sample type and from the index a preparer left beside the
+    files. Labels the corpus arrived with land in the same pass, as an
+    import batch: trusted, trained on, and spot-reviewed with ``push
+    --review-imports``. Registering is not queueing: the catalog holds the
+    whole pool and ``push`` sends only what you are about to review.
     """
     from strata.catalog import CatalogError
 
@@ -79,11 +90,22 @@ def ingest(
         )
         raise typer.Exit(1)
 
+    carrying = corpus.labelled_in_index(data_dir)
+    if carrying and import_name is None:
+        # Said before anything is written: the labels are part of what the
+        # corpus is, and landing them under no name would leave nothing to
+        # review or report them by
+        _error(
+            f"The prepared corpus labels {carrying:,} file(s). Name the import to land "
+            f"them with the files: --import <batch>."
+        )
+        raise typer.Exit(1)
+
     before, _ = corpus.catalogued(catalog, label_set_id, project.collections)
     with _progress(bar=True, elapsed=True, remaining=True) as progress:
         bar = progress.add_task("Ingesting", total=len(scanned.found))
         try:
-            corpus.ingest_files(
+            registered = corpus.ingest_files(
                 catalog,
                 sample_type,
                 data_dir,
@@ -104,6 +126,21 @@ def ingest(
         f"into {catalog_root}"
     )
     console.print(f"  {after + skipped} sample(s) catalogued")
+
+    if carrying and import_name is not None:
+        written, missing = corpus.land_labels(
+            catalog, label_set_id, data_dir, registered, import_name
+        )
+        if written is not None:
+            console.print(
+                f"[green]{written.annotated} label(s) landed as import {import_name!r}[/green]"
+                + (f", {written.kept} left alone — a person had answered" if written.kept else "")
+            )
+        if missing:
+            console.print(
+                f"  [yellow]{missing} labelled file(s) in the index were not registered — "
+                f"not under the data root, or not admitted by the type[/yellow]"
+            )
 
 
 @app.command()
