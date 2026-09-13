@@ -330,3 +330,83 @@ def push(
             replace_existing=refresh,
         )
         console.print(f"[green]{pushed} pre-annotation(s) attached from run {scoring_run}[/green]")
+
+
+@app.command()
+def audit(
+    project_path: Path | None = ProjectOption,
+    config_path: Path = ConfigOption,
+    sample: int = typer.Option(..., "--sample", help="How many answered samples to re-queue"),
+    seed: int = typer.Option(0, "--seed", help="The draw, so an audit can be repeated"),
+    run_id: str | None = typer.Option(
+        None, help="Prefer answers that agreed with this run's predictions (default: latest)"
+    ),
+) -> None:
+    """Re-queue answered samples for a blind second look.
+
+    Draws ``--sample`` of the samples a person has answered, takes their
+    annotation and any pre-annotation off the task in Label Studio, and
+    leaves the task to be answered again from nothing. The first answer
+    stays in the catalog's history; export writes the second on top of
+    it, and ``report`` counts how many agreed. Where the local prediction
+    cache knows what the model showed at push time, the draw is over the
+    answers that accepted a pre-annotation unchanged, since those are the
+    ones a second look can tell anything about; otherwise it is over
+    every answer, and says so.
+    """
+    import random
+
+    from strata.modelling import PredictionCache, RunStore
+
+    from ..labelstudio.sync import save_task_map
+    from ..review import queue
+
+    project = _load_project(project_path)
+    settings = _settings(config_path)
+    catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
+    label_set_id, label_schema = _label_set_for(catalog, project)
+    with _exit_on(ProjectError):
+        ls_project_id = project.require_ls_project_id(settings.label_studio.url)
+    client = _ls_client(settings, project, config_path)
+    task_map = _task_map(project, ls_project_id, catalog)
+
+    answered = catalog.samples.labelled(label_set_id, project.collections, source="human")
+    answered = [s for s in answered if s.id in task_map]
+    if not answered:
+        console.print(
+            "[yellow]No answered sample has a task in Label Studio to look at again.[/yellow]"
+        )
+        return
+    values = catalog.annotations.values_of(label_set_id, [s.id for s in answered])
+
+    # What the model showed, where this machine recorded it
+    store = RunStore.local(project.runs_dir)
+    scoring_run = _run_for_push(settings, project, store, run_id, remote=False)
+    accepted: list = []
+    if scoring_run is not None:
+        pool, coverage = queue.feature_values(catalog, answered, project.feature_specs)
+        shown = PredictionCache.local(project.runs_dir).get(
+            scoring_run, [s.checksum for s in pool], coverage.digests
+        )
+        accepted = [
+            s
+            for s in pool
+            if s.checksum in shown
+            and label_schema.classes_asserted(shown[s.checksum])
+            == label_schema.classes_asserted(values[s.id])
+        ]
+    if accepted:
+        pool, kind = accepted, f"answer(s) that accepted run {scoring_run}'s pre-annotation"
+    else:
+        pool, kind = answered, "answer(s), since nothing here recorded what the model showed"
+
+    rng = random.Random(seed)
+    chosen = rng.sample(pool, min(sample, len(pool)))
+    task_ids = [task_map[s.id] for s in chosen]
+    client.delete_annotations(ls_project_id, task_ids)
+    client.clear_predictions(ls_project_id, task_ids)
+    save_task_map(project, ls_project_id, task_map, catalog.id)
+    console.print(
+        f"[green]{len(chosen)} of {len(pool)} {kind} re-queued blind.[/green] "
+        f"Their first answers stay in the catalog; export writes the second on top."
+    )

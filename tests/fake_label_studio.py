@@ -102,6 +102,10 @@ class FakeLabelStudio:
             if task_id in self.tasks:
                 self.tasks[task_id]["annotations"] = []
 
+    def clear_predictions(self, project_id: int, task_ids: list[int]) -> None:
+        for task_id in task_ids:
+            self.predictions.pop(task_id, None)
+
     # ------------------------------------------------------------------
     # Predictions
     # ------------------------------------------------------------------

@@ -62,6 +62,20 @@ class LSClient:
             selected_items={"all": False, "included": task_ids},
         )
 
+    def clear_predictions(self, project_id: int, task_ids: list[int]) -> None:
+        """Take the pre-annotations off the given tasks.
+
+        For a blind second look: a task shown with what the model thought
+        is not a second opinion, it is the first one again.
+        """
+        if not task_ids:
+            return
+        self.client.actions.create(
+            id="delete_tasks_predictions",
+            project=project_id,
+            selected_items={"all": False, "included": task_ids},
+        )
+
     # ------------------------------------------------------------------
     # Tasks, predictions, annotations
     # ------------------------------------------------------------------

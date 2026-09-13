@@ -315,6 +315,38 @@ def test_review_imports_with_nothing_imported_says_so(stage):
     assert "No imported label" in result.stdout and not fake.tasks
 
 
+def test_audit_requeues_accepted_answers_blind(stage):
+    """A blind second look at what a person accepted from the model.
+
+    The first answer stays in the catalog's history; the task in Label
+    Studio is stripped of its annotation and its pre-annotation, so the
+    second answer is made from nothing.
+    """
+    project, config, fake, by_name, catalog, label_set_id = stage
+    assert push(project, config).exit_code == 0
+    # Exported: confident accepted the model's [cat, dog]; torn corrected it
+    catalog.annotations.annotate(
+        by_name["confident"].id, label_set_id, Choices(values=["cat", "dog"])
+    )
+    catalog.annotations.annotate(by_name["torn"].id, label_set_id, Choices(values=["cat"]))
+    task_of = {v: k for k, v in ((t, task["data"]["image"]) for t, task in fake.tasks.items())}
+    accepted_task = next(t for url, t in task_of.items() if by_name["confident"].checksum in url)
+    fake.tasks[accepted_task]["annotations"] = [{"result": []}]
+
+    result = runner.invoke(
+        app, ["audit", "-p", str(project.root), "--config", str(config), "--sample", "1"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "1 of 1 answer(s) that accepted run" in result.output
+    assert fake.tasks[accepted_task]["annotations"] == []
+    assert accepted_task not in fake.predictions
+    # The catalog still holds the first answer
+    assert catalog.annotations.annotation_of(by_name["confident"].id, label_set_id) == Choices(
+        values=["cat", "dog"]
+    )
+
+
 def test_a_disputed_sample_is_pushed_first(stage):
     """Ahead of the uncertainty ranking, not within it.
 

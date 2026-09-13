@@ -92,9 +92,10 @@ def report(
     try:
         label_set_id, _ = catalog.label_sets.get(project.label_set_name)
         reviews = catalog.annotations.review_counts(label_set_id)
+        agreed, changed = catalog.annotations.second_looks(label_set_id)
     except CatalogError:
         # Runs but no label set yet — imported from before the catalog
-        reviews = {}
+        reviews, agreed, changed = {}, 0, 0
 
     if as_json:
         payload = history.history_json(project.dataset_name, metric, rows)
@@ -102,6 +103,7 @@ def report(
             batch: {"accepted": c.accepted, "corrected": c.corrected, "pending": c.pending}
             for batch, c in reviews.items()
         }
+        payload["second_looks"] = {"agreed": agreed, "changed": changed}
         _emit_json(payload)
         return
 
@@ -132,6 +134,11 @@ def report(
             name = batch or "[dim]unnamed[/dim]"
             imports.add_row(name, str(c.accepted), str(c.corrected), str(c.pending))
         console.print(imports)
+
+    if agreed or changed:
+        # A person looked at a person's answer again: an audit's blind
+        # second look, or a correction somebody came back for
+        console.print(f"Second looks: {agreed} agreed, {changed} changed")
 
 
 def _emit_json(payload: dict) -> None:
