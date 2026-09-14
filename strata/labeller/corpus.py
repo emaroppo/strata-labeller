@@ -65,7 +65,7 @@ def ingest_files(
             media=sample_type.media,
             subtype=type(sample_type).subtype(),
             # What only the type knows, plus where it came from
-            metadata_for=lambda p: {
+            metadata_for=lambda p, sources=sources: {
                 "source_path": sources[p],
                 **sample_type.metadata_for(p, data_dir),
             },

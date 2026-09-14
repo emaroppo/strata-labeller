@@ -107,7 +107,7 @@ def test_model_params_reach_the_model(ready):
 
 
 def test_a_registered_name_works_as_a_ref(ready, monkeypatch):
-    project, catalog = ready(ref="presence")
+    project, _catalog = ready(ref="presence")
     pytest.importorskip("timm", reason="needs the image extra")
     # Only that resolution reaches a real baseline; training one is the
     # conformance suite's job

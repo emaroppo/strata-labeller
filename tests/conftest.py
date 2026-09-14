@@ -18,8 +18,8 @@ import pytest
 # see failures with nothing to do with what they changed.
 os.environ.pop("FORCE_COLOR", None)
 
-from strata.catalog import Catalog  # noqa: E402
-from strata.labeller.project import PROJECT_ENV_VAR, LabellingProject  # noqa: E402
+from strata.catalog import Catalog
+from strata.labeller.project import PROJECT_ENV_VAR, LabellingProject
 
 
 @pytest.fixture

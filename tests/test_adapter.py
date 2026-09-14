@@ -5,6 +5,8 @@ about what crosses and in what form — and about the two cases that are easy
 to conflate, an empty answer and no answer.
 """
 
+from typing import ClassVar
+
 import pytest
 
 from strata.catalog import EVERYTHING
@@ -132,7 +134,7 @@ def test_a_url_is_percent_encoded():
     class Odd:
         checksum = "ab" * 32
         location = Location("shards/x.tar", 0, 1)
-        metadata = {"source_path": "/raw/file name&x.jpg"}
+        metadata: ClassVar[dict] = {"source_path": "/raw/file name&x.jpg"}
 
     url = blob_url(Odd(), "blobs")
     assert " " not in url and "&" not in url.split("?d=", 1)[1]
@@ -197,7 +199,7 @@ def test_an_unannotated_task_carries_no_annotation(catalog, stocked, schema):
 def test_an_annotated_task_arrives_answered(catalog, stocked, schema):
     ids, label_set_id = stocked
     catalog.annotations.annotate(ids[0], label_set_id, Choices(values=["cat"]))
-    samples = [s for s in catalog.samples.labelled(label_set_id, EVERYTHING)]
+    samples = list(catalog.samples.labelled(label_set_id, EVERYTHING))
     [task] = build_tasks(samples, catalog, label_set_id, schema, ADDRESSING)
 
     # Label Studio is a view of the catalog rather than a second copy, so

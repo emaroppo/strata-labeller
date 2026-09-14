@@ -35,10 +35,10 @@ from .labelstudio import schemas
 from .labelstudio.schemas import LabelSchema
 
 __all__ = [
+    "CUSTOM_LABEL_CONFIG",
+    "PROJECTS_DIR",
     "PROJECT_ENV_VAR",
     "PROJECT_FILE",
-    "PROJECTS_DIR",
-    "CUSTOM_LABEL_CONFIG",
     "LabelStudioSpec",
     "LabellingProject",
     "ProjectError",
@@ -76,7 +76,7 @@ class LabellingProject(Project):
         super()._validate()
         # Built here so a bad config or parameter is an error at load time
         # rather than mid-push
-        self.schema
+        _ = self.schema
 
     # ------------------------------------------------------------------
     # Label schema

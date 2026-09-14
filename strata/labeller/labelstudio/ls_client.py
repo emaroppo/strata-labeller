@@ -124,7 +124,7 @@ class LSClient:
                 # --rebuild-map recovers the mapping by listing them.
                 continue
             mapping.update(
-                {task.sample_id: task_id for task, task_id in zip(batch, task_ids)}
+                {task.sample_id: task_id for task, task_id in zip(batch, task_ids, strict=True)}
             )
             if on_progress is not None:
                 on_progress(len(batch))

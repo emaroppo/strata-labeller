@@ -99,15 +99,15 @@ def test_unskip_with_nothing_skipped_says_so(workspace):
 
 
 def a_run(store, **overrides) -> Run:
-    base = dict(
-        id="",
-        dataset="demo",
-        dataset_version=1,
-        label_set="demo",
-        model="toy",
-        model_version="1",
-        classes=["cat"],
-    )
+    base = {
+        "id": "",
+        "dataset": "demo",
+        "dataset_version": 1,
+        "label_set": "demo",
+        "model": "toy",
+        "model_version": "1",
+        "classes": ["cat"],
+    }
     metrics = overrides.pop("metrics", {"val_accuracy": 0.5})
     return store.record(Run(**{**base, **overrides}), metrics)
 

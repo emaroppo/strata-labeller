@@ -28,5 +28,5 @@ def test_a_preparer_producing_the_wrong_type_is_refused_by_name(monkeypatch, tmp
         produces = "frames"
 
     monkeypatch.setattr(preparers, "resolve", lambda name: Frames)
-    with pytest.raises(PreparerError, match="produces 'frames'.*ingests 'text'"):
+    with pytest.raises(PreparerError, match=r"produces 'frames'.*ingests 'text'"):
         corpus.choose_preparer("video-frames", "text", tmp_path / "x.mp4")
