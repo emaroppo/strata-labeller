@@ -110,6 +110,9 @@ def report(
     table.add_column("Dataset", justify="right")
     table.add_column(metric, justify="right")
     table.add_column("Δ", justify="right")
+    # Beside the metric, because it bounds what the metric means: a
+    # validation set nobody checked measures agreement with an import
+    table.add_column("Unchecked val", justify="right")
     table.add_column("Lineage")
     for row in rows:
         # Whether it continued, not what from: two ids in one row of a table
@@ -117,7 +120,9 @@ def report(
         lineage = "warm" if row.warm else "[yellow]unchained[/yellow]"
         shown = f"v{row.version}" if row.version is not None else "[dim]—[/dim]"
         delta = f"{row.delta:+.4f}" if row.delta is not None else ""
-        table.add_row(row.run.short, shown, f"{row.value:.4f}", delta, lineage)
+        table.add_row(
+            row.run.short, shown, f"{row.value:.4f}", delta, _unchecked_cell(row), lineage
+        )
     console.print(table)
 
     if reviews:
@@ -137,6 +142,17 @@ def report(
         # A person looked at a person's answer again: an audit's blind
         # second look, or a correction somebody came back for
         console.print(f"Second looks: {agreed} agreed, {changed} changed")
+
+
+def _unchecked_cell(row) -> str:
+    from .. import history
+
+    share = history.unchecked_share(row.unchecked, "val")
+    if share is None:
+        return "[dim]—[/dim]"
+    unreviewed, samples = share
+    colour = "yellow" if unreviewed else "green"
+    return f"[{colour}]{unreviewed}/{samples}[/{colour}]"
 
 
 def _emit_json(payload: dict) -> None:
@@ -180,4 +196,19 @@ def _print_run(store, run) -> None:
         table = Table("Metric", "Value", box=None, pad_edge=False)
         for name, value in sorted(run.metrics.items()):
             table.add_row(name, f"{value:.4f}")
+        console.print(table)
+
+    unchecked = store.unchecked(run.id)
+    if unchecked:
+        # What the numbers above rest on: per side and per import batch,
+        # how much of it a person never vouched for
+        table = Table(title="Of what it saw, nobody checked")
+        table.add_column("Side")
+        table.add_column("Batch")
+        table.add_column("Samples", justify="right")
+        table.add_column("Unchecked", justify="right")
+        for r in unchecked:
+            batch = r.batch or "[dim]not imported[/dim]"
+            shown = f"[yellow]{r.unreviewed}[/yellow]" if r.unreviewed else "0"
+            table.add_row(r.side, batch, str(r.samples), shown)
         console.print(table)

@@ -18,6 +18,9 @@ class _Store:
     def get(self, run_id):
         return self._runs[run_id]
 
+    def unchecked(self, run_id):
+        return []
+
 
 def _run(id, parent=None):
     return SimpleNamespace(id=id, parent_run_id=parent, short=id)

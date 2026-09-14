@@ -311,3 +311,50 @@ def test_report_json_details_one_run_with_its_chain(runs):
     assert payload["run"]["id"] == second.id
     assert payload["run"]["metrics"] == {"val_accuracy": 0.9, "loss": 0.1}
     assert [r["id"] for r in payload["chain"]] == [first.id, second.id]
+
+
+def test_report_shows_how_much_of_the_validation_set_nobody_checked(runs):
+    from strata.modelling import Seen
+
+    project, store = runs
+    run = store.record(
+        Run(
+            id="",
+            dataset="demo",
+            dataset_version=1,
+            label_set="demo",
+            model="toy",
+            model_version="1",
+            classes=["cat"],
+        ),
+        {"val_accuracy": 0.9},
+        saw=[
+            Seen("a" * 64, "train", "wave-1", True),
+            Seen("b" * 64, "val", "wave-1", False),
+            Seen("c" * 64, "val", "wave-1", True),
+            Seen("d" * 64, "val", "wave-2", False),
+        ],
+    )
+    result = report_cmd(project)
+    assert result.exit_code == 0, result.stdout
+    # Beside the metric: two of the three validation samples were never checked
+    assert "2/3" in result.stdout
+
+    detail = report_cmd(project, "--run", run.id)
+    assert "nobody checked" in detail.stdout
+    assert "wave-2" in detail.stdout
+
+    payload = json.loads(report_cmd(project, "--json").stdout)
+    assert payload["runs"][0]["unchecked"] == [
+        {"side": "train", "batch": "wave-1", "samples": 1, "unreviewed": 0},
+        {"side": "val", "batch": "wave-1", "samples": 2, "unreviewed": 1},
+        {"side": "val", "batch": "wave-2", "samples": 1, "unreviewed": 1},
+    ]
+
+
+def test_a_run_that_did_not_say_shows_a_dash_not_a_zero(runs):
+    project, store = runs
+    a_run(store, metrics={"val_accuracy": 0.5})
+    result = report_cmd(project)
+    assert result.exit_code == 0
+    assert "—" in result.stdout and "0/0" not in result.stdout
