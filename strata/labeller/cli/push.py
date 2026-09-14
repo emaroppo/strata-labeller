@@ -5,6 +5,7 @@ from pathlib import Path
 import typer
 
 from strata.labels import AnyPrediction, AnyValue
+from strata.modelling import RunStore, RunStoreMissing
 
 from ..project import ProjectError
 from ._remote import _follow, _trainer
@@ -28,6 +29,18 @@ from ._shared import (
 )
 
 
+def _store_if_any(project):
+    """This project's run store, or None when nothing has trained here.
+
+    Consulted, never made: a push with no runs pushes without predictions,
+    and must not leave an empty store behind to say otherwise.
+    """
+    try:
+        return RunStore.open(project.runs_dir)
+    except RunStoreMissing:
+        return None
+
+
 def _run_for_push(
     settings, project, store, run_id, remote: bool, catalog_id: str | None = None
 ) -> str | None:
@@ -38,6 +51,8 @@ def _run_for_push(
     silently, since both stores number from one.
     """
     if not remote:
+        if store is None:
+            return None
         run = store.get(run_id) if run_id else store.latest(project.dataset_name, catalog_id)
         if run is None or not run.checkpoint:
             return None
@@ -157,7 +172,7 @@ def push(
     model's prediction is from the imported label, and what the reviewer
     sees is the import itself, to confirm or correct. Export records which.
     """
-    from strata.modelling import PredictionCache, PredictRequest, RunStore
+    from strata.modelling import PredictionCache, PredictRequest
     from strata.modelling import predict as run_predict
 
     from ..labelstudio.adapter import prediction_to_results
@@ -207,12 +222,13 @@ def push(
             console.print("[yellow]Nothing is waiting for review.[/yellow]")
             return
 
-    store = RunStore.local(project.runs_dir)
+    store = _store_if_any(project)
     remote = bool(settings.modelling.url)
     scores: dict[str, AnyPrediction] = {}
     scoring_run = _run_for_push(settings, project, store, run_id, remote, catalog.id)
 
     if predictions and scoring_run is not None:
+        assert store is not None or remote  # a local scoring run came from the store
         specs = project.feature_specs
         pool, coverage = queue.feature_values(catalog, pool, specs)
         if coverage.uncovered:
@@ -228,10 +244,11 @@ def push(
                 settings, scoring_run, [s.checksum for s in pool], coverage.by_checksum
             )
         else:
+            assert store is not None
             with console.status(f"Predicting with run {scoring_run}..."):
                 scored = queue.score_locally(
                     store,
-                    PredictionCache.local(project.runs_dir),
+                    PredictionCache.beside(store),
                     scoring_run,
                     pool,
                     coverage,
@@ -358,7 +375,7 @@ def audit(
     """
     import random
 
-    from strata.modelling import PredictionCache, RunStore
+    from strata.modelling import PredictionCache
 
     from ..labelstudio.sync import save_task_map
     from ..review import queue
@@ -382,12 +399,13 @@ def audit(
     values = catalog.annotations.values_of(label_set_id, [s.id for s in answered])
 
     # What the model showed, where this machine recorded it
-    store = RunStore.local(project.runs_dir)
+    store = _store_if_any(project)
     scoring_run = _run_for_push(settings, project, store, run_id, remote=False)
     accepted: list = []
     if scoring_run is not None:
         pool, coverage = queue.feature_values(catalog, answered, project.feature_specs)
-        shown = PredictionCache.local(project.runs_dir).get(
+        assert store is not None  # a scoring run came from it
+        shown = PredictionCache.beside(store).get(
             scoring_run, [s.checksum for s in pool], coverage.digests
         )
         accepted = [

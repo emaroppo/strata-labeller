@@ -11,6 +11,7 @@ from ._shared import (
     ProjectOption,
     _catalog_for,
     _error,
+    _exit_on,
     _load_project,
     _settings,
     app,
@@ -46,16 +47,13 @@ def report(
     measures nothing. The catalog is opened for its identity, the way
     ``train`` opens it to freeze a version.
     """
-    from strata.modelling import RunStore
+    from strata.modelling import RunStore, RunStoreMissing
 
     from .. import history
 
     project = _load_project(project_path)
-    if not (project.runs_dir / "runs.db").exists():
-        _error(f"No runs recorded at {project.runs_dir}. Run 'train' first.")
-        raise typer.Exit(1)
-
-    store = RunStore.local(project.runs_dir)
+    with _exit_on(RunStoreMissing):
+        store = RunStore.open(project.runs_dir)
     settings = _settings(config_path)
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     within = catalog.id
