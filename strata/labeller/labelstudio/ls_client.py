@@ -4,12 +4,12 @@ from label_studio_sdk import PredictionRequest
 from label_studio_sdk.client import LabelStudio
 
 from ..config import Settings
-from ..project import Project
+from ..project import LabellingProject
 from . import label_config
 
 
 class LSClient:
-    def __init__(self, settings: Settings, project: Project):
+    def __init__(self, settings: Settings, project: LabellingProject):
         self.client = LabelStudio(
             base_url=settings.label_studio.url,
             api_key=settings.label_studio.api_key,

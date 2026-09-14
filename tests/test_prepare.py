@@ -63,7 +63,7 @@ def stub_plugins(monkeypatch):
 @pytest.fixture
 def notes_project(make_project):
     """A span project over notes, with a corpus waiting to be converted."""
-    project = make_project(template="text_span", classes=["PER", "ORG"])
+    project = make_project(task="span", sample_type="text", classes=["PER", "ORG"])
     toml = project.root / "project.toml"
     toml.write_text(toml.read_text().replace('type = "text"', 'type = "note"'))
 
@@ -119,7 +119,7 @@ def test_it_says_where_to_go_next(notes_project):
 
 
 def test_a_missing_corpus_is_an_error_not_an_empty_run(make_project):
-    project = make_project(template="text_span", classes=["PER"])
+    project = make_project(task="span", sample_type="text", classes=["PER"])
     result = prepare(project)
     assert result.exit_code == 1
     assert "No corpus" in result.output

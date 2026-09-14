@@ -6,7 +6,7 @@ import typer
 from rich.markup import escape
 from rich.table import Table
 
-from ..project import PROJECTS_DIR, Project, ProjectError
+from ..project import PROJECTS_DIR, LabellingProject, ProjectError
 from ._shared import (
     ConfigOption,
     ProjectOption,
@@ -31,8 +31,14 @@ def new(
     name: str | None = typer.Option(None, help="Project name (default: directory name)"),
     classes: list[str] = typer.Option([], "--class", help="Label class (repeatable)"),
     single: bool = typer.Option(False, "--single", help="Classes are mutually exclusive"),
-    template: str = typer.Option(
-        "image_classification", help="Label config template (see 'templates')"
+    task: str = typer.Option(
+        "classification", help="What is annotated: classification, bbox or span"
+    ),
+    sample_type: str = typer.Option(
+        "image", "--type", help="A registered sample type (see 'strata-catalog types')"
+    ),
+    custom: bool = typer.Option(
+        False, "--custom", help="Start a labeling config of the project's own"
     ),
 ) -> None:
     """Scaffold a new project under projects/ (or at an explicit path)."""
@@ -42,12 +48,14 @@ def new(
         directory = Path(PROJECTS_DIR) / directory
     directory.mkdir(parents=True, exist_ok=True)
     with _exit_on(ProjectError):
-        project = Project.create(
+        project = LabellingProject.create(
             directory,
             name=name,
             classes=list(classes),
             choice="single" if single else "multiple",
-            template=template,
+            task=task,
+            sample_type=sample_type,
+            custom=custom,
         )
 
     console.print(f"[green]Created project '{project.name}' in {directory}[/green]")
@@ -57,23 +65,21 @@ def new(
 
 @app.command()
 def templates() -> None:
-    """List the available label config templates."""
+    """List the labeling templates: which task over which media."""
     from ..labelstudio import schemas
 
-    table = Table(title="Label config templates")
+    table = Table(title="Labeling templates")
     table.add_column("Template", style="cyan")
+    table.add_column("Task", style="magenta")
     table.add_column("Media", style="magenta")
     table.add_column("Annotations", style="green")
-    for name in schemas.available_templates():
-        if name == schemas.CUSTOM_TEMPLATE:
-            table.add_row(name, "-", "whatever label_config.xml declares")
-            continue
-        spec = schemas.TEMPLATES[name]
-        table.add_row(name, spec.media.name, spec.control_tag)
+    for name, spec in sorted(schemas.TEMPLATES.items()):
+        table.add_row(name, spec.schema.task, spec.media.name, spec.control_tag)
     console.print(table)
-    # Which files count is the catalog's answer, not a template's
-    console.print("[dim]Which files a project ingests comes from its "
-                  "[data] type — see 'strata-catalog types'.[/dim]")
+    console.print(
+        "[dim]A project picks one by its [label_set] task and the media of its "
+        "[data] type; a [label_studio] config of its own supplies the layout.[/dim]"
+    )
 
 
 @app.command(name="projects")
@@ -114,9 +120,10 @@ def list_projects_cmd() -> None:
     table.add_column("Labeled", justify="right")
     table.add_column("LS id", justify="right")
 
+    ls_url = settings.label_studio.url
     for directory in found:
         try:
-            project = Project.load(directory)
+            project = LabellingProject.load(directory)
         except ProjectError as e:
             table.add_row(directory.name, "-", f"[red]{escape(str(e))}[/red]", "-", "-", "-")
             continue
@@ -140,7 +147,7 @@ def list_projects_cmd() -> None:
             ", ".join(project.schema.classes) or "-",
             total,
             labeled,
-            str(project.label_studio.project_id or "-"),
+            str(project.ls_project_id(ls_url) or "-"),
         )
     console.print(table)
 
@@ -180,11 +187,12 @@ def class_add(
 
     _add_to_label_set(project, settings, classes)
 
-    if push and project.label_studio.project_id is not None:
+    ls_project_id = project.ls_project_id(settings.label_studio.url)
+    if push and ls_project_id is not None:
         client = _ls_client(settings, project, config_path)
         for name in names:
             try:
-                client.add_class_to_config(project.label_studio.project_id, name)
+                client.add_class_to_config(ls_project_id, name)
             except LabelConfigError as e:
                 _error(f"Label Studio config not updated: {e}")
                 console.print(
@@ -193,7 +201,7 @@ def class_add(
                 )
                 raise typer.Exit(1) from None
         console.print(
-            f"Label Studio project {project.label_studio.project_id} updated — "
+            f"Label Studio project {ls_project_id} updated — "
             "refresh the tab to see it."
         )
 
@@ -219,7 +227,7 @@ def class_add(
             )
 
 
-def _add_to_label_set(project: Project, settings, classes: list[str]) -> None:
+def _add_to_label_set(project: LabellingProject, settings, classes: list[str]) -> None:
     """Widen the catalog's label set to match the project's class list.
 
     Both have to move together: the labeling config Label Studio renders
@@ -272,7 +280,7 @@ def class_list(
         )
     console.print(table)
 
-    declared = set(project.label_config.classes)
+    declared = set(project.label_set.classes)
     drifted = set(schema.classes) ^ declared
     if declared and drifted:
         # Label Studio renders its config from project.toml while an export

@@ -1,15 +1,15 @@
 """Active learning over a catalog, and the Label Studio adapter that feeds it.
 
-**May import:** ``labels``, ``catalog`` and ``modelling``; Label Studio only
-inside :mod:`strata.labeller.labelstudio` (``docs/adr/0013``).
+**May import:** ``labels``, ``catalog``, ``modelling`` and ``project``;
+Label Studio only inside :mod:`strata.labeller.labelstudio`
+(``docs/adr/0013``).
 
-What another package may use is what is exported here (``docs/adr/0015``):
-the project construct, which names what a job is made of, and the
-machine's settings. Everything else in this package is the labelling loop's
-own.
+What another package may use is what is exported here (``docs/adr/0015``).
+Nothing in the workspace needs anything of it today: the job every tool
+reads is ``strata.project``'s, and this package is a consumer of it too.
 """
 
 from .config import Settings
-from .project import Project, ProjectError
+from .project import LabellingProject, ProjectError
 
-__all__ = ["Project", "ProjectError", "Settings"]
+__all__ = ["LabellingProject", "ProjectError", "Settings"]

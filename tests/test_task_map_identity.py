@@ -30,7 +30,7 @@ from strata.labeller.labelstudio.sync import (
     task_map_catalog,
     task_map_path,
 )
-from strata.labeller.project import Project
+from strata.labeller.project import LabellingProject
 
 A = "20260101T000000-aaaaaaaa"
 B = "20260202T000000-bbbbbbbb"
@@ -41,9 +41,9 @@ def project(tmp_path):
     root = tmp_path / "job"
     root.mkdir()
     (root / "project.toml").write_text(
-        '[label_config]\nclasses = ["a"]\n\n[data]\ntype = "image"\n'
+        '[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n'
     )
-    return Project.load(root)
+    return LabellingProject.load(root)
 
 
 # ----------------------------------------------------------------------
@@ -159,8 +159,7 @@ def test_unskip_refuses_a_foreign_map(tmp_path, monkeypatch):
     root = tmp_path / "job"
     (root / "data" / "raw").mkdir(parents=True)
     (root / "project.toml").write_text(
-        '[label_config]\nclasses = ["a"]\n\n[data]\ntype = "image"\n\n'
-        "[label_studio]\nproject_id = 3\n"
+        '[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n'
     )
     sample = root / "data" / "raw" / "a.jpg"
     sample.write_bytes(b"bytes")
@@ -168,7 +167,8 @@ def test_unskip_refuses_a_foreign_map(tmp_path, monkeypatch):
     label_set_id = catalog.label_sets.create("job", ClassificationSchema(classes=["a"]))
     catalog.annotations.skip(sample_id, label_set_id)
 
-    project = Project.load(root)
+    project = LabellingProject.load(root)
+    project.save_ls_project_id("http://localhost:8080", 3)
     save_task_map(project, 3, {sample_id: 999}, B)
 
     result = CliRunner().invoke(

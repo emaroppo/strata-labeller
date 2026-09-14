@@ -52,7 +52,7 @@ def unskip(
 
     selected = skipped[:limit] if limit is not None else skipped
 
-    ls_project_id = project.label_studio.project_id
+    ls_project_id = project.ls_project_id(settings.label_studio.url)
     if ls_project_id is not None:
         task_map = _task_map(project, ls_project_id, catalog)
         task_ids = [task_map[s.id] for s in selected if s.id in task_map]

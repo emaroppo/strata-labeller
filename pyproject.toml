@@ -13,12 +13,14 @@ dependencies = [
     "strata-labels>=0.1,<0.2",
     "strata-catalog>=0.1,<0.2",
     "strata-modelling>=0.1,<0.2",
+    "strata-project>=0.1,<0.2",
 ]
 
 [tool.uv.sources]
 strata-labels = { workspace = true }
 strata-catalog = { workspace = true }
 strata-modelling = { workspace = true }
+strata-project = { workspace = true }
 
 [project.scripts]
 strata-labeller = "strata.labeller.cli:app"

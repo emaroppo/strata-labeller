@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 
 from strata.modelling import Run, RunStore
 
-from .project import Project
+from .project import LabellingProject
 
 
 @dataclass
@@ -38,7 +38,7 @@ class ImportReport:
     runs: list[Run] = field(default_factory=list)
 
 
-def read_rounds(project: Project) -> list[dict]:
+def read_rounds(project: LabellingProject) -> list[dict]:
     """Every round on disk, oldest first."""
     if not project.rounds_dir.exists():
         return []
@@ -51,7 +51,7 @@ def read_rounds(project: Project) -> list[dict]:
 
 
 def import_rounds(
-    project: Project,
+    project: LabellingProject,
     store: RunStore | None = None,
     chain: bool = False,
     model_version: str = "1",

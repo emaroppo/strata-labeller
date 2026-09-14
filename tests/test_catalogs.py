@@ -63,12 +63,12 @@ blobs_prefix = "blobs-emails"
 
 
 def test_a_project_names_the_catalog_it_draws_from(tmp_path):
-    from strata.labeller.project import Project
+    from strata.labeller.project import LabellingProject
 
     root = tmp_path / "job"
     root.mkdir()
     (root / "project.toml").write_text("""
-[label_config]
+[label_set]
 classes = ["a"]
 
 [data]
@@ -78,20 +78,20 @@ type = "image"
 name = "images"
 label_set = "job"
 """)
-    assert Project.load(root).catalog.name == "images"
+    assert LabellingProject.load(root).catalog.name == "images"
 
 
 def test_a_project_that_names_none_gets_the_default(tmp_path):
-    from strata.labeller.project import Project
+    from strata.labeller.project import LabellingProject
 
     root = tmp_path / "job"
     root.mkdir()
     (root / "project.toml").write_text(
-        '[label_config]\nclasses = ["a"]\n\n[data]\ntype = "image"\n'
+        '[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n'
     )
     # Empty, not a guess: what "the default" means is the host's business,
     # so a project written before any of this still loads and still works
-    assert Project.load(root).catalog.name == ""
+    assert LabellingProject.load(root).catalog.name == ""
 
 
 # ----------------------------------------------------------------------
@@ -122,7 +122,7 @@ root = "{tmp_path / 'text'}"
         root = tmp_path / job
         (root / "data" / "raw").mkdir(parents=True)
         (root / "project.toml").write_text(
-            f'[label_config]\nclasses = ["a"]\n\n[data]\ntype = "image"\n\n'
+            f'[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n\n'
             f'[catalog]\nname = "{catalog_name}"\n'
         )
         for i in range(count):

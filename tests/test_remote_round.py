@@ -18,14 +18,14 @@ SPECIES = {"name": "species", "source": "metadata", "ref": "species"}
 @pytest.fixture
 def featured(project, tmp_path):
     """A project that declares a feature, over a catalog that holds it."""
-    from strata.labeller.project import Project
+    from strata.labeller.project import LabellingProject
 
     toml = project.root / "project.toml"
     toml.write_text(
         toml.read_text()
         + '\n[[data.features]]\nname = "species"\nsource = "metadata"\nref = "species"\n'
     )
-    project = Project.load(project.root)
+    project = LabellingProject.load(project.root)
 
     catalog = Catalog.local(tmp_path / "catalog")
     paths = []

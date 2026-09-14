@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from strata.catalog import Catalog, SampleRow
 from strata.labels import Choices
 
-from ..project import Project
+from ..project import LabellingProject
 from .adapter import Addressing, Task, build_tasks, from_results
 from .schemas import LabelSchema
 
@@ -50,11 +50,11 @@ class TaskMapError(Exception):
     """The cached map belongs to a different catalog."""
 
 
-def task_map_path(project: Project, ls_project_id: int):
+def task_map_path(project: LabellingProject, ls_project_id: int):
     return project.state_dir / f"tasks_{ls_project_id}.json"
 
 
-def task_map_catalog(project: Project, ls_project_id: int) -> str | None:
+def task_map_catalog(project: LabellingProject, ls_project_id: int) -> str | None:
     """Which catalog the cached map was written against, if it says.
 
     ``None`` for a map written before it recorded one, which is not the
@@ -68,7 +68,7 @@ def task_map_catalog(project: Project, ls_project_id: int) -> str | None:
 
 
 def load_task_map(
-    project: Project, ls_project_id: int, catalog_id: str | None = None
+    project: LabellingProject, ls_project_id: int, catalog_id: str | None = None
 ) -> dict[int, int]:
     """The cached sample id -> task id map, refusing another catalog's.
 
@@ -97,7 +97,7 @@ def load_task_map(
 
 
 def save_task_map(
-    project: Project,
+    project: LabellingProject,
     ls_project_id: int,
     mapping: dict[int, int],
     catalog_id: str | None = None,

@@ -120,10 +120,10 @@ def runs(project, tmp_path, monkeypatch):
     # The scaffold writes a [catalog] section; the dataset name goes in it
     toml.write_text(toml.read_text().replace("[catalog]\n", '[catalog]\ndataset = "demo"\n'))
     from strata.catalog import Catalog
-    from strata.labeller.project import Project
+    from strata.labeller.project import LabellingProject
 
     Catalog.local(tmp_path / "catalog")
-    return Project.load(project.root), RunStore.local(project.runs_dir)
+    return LabellingProject.load(project.root), RunStore.local(project.runs_dir)
 
 
 def test_report_needs_a_run_store(project, tmp_path, monkeypatch):

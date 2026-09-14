@@ -1,78 +1,40 @@
-"""Machine-level settings: how this host reaches Label Studio, its catalog and the modelling host.
+"""Machine-level settings: the host's, plus how this host reaches Label Studio.
 
-Everything that belongs to a labelling job lives in the project directory
-instead — see :mod:`strata.labeller.project`.
-
-What a catalog is, and which one this host uses, is read through
-:mod:`strata.catalog.config`, which the blob server and the modelling host
-read too. This file owns only what is the labeller's own.
+The catalogs and the modelling host are :class:`strata.project.Settings`,
+which every tool on the machine reads. This adds the one section that is
+the labeller's own. Everything that belongs to a job lives in the project
+directory instead; see :mod:`strata.labeller.project`.
 """
 
-import os
-import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 
-from strata.catalog.config import Catalogs, read_catalogs
+from strata.project import ModellingConfig
+from strata.project import Settings as HostSettings
+
+__all__ = ["LabelStudioConfig", "ModellingConfig", "Settings"]
 
 
 @dataclass
 class LabelStudioConfig:
     url: str = "http://localhost:8080"
     api_key: str = ""
-    # Where the images mount shows up inside the Label Studio container
     # Names a directory inside the Label Studio container, not a media:
     # whatever a project labels is served from it. The word stays because
-    # deployments already mount it under this path — changing the default
-    # would be a redeploy dressed up as a rename.
+    # deployments already mount it under this path.
     local_storage_path: str = "/label-studio/data/images"
 
 
 @dataclass
-class ModellingConfig:
-    """Where training happens.
-
-    Empty means in this process, which is what a single machine wants and
-    what keeps a checkout runnable. A URL sends rounds to a host with the
-    GPU — it materialises the dataset itself, so nothing but a dataset id
-    travels.
-    """
-
-    url: str = ""
-    #: Shared with the host. Out of the file by preference, the same
-    #: argument as every other credential here.
-    token: str = ""
-
-
-@dataclass
-class Settings:
+class Settings(HostSettings):
     label_studio: LabelStudioConfig = field(default_factory=LabelStudioConfig)
-    #: The catalogs this host describes, and which one it uses by default.
-    catalogs: Catalogs = field(default_factory=Catalogs)
-    modelling: ModellingConfig = field(default_factory=ModellingConfig)
 
-    @classmethod
-    def load(cls, path: Path = Path("config.toml")) -> "Settings":
-        data: dict = {}
-        if path.exists():
-            with open(path, "rb") as f:
-                data = tomllib.load(f)
-
-        settings = cls()
+    def _read(self, data: dict, environ: Mapping[str, str]) -> None:
+        super()._read(data, environ)
         if "label_studio" in data:
-            settings.label_studio = LabelStudioConfig(**data["label_studio"])
-        settings.catalogs = read_catalogs(data.get("catalog", {}))
-        if "modelling" in data:
-            settings.modelling = ModellingConfig(**data["modelling"])
-
+            self.label_studio = LabelStudioConfig(**data["label_studio"])
         # Credentials belong in the environment rather than in a file that
         # gets copied around
-        api_key = os.environ.get("LABEL_STUDIO_API_KEY")
+        api_key = environ.get("LABEL_STUDIO_API_KEY")
         if api_key:
-            settings.label_studio.api_key = api_key
-        for name in ("url", "token"):
-            value = os.environ.get(f"STRATA_MODELLING_{name.upper()}")
-            if value:
-                setattr(settings.modelling, name, value)
-
-        return settings
+            self.label_studio.api_key = api_key

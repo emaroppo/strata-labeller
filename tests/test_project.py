@@ -1,221 +1,109 @@
-"""The project construct: resolution, validation, paths and class edits."""
+"""The project as the labeller sees it: the schema it labels with, and whose queue is whose.
 
-from pathlib import Path
+The job itself, resolution, paths and class edits, is tested in
+``strata.project``. What is here is the half this tool adds.
+"""
 
 import pytest
 
-from strata.labeller.project import (
-    PROJECT_ENV_VAR,
-    Project,
-    ProjectError,
-    list_projects,
-)
-
-# ----------------------------------------------------------------------
-# Loading and validation
-# ----------------------------------------------------------------------
+from strata.labeller.project import LabellingProject, ProjectError
 
 
 def test_create_then_load_round_trip(project):
-    reloaded = Project.load(project.root)
+    reloaded = LabellingProject.load(project.root)
     assert reloaded.name == project.name
-    assert reloaded.label_config.classes == ["cat", "dog"]
+    assert reloaded.label_set.classes == ["cat", "dog"]
     assert reloaded.schema.type == "image_classification"
 
 
-def test_a_missing_project_says_what_is_available(make_project):
-    make_project("alpha")
-    with pytest.raises(ProjectError, match="Available: alpha"):
-        Project.load(Path("nope"))
+def test_the_template_follows_the_task_and_the_media(make_project):
+    spans = make_project("spans", task="span", sample_type="text", classes=["PER"])
+    assert spans.schema.type == "text_span"
+    boxes = make_project("boxes", task="bbox")
+    assert boxes.schema.type == "image_bbox"
 
 
-def test_an_unknown_section_is_refused(project):
+def test_a_task_with_no_template_over_its_media_fails_at_load(make_project):
+    # Spans over images: the job is well-formed, the tool has no template for it
+    with pytest.raises(ProjectError, match="No labeling template"):
+        make_project("odd", task="span")
+
+
+def test_an_unknown_section_is_refused_by_the_tool(project):
+    # The job carries what it does not own; the labeller, which owns the
+    # rest, is where a typo is caught
     toml = project.root / "project.toml"
-    toml.write_text(toml.read_text() + '\n[trainig]\nepochs = 3\n')
+    toml.write_text(toml.read_text() + "\n[trainig]\nepochs = 3\n")
     with pytest.raises(ProjectError, match="Unknown section"):
-        Project.load(project.root)
+        LabellingProject.load(project.root)
 
 
-def test_an_unknown_key_inside_a_section_is_refused(project):
+def test_an_unknown_key_in_the_tools_section_is_refused(project):
     toml = project.root / "project.toml"
-    toml.write_text(toml.read_text().replace("[data]", "[data]\nrooot = \"typo\""))
-    with pytest.raises(ProjectError):
-        Project.load(project.root)
+    toml.write_text(toml.read_text() + "\n[label_studio]\nproject_id = 3\n")
+    with pytest.raises(ProjectError, match=r"Unknown key\(s\) in \[label_studio\]"):
+        LabellingProject.load(project.root)
 
 
-def test_choice_must_be_single_or_multiple(project):
-    toml = project.root / "project.toml"
-    toml.write_text(toml.read_text().replace('choice = "multiple"', 'choice = "maybe"'))
-    with pytest.raises(ProjectError, match="must be 'single' or 'multiple'"):
-        Project.load(project.root)
+# ----------------------------------------------------------------------
+# A labeling config of the project's own
+# ----------------------------------------------------------------------
 
 
-def test_a_bad_template_fails_at_load_not_mid_push(project):
-    toml = project.root / "project.toml"
-    toml.write_text(toml.read_text().replace("image_classification", "image_segmentation"))
-    with pytest.raises(ProjectError, match="Unknown template"):
-        Project.load(project.root)
-
-
-def set_kind(project, kind: str) -> Project:
-    toml = project.root / "project.toml"
-    toml.write_text(toml.read_text().replace('kind = "images"', f'kind = "{kind}"'))
-    return Project.load(project.root)
-
-
-def test_a_project_names_its_sample_type(project):
-    assert project.data.type == "image"
-    assert project.sample_type_name == "image"
-
-
-def test_a_project_from_before_types_says_how_to_migrate(project):
-    toml = project.root / "project.toml"
-    toml.write_text(toml.read_text().replace('type = "image"', 'kind = "frames"'))
-
-    reloaded = Project.load(project.root)
-    # kind named both what a sample was and how it grouped; there is no
-    # sensible default for the first, so it says so rather than guessing
-    with pytest.raises(ProjectError, match="migrate_project_type"):
-        reloaded.sample_type_name
-
-def test_a_project_declares_the_split_its_corpus_arrived_with(project):
-    toml = project.root / "project.toml"
-    toml.write_text(
-        toml.read_text().replace(
-            "# [catalog.split]\n", '[catalog.split]\nkey = "bench"\nholdout = ["test"]\n'
-        )
-    )
-    given = Project.load(project.root).catalog.given_split
-    assert (given.key, given.holdout, given.val) == ("bench", ["test"], [])
-    # Nothing declared, nothing given
-    assert project.catalog.given_split is None
-
-
-def test_a_split_naming_one_set_on_both_sides_is_refused(project):
-    toml = project.root / "project.toml"
-    toml.write_text(
-        toml.read_text().replace(
-            "# [catalog.split]\n",
-            '[catalog.split]\nkey = "bench"\nholdout = ["test"]\nval = ["test"]\n',
-        )
-    )
-    with pytest.raises(ProjectError, match="both held out and validation"):
-        Project.load(project.root).catalog.given_split
-
-
-def test_a_custom_project_must_not_declare_classes_twice(make_project):
-    project = make_project("custom", template="custom", classes=[])
-    toml = project.root / "project.toml"
-    toml.write_text(
-        toml.read_text().replace('template = "custom"', 'template = "custom"\nclasses = ["cat"]')
-    )
-    # The XML is authoritative; two sources of truth would drift
-    with pytest.raises(ProjectError, match="remove 'classes'"):
-        Project.load(project.root)
-
-
-def test_a_custom_project_reads_its_classes_from_the_xml(make_project):
-    project = make_project("custom", template="custom", classes=["cat", "dog"])
+def test_a_custom_project_gets_a_config_to_start_from(make_project):
+    project = make_project("custom", custom=True)
+    assert project.label_studio.config == "label_config.xml"
     assert project.label_config_path.exists()
     assert project.schema.classes == ["cat", "dog"]
 
 
-def test_a_custom_project_without_its_config_says_where_it_looked(make_project):
-    project = make_project("custom", template="custom", classes=[])
-    project.label_config_path.unlink()
-    with pytest.raises(ProjectError, match="needs a labeling config at"):
-        Project.load(project.root)
+def test_a_custom_config_supplies_control_names_and_the_job_supplies_classes(make_project):
+    project = make_project("custom", custom=True)
+    xml = project.label_config_path.read_text().replace('name="label"', 'name="verdict"')
+    project.label_config_path.write_text(xml)
+    reloaded = LabellingProject.load(project.root)
+    assert reloaded.schema.from_name == "verdict"
+    assert reloaded.schema.classes == ["cat", "dog"]
 
 
-# ----------------------------------------------------------------------
-# Resolution
-# ----------------------------------------------------------------------
+def test_a_custom_config_may_not_offer_a_class_the_job_does_not_declare(make_project):
+    # A reviewer could apply it, and the catalog would refuse the export
+    project = make_project("custom", custom=True)
+    xml = project.label_config_path.read_text().replace(
+        'value="dog"', 'value="dog"/>\n    <Choice value="bird"', 1
+    )
+    project.label_config_path.write_text(xml)
+    with pytest.raises(ProjectError, match="offers bird"):
+        LabellingProject.load(project.root)
 
 
-def test_a_bare_name_resolves_under_projects(make_project):
-    make_project("cats")
-    assert Project.load(Path("cats")).name == "cats"
-
-
-def test_a_path_to_the_toml_resolves_to_its_directory(make_project):
-    project = make_project("cats")
-    assert Project.load(project.root / "project.toml").name == "cats"
-
-
-def test_a_single_project_is_found_without_being_named(make_project):
-    make_project("only")
-    assert Project.load().name == "only"
-
-
-def test_several_projects_require_a_choice(make_project):
-    make_project("alpha")
-    make_project("beta")
-    with pytest.raises(ProjectError, match="Several projects found"):
-        Project.load()
-
-
-def test_the_environment_variable_selects_a_project(make_project, monkeypatch):
-    make_project("alpha")
-    make_project("beta")
-    monkeypatch.setenv(PROJECT_ENV_VAR, "beta")
-    assert Project.load().name == "beta"
-
-
-def test_list_projects_ignores_directories_without_a_project_file(make_project, tmp_path):
-    make_project("real")
-    (tmp_path / "projects" / "not-a-project").mkdir()
-    assert [p.name for p in list_projects()] == ["real"]
-
-
-# ----------------------------------------------------------------------
-# Paths
-# ----------------------------------------------------------------------
-
-
-def test_an_absolute_data_root_is_used_as_is(project, tmp_path):
-    elsewhere = tmp_path / "shared-images"
-    elsewhere.mkdir()
+def test_a_custom_config_must_annotate_the_jobs_task(make_project):
+    project = make_project("custom", custom=True)
     toml = project.root / "project.toml"
-    toml.write_text(toml.read_text().replace('root = "data/raw"', f'root = "{elsewhere}"'))
-    assert Project.load(project.root).data_dir == elsewhere
+    toml.write_text(toml.read_text().replace('task = "classification"', 'task = "bbox"').replace(
+        'choice = "multiple"', ""
+    ))
+    with pytest.raises(ProjectError, match="annotates classification"):
+        LabellingProject.load(project.root)
 
 
-# ----------------------------------------------------------------------
-# Class edits
-# ----------------------------------------------------------------------
+def test_a_custom_project_without_its_config_says_where_it_looked(make_project):
+    project = make_project("custom", custom=True)
+    project.label_config_path.unlink()
+    with pytest.raises(ProjectError, match="does not exist"):
+        LabellingProject.load(project.root)
 
 
-def test_add_classes_appends_and_persists(project):
-    assert project.add_classes(["bird"]) == ["cat", "dog", "bird"]
-    # Append-only: a checkpoint maps output neurons to this list by position
-    assert Project.load(project.root).label_config.classes == ["cat", "dog", "bird"]
-
-
-def test_add_classes_refuses_a_duplicate(project):
-    with pytest.raises(ProjectError, match="already exists"):
-        project.add_classes(["cat"])
-
-
-def test_add_classes_refuses_an_empty_name(project):
-    with pytest.raises(ProjectError, match="cannot be empty"):
-        project.add_classes(["   "])
-
-
-def test_add_classes_pins_the_inferred_order_when_the_list_is_empty(make_project):
-    project = make_project("fresh", classes=[])
-    # An order that was only ever inferred from the data becomes explicit
-    assert project.add_classes(["bird"], known=["dog", "cat"]) == ["cat", "dog", "bird"]
-    assert Project.load(project.root).label_config.classes == ["cat", "dog", "bird"]
-
-
-def test_add_classes_leaves_the_rest_of_the_file_alone(project):
-    before = (project.root / "project.toml").read_text()
+def test_add_classes_extends_a_custom_config_too(make_project):
+    project = make_project("custom", custom=True)
     project.add_classes(["bird"])
-    after = (project.root / "project.toml").read_text()
-    changed = [
-        (a, b) for a, b in zip(before.splitlines(), after.splitlines()) if a != b
-    ]
-    assert changed == [('classes = ["cat", "dog"]', 'classes = ["cat", "dog", "bird"]')]
+    assert 'value="bird"' in project.label_config_path.read_text()
+    assert LabellingProject.load(project.root).schema.classes == ["cat", "dog", "bird"]
+
+
+# ----------------------------------------------------------------------
+# Whose queue is whose
+# ----------------------------------------------------------------------
 
 
 def test_each_label_studio_keeps_its_own_project(project):
@@ -228,14 +116,14 @@ def test_each_label_studio_keeps_its_own_project(project):
     project.save_ls_project_id("http://desktop:8080", 42)
     project.save_ls_project_id("http://laptop:8080", 7)
 
-    reloaded = Project.load(project.root)
+    reloaded = LabellingProject.load(project.root)
     assert reloaded.ls_project_id("http://desktop:8080") == 42
     assert reloaded.ls_project_id("http://laptop:8080") == 7
 
 
 def test_a_trailing_slash_is_the_same_instance(project):
     project.save_ls_project_id("http://desktop:8080", 42)
-    assert Project.load(project.root).ls_project_id("http://desktop:8080/") == 42
+    assert LabellingProject.load(project.root).ls_project_id("http://desktop:8080/") == 42
 
 
 def test_an_instance_with_no_queue_points_at_init(project):
@@ -243,21 +131,6 @@ def test_an_instance_with_no_queue_points_at_init(project):
         project.require_ls_project_id("http://elsewhere:8080")
 
 
-def test_a_project_id_written_before_this_is_still_read(project):
-    # A project.toml from before queues were per instance. It belongs to
-    # whichever install created it, which is the confusion this replaces —
-    # but silently ignoring it would strand a live project.
-    # The scaffold already writes a [label_studio] section, so add the key
-    # to it rather than declaring the table twice
-    toml_path = project.root / "project.toml"
-    text = toml_path.read_text()
-    if "[label_studio]" in text:
-        text = text.replace("[label_studio]", "[label_studio]\nproject_id = 3", 1)
-    else:
-        text += "\n[label_studio]\nproject_id = 3\n"
-    toml_path.write_text(text)
-    assert Project.load(project.root).ls_project_id("http://anywhere:8080") == 3
-
-def test_create_refuses_to_overwrite_an_existing_project(project):
-    with pytest.raises(ProjectError, match="already exists"):
-        Project.create(project.root, name="demo")
+def test_the_queue_is_state_not_part_of_the_file(project):
+    project.save_ls_project_id("http://desktop:8080", 42)
+    assert "42" not in (project.root / "project.toml").read_text()

@@ -41,7 +41,7 @@ def models(
     from strata.modelling.plugins.registry import available
     from strata.modelling.remote.client import RemoteError, Trainer
 
-    from ..project import Project, ProjectError
+    from ..project import LabellingProject, ProjectError
 
     settings = _settings(config_path)
     if settings.modelling.url:
@@ -56,7 +56,7 @@ def models(
         served = available()
 
     try:
-        project = Project.load(project_path)
+        project = LabellingProject.load(project_path)
     except ProjectError:
         if project_path is not None:
             raise

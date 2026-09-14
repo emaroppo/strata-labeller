@@ -14,11 +14,10 @@ from strata.catalog.stages import Context as CatalogContext
 from strata.catalog.stages import DatasetRequest, MaterialiseRequest, dataset, materialise
 from strata.labels import MANIFEST_NAME, Manifest
 from strata.modelling import Run, RunStore
-from strata.modelling.plugins.registry import absolute
 from strata.modelling.stages import Context as ModellingContext
 from strata.modelling.stages import TrainStageRequest, train
 
-from .project import Project
+from .project import LabellingProject
 
 
 class RoundError(Exception):
@@ -39,7 +38,7 @@ class RoundResult:
 
 
 def run_round(
-    project: Project,
+    project: LabellingProject,
     catalog: Catalog,
     fresh: bool = False,
     val_ratio: float = 0.2,
@@ -78,11 +77,7 @@ def run_round(
     record = train(
         TrainStageRequest(
             dataset_dir=built.directory,
-            # Anchored at the project, because a model.py belongs to the job
-            # rather than to the dataset it happens to be trained on. An
-            # absolute ref also resolves from anywhere, which is what a
-            # request has to do once it crosses a wire.
-            model=absolute(project.model.ref, project.root),
+            model=project.model_ref(),
             params=project.model.params,
             fresh_params=project.model.fresh_params,
             fresh=fresh,

@@ -1,9 +1,10 @@
-"""Label schemas: one per task type, selected by a project's template.
+"""Label schemas: one per task type, selected by task and media.
 
-``[label_config] template`` in project.toml picks both the Label Studio
-config and the schema that reads it. ``template = "custom"`` hands the
-project's own XML to Label Studio verbatim and derives the schema by
-parsing it, so a config tuned by hand stays authoritative.
+A template is ``<media>_<task>``: the task is the project's ``[label_set]``,
+the media is its sample type's. A project with a labeling config of its
+own (``[label_studio] config``) has the schema read from that XML, so the
+control names Label Studio already knows stay authoritative, while the
+task and the classes remain the job's.
 """
 
 import re

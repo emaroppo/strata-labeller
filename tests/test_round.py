@@ -55,9 +55,9 @@ def ready(project, tmp_path):
         toml = project.root / "project.toml"
         toml.write_text(toml.read_text().replace('ref = "multilabel"', f'ref = "{ref}"'))
 
-        from strata.labeller.project import Project
+        from strata.labeller.project import LabellingProject
 
-        reloaded = Project.load(project.root)
+        reloaded = LabellingProject.load(project.root)
         catalog = Catalog.local(tmp_path / "catalog")
         stock(reloaded, catalog, labelled, total)
         return reloaded, catalog
@@ -100,9 +100,9 @@ def test_model_params_reach_the_model(ready):
     project, catalog = ready()
     toml = project.root / "project.toml"
     toml.write_text(toml.read_text().replace("num_epochs = 4", 'note = "from params"'))
-    from strata.labeller.project import Project
+    from strata.labeller.project import LabellingProject
 
-    result = run_round(Project.load(project.root), catalog)
+    result = run_round(LabellingProject.load(project.root), catalog)
     assert json.loads(result.run.checkpoint.read_text())["note"] == "from params"
 
 
@@ -252,9 +252,9 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
         # The project asks for it; the catalog enforces no grouping on its own
         .replace('# group_by = "video"', 'group_by = "video"')
     )
-    from strata.labeller.project import Project
+    from strata.labeller.project import LabellingProject
 
-    reloaded = Project.load(project.root)
+    reloaded = LabellingProject.load(project.root)
     catalog = Catalog.local(tmp_path / "catalog")
 
     # Two folders, ten frames each: a group is indivisible, so the split can
@@ -290,14 +290,14 @@ def with_fresh_params(project, block: str):
     """
     import re
 
-    from strata.labeller.project import Project
+    from strata.labeller.project import LabellingProject
 
     toml = project.root / "project.toml"
     text = re.sub(
         r"\[model\.fresh_params\]\n(?:[^\[]*\n)?", "", toml.read_text()
     )
     toml.write_text(text.rstrip("\n") + f"\n\n[model.fresh_params]\n{block}\n")
-    return Project.load(project.root)
+    return LabellingProject.load(project.root)
 
 
 def test_a_cold_round_takes_the_fresh_params(ready):

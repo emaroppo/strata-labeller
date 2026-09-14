@@ -17,7 +17,7 @@ from rich.progress import (
 )
 
 from ..config import Settings
-from ..project import PROJECT_ENV_VAR, PROJECTS_DIR, Project, ProjectError
+from ..project import PROJECT_ENV_VAR, PROJECTS_DIR, LabellingProject, ProjectError
 
 app = typer.Typer(name="strata-labeller")
 
@@ -83,12 +83,12 @@ def _progress(
     return Progress(*columns, console=console, transient=transient)
 
 
-def _load_project(path: Path | None) -> Project:
+def _load_project(path: Path | None) -> LabellingProject:
     with _exit_on(ProjectError):
-        return Project.load(path)
+        return LabellingProject.load(path)
 
 
-def _ls_client(settings: Settings, project: Project, config_path: Path):
+def _ls_client(settings: Settings, project: LabellingProject, config_path: Path):
     """Build a Label Studio client, failing early on a missing token."""
     from ..labelstudio.ls_client import LSClient
 
@@ -245,7 +245,7 @@ def _catalog_if_any(settings, name: str = ""):
         return None
 
 
-def _warn_on_composition_drift(project: Project, catalog, schema) -> None:
+def _warn_on_composition_drift(project: LabellingProject, catalog, schema) -> None:
     """Say so when a project's declarations do not match what it draws from.
 
     Both are declared because ``ingest`` needs them before anything is
@@ -285,7 +285,7 @@ def _warn_on_composition_drift(project: Project, catalog, schema) -> None:
         )
 
 
-def _schema_for(project: Project, catalog):
+def _schema_for(project: LabellingProject, catalog):
     """The project's schema, with the classes the label set actually holds.
 
     Read from the catalog rather than from project.toml, so the list a
@@ -304,7 +304,7 @@ def _schema_for(project: Project, catalog):
     return schema
 
 
-def _label_set_for(catalog, project: Project):
+def _label_set_for(catalog, project: LabellingProject):
     from strata.catalog import CatalogError
 
     try:

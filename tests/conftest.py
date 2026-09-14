@@ -19,7 +19,7 @@ import pytest
 os.environ.pop("FORCE_COLOR", None)
 
 from strata.catalog import Catalog  # noqa: E402
-from strata.labeller.project import PROJECT_ENV_VAR, Project  # noqa: E402
+from strata.labeller.project import PROJECT_ENV_VAR, LabellingProject  # noqa: E402
 
 
 @pytest.fixture
@@ -37,17 +37,17 @@ def make_project(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv(PROJECT_ENV_VAR, raising=False)
 
-    def _make(name: str = "demo", *, under_projects: bool = True, **kwargs) -> Project:
+    def _make(name: str = "demo", *, under_projects: bool = True, **kwargs) -> LabellingProject:
         root = (tmp_path / "projects" / name) if under_projects else (tmp_path / name)
         root.mkdir(parents=True)
         kwargs.setdefault("classes", ["cat", "dog"])
-        return Project.create(root, name=name, **kwargs)
+        return LabellingProject.create(root, name=name, **kwargs)
 
     return _make
 
 
 @pytest.fixture
-def project(make_project) -> Project:
+def project(make_project) -> LabellingProject:
     return make_project()
 
 

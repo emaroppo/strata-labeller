@@ -11,8 +11,8 @@ be read. The training core takes a directory and a manifest, so a model can
 be tested against a fixture and run where no database exists — the service
 layer is the one place allowed to know a catalog.
 
-Lives here because `labeller` is the only package permitted to import the
-others, so it is the natural place to assert what they may not.
+Lives here because `labeller` imports more of the others than any package
+but `experiment`, so it is the natural place to assert what they may not.
 """
 
 import ast
@@ -26,10 +26,12 @@ ALLOWED = {
     "common": set(),
     "catalog": {"labels", "common"},
     "modelling": {"labels", "catalog", "common"},
-    "labeller": {"labels", "catalog", "modelling"},
-    # The top of the graph: it sequences the others' stages, so it may
-    # import all of them, and nothing may import it.
-    "experiment": {"labels", "common", "catalog", "modelling", "labeller"},
+    # The job: the one file the two tools above it both read (docs/adr/0016).
+    "project": {"labels", "catalog", "modelling"},
+    "labeller": {"labels", "catalog", "modelling", "project"},
+    # Sequences the others' stages over a project. Nothing may import it,
+    # and it does not import the labeller: the two are peers over the job.
+    "experiment": {"labels", "common", "catalog", "modelling", "project"},
 }
 
 #: Third-party imports that would undo the point of a package.
@@ -42,6 +44,8 @@ FORBIDDEN = {
                "label_studio_sdk", "pydantic"},
     "catalog": {"torch", "timm", "transformers", "label_studio_sdk"},
     "modelling": {"label_studio_sdk"},
+    # The job names no tool and carries no framework.
+    "project": {"label_studio_sdk", "torch", "timm", "transformers"},
     "labeller": set(),
     # Nothing in the orchestrator may know Label Studio exists, or carry a
     # framework: the labeller's stages talk to the one and the models to the other.
