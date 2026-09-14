@@ -16,7 +16,9 @@ but `experiment`, so it is the natural place to assert what they may not.
 """
 
 import ast
+import importlib
 import pathlib
+import types
 
 import pytest
 
@@ -57,11 +59,30 @@ CATALOG_IN_MODELLING = {"service.py", "rounds.py", "checks.py"}
 
 
 def _imports(path: pathlib.Path):
+    for module, _ in _imported(path):
+        yield module
+
+
+def _imported(path: pathlib.Path):
+    """Every absolute import in a module: the module named, and the names taken from it."""
     for node in ast.walk(ast.parse(path.read_text())):
         if isinstance(node, ast.Import):
-            yield from (alias.name for alias in node.names)
+            for alias in node.names:
+                yield alias.name, ()
         elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            yield node.module
+            yield node.module, tuple(alias.name for alias in node.names)
+
+
+def _exported(package: types.ModuleType) -> set[str]:
+    """What a package's ``__init__`` offers by name."""
+    declared = getattr(package, "__all__", None)
+    if declared is not None:
+        return set(declared)
+    return {
+        name
+        for name, value in vars(package).items()
+        if not name.startswith("_") and not isinstance(value, types.ModuleType)
+    }
 
 
 def _modules(package: str):
@@ -87,6 +108,42 @@ def test_a_package_imports_only_what_it_may(package):
             other = name.split(".")[1]
             if other != package and other not in ALLOWED[package]:
                 offences.append(f"{path.name} imports strata.{other}")
+    assert not offences, f"{package}: " + "; ".join(offences)
+
+
+@pytest.mark.parametrize("package", sorted(ALLOWED))
+def test_a_package_uses_only_what_its_dependencies_promise(package):
+    """A module path across packages is a promise the producer declares.
+
+    What a sibling may use is what the producer's ``__init__`` exports,
+    plus the modules it lists in ``PUBLIC_MODULES`` (docs/adr/0015). Read
+    from the installed producer rather than from a list kept here, so the
+    check means the same thing once the packages are repositories apart.
+    """
+    offences = []
+    for path in _modules(package):
+        for module, names in _imported(path):
+            if not module.startswith("strata."):
+                continue
+            parts = module.split(".")
+            other = parts[1]
+            if other == package:
+                continue
+            producer = importlib.import_module(f"strata.{other}")
+            promised = getattr(producer, "PUBLIC_MODULES", frozenset())
+            rest = ".".join(parts[2:])
+            if rest:
+                if rest not in promised:
+                    offences.append(
+                        f"{path.name} imports strata.{other}.{rest}, which is not promised"
+                    )
+                continue
+            exported = _exported(producer)
+            for name in names:
+                if name not in exported and name not in promised:
+                    offences.append(
+                        f"{path.name} takes {name} from strata.{other}, which does not export it"
+                    )
     assert not offences, f"{package}: " + "; ".join(offences)
 
 
