@@ -20,7 +20,7 @@ from .media import Media
 Result = dict[str, Any]
 
 # Fields Label Studio attaches that say nothing about the annotation itself;
-# dropping them keeps re-exports from churning the dataset file
+# dropped so the same annotation reads the same from two exports
 VOLATILE_FIELDS = {"id", "origin", "lead_time", "created_at", "updated_at", "parent_id"}
 
 

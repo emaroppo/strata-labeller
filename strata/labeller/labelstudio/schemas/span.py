@@ -90,9 +90,8 @@ class SpanSchema(LabelSchema):
                     text=value.get("text", ""),
                 )
             )
-        # Reading order makes stored annotations and model targets
-        # comparable; labels break a tie so two regions at one offset
-        # cannot come back in a different order than they went in.
+        # The order Spans keeps on parse (docs/adr/0004), so a decoded list
+        # compares before it is wrapped
         return sorted(spans, key=lambda s: (s.start, s.end, tuple(s.labels)))
 
     def encode_target(self, target: list[Span]) -> list[Result]:

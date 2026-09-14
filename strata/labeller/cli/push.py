@@ -46,9 +46,8 @@ def _run_for_push(
 ) -> str | None:
     """Which run scores this push, in the numbering of whoever will score it.
 
-    Run ids belong to the store that issued them. Asking a modelling host to
-    predict with a local run id names a different model there, or none —
-    silently, since both stores number from one.
+    Run ids belong to the store that issued them: a run made here is not on
+    the host, so the host is asked for its own.
     """
     if not remote:
         if store is None:

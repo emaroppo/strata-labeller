@@ -77,9 +77,10 @@ def from_template(template: str, classes: list[str], **params) -> LabelSchema:
 def from_label_config(xml: str) -> LabelSchema:
     """Derive a schema by reading a labeling config.
 
-    The config is authoritative for a custom project: control names and the
-    class list come from the XML, because that is what annotations in
-    Label Studio will actually reference.
+    The control names come from the XML, because that is what annotations
+    in Label Studio reference. The classes it offers are read so the job's
+    can be checked against them; the job's list is the authoritative one
+    (``docs/adr/0016``).
     """
     media = _media_from_config(xml)
     for tag, schema_cls in CONTROL_TAGS.items():

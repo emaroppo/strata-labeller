@@ -1,8 +1,6 @@
 """Returning skipped samples, and reading the training history.
 
-Both used to work on files the catalog replaced — dataset.json and
-rounds/*/metadata.json — and both are mostly about not asserting more than
-the record supports.
+Both are mostly about not asserting more than the record supports.
 """
 
 import json

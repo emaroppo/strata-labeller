@@ -215,7 +215,7 @@ def _task_map(project, ls_project_id: int, catalog):
 def _catalog_config(settings, name: str = ""):
     """Look up a named catalog, or exit saying which names exist.
 
-    Never falls back to the default: see ``docs/adr/0008``.
+    Never falls back to the default: see ``docs/adr/0020``.
     """
     from strata.catalog.config import CatalogConfigError
 

@@ -48,10 +48,8 @@ def from_results(results: list[dict], schema: LabelSchema) -> AnyValue:
 def prediction_to_results(prediction: AnyPrediction, schema: LabelSchema) -> list[dict]:
     """A model's output as Label Studio results.
 
-    Delegated to the schema, so this is only as general as the schemas are —
-    and today only classification is implemented, which encodes class names.
-    A boxes prediction reaching here would hand it Box objects; the schema
-    refuses them rather than encoding something meaningless.
+    Delegated to the schema, which refuses a value of the wrong kind rather
+    than encoding something meaningless.
     """
     return schema.encode_target(list(prediction.values))
 
