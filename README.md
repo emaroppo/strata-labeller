@@ -141,7 +141,6 @@ Then label a seed set and run `train`, `push`, `export` in a loop.
 | `unskip` | return skipped samples to the queue |
 | `relink` | repoint tasks at their current sample URLs, re-signing them |
 | `catalog-check` | ask the blob server and the modelling host which catalog they serve |
-| `import-rounds` | one-way migration from the pre-catalog format |
 
 Most take `-p/--project`; all take `--config`.
 

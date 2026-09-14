@@ -92,7 +92,7 @@ def report(
         reviews = catalog.annotations.review_counts(label_set_id)
         agreed, changed = catalog.annotations.second_looks(label_set_id)
     except CatalogError:
-        # Runs but no label set yet — imported from before the catalog
+        # No label set under this name: nothing to say about imports
         reviews, agreed, changed = {}, 0, 0
 
     if as_json:
@@ -171,7 +171,7 @@ def _print_run(store, run) -> None:
     version = (
         f"v{run.dataset_version}"
         if run.dataset_version is not None
-        else ("no dataset version — imported from before the catalog")
+        else "no dataset version recorded"
     )
     console.print(f"  dataset:   {run.dataset} {version}")
     console.print(f"  label set: {run.label_set}")

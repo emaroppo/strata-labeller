@@ -26,8 +26,7 @@ class HistoryRow:
     #: same held-out samples. None means "cannot be compared", which is not
     #: the same statement as "did not move".
     delta: float | None
-    #: Whether it continued a run in the store. False is a cold start, or a
-    #: round imported from before the store existed.
+    #: Whether it continued a run in the store. False is a cold start.
     warm: bool
     #: How much of what the run saw nobody checked, per side and batch.
     #: Empty for a run recorded before that was written down.

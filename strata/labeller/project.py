@@ -7,7 +7,6 @@ which is not part of a handoff (``docs/adr/0016``):
 
     projects/my-project/
     ├── label_config.xml        # [label_studio] config only: a config of the project's own
-    ├── rounds/                 # pre-catalog rounds, read by import-rounds only
     └── .state/                 # Label Studio bookkeeping: which queue is whose
 
 The schema a project labels with is built from the job: the task and
@@ -153,10 +152,6 @@ class LabellingProject(Project):
     # ------------------------------------------------------------------
     # The tool's own paths
     # ------------------------------------------------------------------
-
-    @property
-    def rounds_dir(self) -> Path:
-        return self.root / "rounds"
 
     @property
     def state_dir(self) -> Path:
