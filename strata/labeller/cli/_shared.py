@@ -270,8 +270,7 @@ def _warn_on_composition_drift(project: LabellingProject, catalog, schema) -> No
         )
 
     other_subtype = {
-        sub: n for (m, sub), n in held.items()
-        if m == declared_media and sub != declared_subtype
+        sub: n for (m, sub), n in held.items() if m == declared_media and sub != declared_subtype
     }
     if other_subtype:
         summary = ", ".join(f"{n:,} {sub}" for sub, n in sorted(other_subtype.items()))

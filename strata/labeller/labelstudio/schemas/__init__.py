@@ -116,9 +116,7 @@ def _media_from_config(xml: str) -> Media:
         if re.search(rf"<{tag}\b", xml):
             return media
     known = ", ".join(sorted(MEDIA_TAGS))
-    raise SchemaError(
-        f"No supported media tag in the config (looked for: {known})"
-    )
+    raise SchemaError(f"No supported media tag in the config (looked for: {known})")
 
 
 def _attr(attrs: str, name: str) -> str | None:

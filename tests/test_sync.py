@@ -180,9 +180,7 @@ def test_a_task_nobody_has_answered_is_left_alone(stocked, schema):
     [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
     exported = [ls_task(1, blob_url(sample, "blobs"))]
 
-    items, report = pull_annotations(
-        exported, catalog, label_set_id, schema, ADDRESSING, ["cat"]
-    )
+    items, report = pull_annotations(exported, catalog, label_set_id, schema, ADDRESSING, ["cat"])
     # Writing an empty value here would claim someone had looked
     assert items == []
     assert report.total == 0
@@ -199,9 +197,7 @@ def test_a_cancelled_annotation_is_a_skip(stocked, schema):
         )
     ]
 
-    items, report = pull_annotations(
-        exported, catalog, label_set_id, schema, ADDRESSING, ["cat"]
-    )
+    items, report = pull_annotations(exported, catalog, label_set_id, schema, ADDRESSING, ["cat"])
     assert items == [(sample.id, None)]
     assert report.skipped == 1
 
@@ -243,9 +239,7 @@ def test_volatile_fields_do_not_survive(stocked, schema):
             ],
         )
     ]
-    items, _ = pull_annotations(
-        exported, catalog, label_set_id, schema, ADDRESSING, ["cat", "dog"]
-    )
+    items, _ = pull_annotations(exported, catalog, label_set_id, schema, ADDRESSING, ["cat", "dog"])
     # They say nothing about the annotation and would churn the store
     assert items == [(sample.id, Choices(values=["dog"]))]
 
@@ -253,9 +247,7 @@ def test_volatile_fields_do_not_survive(stocked, schema):
 def test_an_unrecognised_task_is_reported_not_dropped(stocked, schema):
     catalog, _, label_set_id = stocked
     exported = [annotated(1, "/data/local-files/?d=images/old.jpg", ["cat"])]
-    items, report = pull_annotations(
-        exported, catalog, label_set_id, schema, ADDRESSING, ["cat"]
-    )
+    items, report = pull_annotations(exported, catalog, label_set_id, schema, ADDRESSING, ["cat"])
     assert items == []
     assert len(report.unrecognised) == 1
 
@@ -299,9 +291,7 @@ def test_without_the_flag_everything_still_comes_back(stocked, schema):
     [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
     exported = [annotated(1, blob_url(sample, "blobs"), ["cat"])]
 
-    items, _report = pull_annotations(
-        exported, catalog, label_set_id, schema, ADDRESSING, ["cat"]
-    )
+    items, _report = pull_annotations(exported, catalog, label_set_id, schema, ADDRESSING, ["cat"])
     assert items == [(sample.id, Choices(values=["cat"]))]
 
 
@@ -346,7 +336,5 @@ def test_an_undeclared_class_is_found_whatever_kind_of_value_carries_it(tmp_path
             }
         ],
     )
-    _items, report = pull_annotations(
-        [task], catalog, label_set_id, schema, ADDRESSING, ["PER"]
-    )
+    _items, report = pull_annotations([task], catalog, label_set_id, schema, ADDRESSING, ["PER"])
     assert report.undeclared == {"NOBODY_DECLARED_THIS"}

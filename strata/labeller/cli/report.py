@@ -27,9 +27,7 @@ def report(
     metric: str | None = typer.Option(
         None, help="Which metric to plot (default: this task's headline one)"
     ),
-    run_id: str | None = typer.Option(
-        None, "--run", help="Detail one run instead of the history"
-    ),
+    run_id: str | None = typer.Option(None, "--run", help="Detail one run instead of the history"),
     as_json: bool = typer.Option(
         False, "--json", help="Emit the same thing as JSON, for a chart or a script"
     ),
@@ -154,8 +152,10 @@ def _emit_json(payload: dict) -> None:
 
 def _print_run(store, run) -> None:
     console.print(f"[bold]Run {run.short}[/bold] — {run.model} v{run.model_version}")
-    version = f"v{run.dataset_version}" if run.dataset_version is not None else (
-        "no dataset version — imported from before the catalog"
+    version = (
+        f"v{run.dataset_version}"
+        if run.dataset_version is not None
+        else ("no dataset version — imported from before the catalog")
     )
     console.print(f"  dataset:   {run.dataset} {version}")
     console.print(f"  label set: {run.label_set}")

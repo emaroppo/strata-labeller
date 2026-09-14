@@ -1,6 +1,5 @@
 """Classification: one or more classes for a whole sample."""
 
-
 from strata.labels import Choices
 
 from .base import LabelSchema, Result, strip_volatile
@@ -61,16 +60,10 @@ class ClassificationSchema(LabelSchema):
     # ------------------------------------------------------------------
 
     def canonicalize(self, results: list[dict]) -> list[Result]:
-        return [
-            strip_volatile(r) for r in results if r.get("type") == "choices"
-        ]
+        return [strip_volatile(r) for r in results if r.get("type") == "choices"]
 
     def decode_target(self, results: list[Result]) -> list[str]:
-        return [
-            choice
-            for r in results
-            for choice in r.get("value", {}).get("choices", [])
-        ]
+        return [choice for r in results for choice in r.get("value", {}).get("choices", [])]
 
     def encode_target(self, target: list[str]) -> list[Result]:
         if not target:

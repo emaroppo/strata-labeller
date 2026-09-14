@@ -62,8 +62,7 @@ def add_class(xml: str, value: str) -> str:
     """Insert one class into the config's control, preserving everything else."""
     if re.search(r"[<>\"&]", value):
         raise LabelConfigError(
-            f"Class name {value!r} contains a character that is not valid in XML "
-            "(<, >, \" or &)"
+            f'Class name {value!r} contains a character that is not valid in XML (<, >, " or &)'
         )
     control, item = find_control(xml)
     if value in get_classes(xml):

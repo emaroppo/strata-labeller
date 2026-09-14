@@ -40,9 +40,7 @@ def featured(project, tmp_path):
         collections=project.collections,
         metadata_for=lambda p: {"species": f"sp-{p.stem}"},
     )
-    label_set = catalog.label_sets.create(
-        project.label_set_name, project.schema.catalog_schema()
-    )
+    label_set = catalog.label_sets.create(project.label_set_name, project.schema.catalog_schema())
     catalog.annotations.annotate_many(label_set, [(i, Choices(values=["cat"])) for i in ids])
     return project, catalog
 
@@ -119,13 +117,9 @@ def test_a_remote_round_trains_on_the_features_the_project_declares(featured, ho
 
     _remote_round(project, catalog)
 
-    manifest = Manifest.model_validate_json(
-        (host["dataset_dir"] / MANIFEST_NAME).read_text()
-    )
+    manifest = Manifest.model_validate_json((host["dataset_dir"] / MANIFEST_NAME).read_text())
     assert manifest.features == [SPECIES]
-    assert {s.features["species"] for s in manifest.samples} == {
-        f"sp-img{i:03d}" for i in range(8)
-    }
+    assert {s.features["species"] for s in manifest.samples} == {f"sp-img{i:03d}" for i in range(8)}
 
 
 def test_a_host_on_another_catalog_is_refused_before_anything_is_frozen(

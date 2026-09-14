@@ -26,7 +26,9 @@ def stock(project, catalog, labelled: int, total: int):
         paths.append(path)
 
     ids = catalog.ingest(
-        paths, media="image", collections=project.collections,
+        paths,
+        media="image",
+        collections=project.collections,
         metadata_for=lambda p: {"source_path": p.name},
     )
     try:
@@ -268,16 +270,17 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
             path.write_bytes(f"image {i}".encode())
             paths.append(path)
         ids += catalog.ingest(
-            paths, media="image", subtype="frames",
-            metadata={"video": f"vid{video}"}, collections=reloaded.collections,
+            paths,
+            media="image",
+            subtype="frames",
+            metadata={"video": f"vid{video}"},
+            collections=reloaded.collections,
             metadata_for=lambda p: {"source_path": p.name},
         )
     label_set_id = catalog.label_sets.create(
         reloaded.label_set_name, reloaded.schema.catalog_schema()
     )
-    catalog.annotations.annotate_many(
-        label_set_id, [(i, Choices(values=["cat"])) for i in ids]
-    )
+    catalog.annotations.annotate_many(label_set_id, [(i, Choices(values=["cat"])) for i in ids])
 
     assert "not the 20% asked for" in "\n".join(describe(run_round(reloaded, catalog)))
 
@@ -293,9 +296,7 @@ def with_fresh_params(project, block: str):
     from strata.labeller.project import LabellingProject
 
     toml = project.root / "project.toml"
-    text = re.sub(
-        r"\[model\.fresh_params\]\n(?:[^\[]*\n)?", "", toml.read_text()
-    )
+    text = re.sub(r"\[model\.fresh_params\]\n(?:[^\[]*\n)?", "", toml.read_text())
     toml.write_text(text.rstrip("\n") + f"\n\n[model.fresh_params]\n{block}\n")
     return LabellingProject.load(project.root)
 
@@ -383,8 +384,6 @@ def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch)
         def materialise(self, *args, **kwargs):
             raise AssertionError("refetched a version already on disk")
 
-    built = materialise(
-        MaterialiseRequest(dataset_id=7), Context(Refuses(), project.datasets_dir)
-    )
+    built = materialise(MaterialiseRequest(dataset_id=7), Context(Refuses(), project.datasets_dir))
     assert built.directory == version_dir
     assert built.version == 2

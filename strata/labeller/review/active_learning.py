@@ -120,9 +120,7 @@ def rank(samples, scores, strategy=None, empty_share: float = DEFAULT_EMPTY_SHAR
         # has been emitted so far, so the proportion holds at every prefix
         # rather than only over the whole list — a caller taking the top N
         # gets the same mix as one taking all of it.
-        take_nothing = j < len(nothing) and (
-            i >= len(found) or j < empty_share * (len(merged) + 1)
-        )
+        take_nothing = j < len(nothing) and (i >= len(found) or j < empty_share * (len(merged) + 1))
         if take_nothing:
             merged.append(nothing[j])
             j += 1

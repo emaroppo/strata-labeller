@@ -18,9 +18,7 @@ runner = CliRunner()
 def workspace(project, tmp_path, monkeypatch):
     """A project with files on disk and a config naming a catalog."""
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "config.toml").write_text(
-        f'[catalog]\nroot = "{tmp_path / "catalog"}"\n'
-    )
+    (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
 
     def _make(n: int = 6, folder: str = "", sample_type: str | None = None):
         for i in range(n):
@@ -30,18 +28,14 @@ def workspace(project, tmp_path, monkeypatch):
             path.write_bytes(f"image {i}".encode())
         if sample_type:
             toml = project.root / "project.toml"
-            toml.write_text(
-                toml.read_text().replace('type = "image"', f'type = "{sample_type}"')
-            )
+            toml.write_text(toml.read_text().replace('type = "image"', f'type = "{sample_type}"'))
         return project
 
     return _make
 
 
 def run(project, *args):
-    return runner.invoke(
-        app, ["ingest", "-p", str(project.root), "--config", "config.toml", *args]
-    )
+    return runner.invoke(app, ["ingest", "-p", str(project.root), "--config", "config.toml", *args])
 
 
 def catalog_at(tmp_path) -> Catalog:

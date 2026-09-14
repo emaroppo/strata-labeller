@@ -112,8 +112,7 @@ def _on_another_catalog(where: str, served: dict, catalog, config) -> str:
         )
     else:
         message += (
-            " Make this catalog the default in that machine's config.toml, and "
-            "restart its service."
+            " Make this catalog the default in that machine's config.toml, and restart its service."
         )
     return message
 

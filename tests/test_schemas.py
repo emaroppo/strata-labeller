@@ -102,8 +102,13 @@ def test_bbox_canonicalize_keeps_the_geometry_fields():
                 "original_width": 1920,
                 "original_height": 1080,
                 "image_rotation": 0,
-                "value": {"x": 1.0, "y": 2.0, "width": 3.0, "height": 4.0,
-                          "rectanglelabels": ["cat"]},
+                "value": {
+                    "x": 1.0,
+                    "y": 2.0,
+                    "width": 3.0,
+                    "height": 4.0,
+                    "rectanglelabels": ["cat"],
+                },
             }
         ]
     )

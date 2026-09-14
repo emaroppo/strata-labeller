@@ -97,7 +97,7 @@ class LabellingProject(Project):
             template = f"{media}_{spec.task}"
             if template not in schemas.TEMPLATES:
                 raise ProjectError(
-                    f"No labeling template for task = \"{spec.task}\" over {media} samples "
+                    f'No labeling template for task = "{spec.task}" over {media} samples '
                     f"(available: {', '.join(sorted(schemas.TEMPLATES))})"
                 )
             declared = {

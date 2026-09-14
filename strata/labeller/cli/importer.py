@@ -39,9 +39,7 @@ def import_rounds_command(
     if dry_run:
         console.print(f"Would import {len(rounds)} round(s):")
         for metadata in rounds:
-            metrics = ", ".join(
-                f"{k}={v}" for k, v in (metadata.get("metrics") or {}).items()
-            )
+            metrics = ", ".join(f"{k}={v}" for k, v in (metadata.get("metrics") or {}).items())
             console.print(
                 f"  round {metadata.get('round')}: "
                 f"{len(metadata.get('classes') or [])} classes"

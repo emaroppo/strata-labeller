@@ -140,9 +140,7 @@ class FakeLabelStudio:
 
     def answer(self, task_id: int, results: list[dict]) -> None:
         """Stand in for a human submitting an annotation."""
-        self.tasks[task_id]["annotations"] = [
-            {"was_cancelled": False, "result": results}
-        ]
+        self.tasks[task_id]["annotations"] = [{"was_cancelled": False, "result": results}]
 
     def skip(self, task_id: int) -> None:
         self.tasks[task_id]["annotations"] = [{"was_cancelled": True, "result": []}]

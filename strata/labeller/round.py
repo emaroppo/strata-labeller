@@ -46,9 +46,7 @@ def run_round(
     cache: Path | None = None,
 ) -> RoundResult:
     """Freeze a dataset version, materialise it, and train from it."""
-    context = CatalogContext(
-        catalog, project.datasets_dir, cache=cache, on_progress=on_progress
-    )
+    context = CatalogContext(catalog, project.datasets_dir, cache=cache, on_progress=on_progress)
     try:
         frozen = dataset(
             DatasetRequest(

@@ -80,9 +80,11 @@ def test_a_custom_config_may_not_offer_a_class_the_job_does_not_declare(make_pro
 def test_a_custom_config_must_annotate_the_jobs_task(make_project):
     project = make_project("custom", custom=True)
     toml = project.root / "project.toml"
-    toml.write_text(toml.read_text().replace('task = "classification"', 'task = "bbox"').replace(
-        'choice = "multiple"', ""
-    ))
+    toml.write_text(
+        toml.read_text()
+        .replace('task = "classification"', 'task = "bbox"')
+        .replace('choice = "multiple"', "")
+    )
     with pytest.raises(ProjectError, match="annotates classification"):
         LabellingProject.load(project.root)
 

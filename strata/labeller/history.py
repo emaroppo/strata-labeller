@@ -31,9 +31,7 @@ class HistoryRow:
     warm: bool
 
 
-def history(
-    store, dataset: str, metric: str, catalog_id: str | None = None
-) -> list[HistoryRow]:
+def history(store, dataset: str, metric: str, catalog_id: str | None = None) -> list[HistoryRow]:
     """One row per run that recorded ``metric`` over ``dataset``, oldest first.
 
     Within ``catalog_id`` when given: a project's run store can hold runs
@@ -54,9 +52,7 @@ def history(
         run = store.get(run_id)
         parent = run.parent_run_id
         before, now = versions.get(parent), version
-        comparable = (
-            parent in seen and before is not None and now is not None and before <= now
-        )
+        comparable = parent in seen and before is not None and now is not None and before <= now
         rows.append(
             HistoryRow(
                 run=run,

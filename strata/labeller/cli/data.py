@@ -61,9 +61,7 @@ def ingest(
     try:
         label_set_id, _ = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
-        label_set_id = catalog.label_sets.create(
-            project.label_set_name, project.label_set.schema
-        )
+        label_set_id = catalog.label_sets.create(project.label_set_name, project.label_set.schema)
         console.print(f"Created label set '{project.label_set_name}'")
 
     scanned = corpus.scan(data_dir, sample_type.allows)

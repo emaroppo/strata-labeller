@@ -50,7 +50,7 @@ class LabelSchema(Protocol):
 
     @property
     def type(self) -> str:
-        """"<media>_<task>", e.g. "text_classification"."""
+        """ "<media>_<task>", e.g. "text_classification"."""
         ...
 
     @property

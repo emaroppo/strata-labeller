@@ -27,7 +27,9 @@ def _write(tmp_path, body: str):
 
 
 def test_settings_read_the_catalogs_the_file_describes(tmp_path):
-    settings = Settings.load(_write(tmp_path, """
+    path = _write(
+        tmp_path,
+        """
 [catalog]
 default = "text"
 
@@ -36,7 +38,9 @@ root = "images"
 
 [catalog.text]
 root = "text"
-"""))
+""",
+    )
+    settings = Settings.load(path)
     assert settings.catalogs.named().root == "text"
     assert settings.catalogs.named("images").root == "images"
 
@@ -45,14 +49,18 @@ def test_task_urls_use_each_catalogs_own_mount(tmp_path):
     """One catalog's tasks read off `blobs`, another's off `blobs-emails`, in one Label Studio."""
     from strata.labeller.cli._shared import _addressing
 
-    settings = Settings.load(_write(tmp_path, """
+    path = _write(
+        tmp_path,
+        """
 [catalog.main]
 root = "main"
 
 [catalog.emails]
 root = "emails"
 blobs_prefix = "blobs-emails"
-"""))
+""",
+    )
+    settings = Settings.load(path)
     assert _addressing(settings, settings.catalogs.named("emails")).prefix == "blobs-emails"
     assert _addressing(settings, settings.catalogs.named("main")).prefix == "blobs"
 
@@ -86,9 +94,7 @@ def test_a_project_that_names_none_gets_the_default(tmp_path):
 
     root = tmp_path / "job"
     root.mkdir()
-    (root / "project.toml").write_text(
-        '[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n'
-    )
+    (root / "project.toml").write_text('[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n')
     # Empty, not a guess: what "the default" means is the host's business,
     # so a project written before any of this still loads and still works
     assert LabellingProject.load(root).catalog.name == ""
@@ -106,16 +112,19 @@ def test_two_projects_ingest_into_their_own_catalogs(tmp_path, monkeypatch):
     from strata.labeller.cli import app
 
     monkeypatch.chdir(tmp_path)
-    config = _write(tmp_path, f"""
+    config = _write(
+        tmp_path,
+        f"""
 [catalog]
 default = "images"
 
 [catalog.images]
-root = "{tmp_path / 'images'}"
+root = "{tmp_path / "images"}"
 
 [catalog.text]
-root = "{tmp_path / 'text'}"
-""")
+root = "{tmp_path / "text"}"
+""",
+    )
 
     runner = CliRunner()
     for job, catalog_name, count in (("cats", "images", 2), ("notes", "text", 3)):

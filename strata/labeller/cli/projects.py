@@ -202,10 +202,7 @@ def class_add(
                     "Studio UI to match.[/yellow]"
                 )
                 raise typer.Exit(1) from None
-        console.print(
-            f"Label Studio project {ls_project_id} updated — "
-            "refresh the tab to see it."
-        )
+        console.print(f"Label Studio project {ls_project_id} updated — refresh the tab to see it.")
 
     from strata.catalog import CatalogError
 
@@ -219,8 +216,7 @@ def class_add(
         skipped = len(catalog.samples.skipped(label_set_id, project.collections))
         if labelled:
             console.print(
-                f"[dim]{labelled} sample(s) were labelled before this class "
-                f"existed.[/dim]"
+                f"[dim]{labelled} sample(s) were labelled before this class existed.[/dim]"
             )
         if skipped:
             console.print(

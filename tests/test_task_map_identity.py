@@ -40,9 +40,7 @@ B = "20260202T000000-bbbbbbbb"
 def project(tmp_path):
     root = tmp_path / "job"
     root.mkdir()
-    (root / "project.toml").write_text(
-        '[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n'
-    )
+    (root / "project.toml").write_text('[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n')
     return LabellingProject.load(root)
 
 
@@ -158,9 +156,7 @@ def test_unskip_refuses_a_foreign_map(tmp_path, monkeypatch):
 
     root = tmp_path / "job"
     (root / "data" / "raw").mkdir(parents=True)
-    (root / "project.toml").write_text(
-        '[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n'
-    )
+    (root / "project.toml").write_text('[label_set]\nclasses = ["a"]\n\n[data]\ntype = "image"\n')
     sample = root / "data" / "raw" / "a.jpg"
     sample.write_bytes(b"bytes")
     [sample_id] = catalog.ingest([sample], media="image", collections=["job"])
@@ -171,9 +167,7 @@ def test_unskip_refuses_a_foreign_map(tmp_path, monkeypatch):
     project.save_ls_project_id("http://localhost:8080", 3)
     save_task_map(project, 3, {sample_id: 999}, B)
 
-    result = CliRunner().invoke(
-        app, ["unskip", "-p", str(root), "--config", "config.toml"]
-    )
+    result = CliRunner().invoke(app, ["unskip", "-p", str(root), "--config", "config.toml"])
 
     assert result.exit_code == 1
     assert B in result.stdout

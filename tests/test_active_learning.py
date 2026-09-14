@@ -19,9 +19,7 @@ class Sample:
 def scored(*confidences):
     from strata.labels import ChoicesPrediction
 
-    return ChoicesPrediction(
-        values=["a"] * len(confidences), confidences=list(confidences)
-    )
+    return ChoicesPrediction(values=["a"] * len(confidences), confidences=list(confidences))
 
 
 def test_least_confident_comes_first():
@@ -75,7 +73,6 @@ def test_nothing_asserted_is_no_certainty():
     from strata.labels import ChoicesPrediction
 
     assert certainty(ChoicesPrediction()) == 0.0
-
 
 
 # ----------------------------------------------------------------------

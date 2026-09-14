@@ -8,9 +8,7 @@ TEMPLATE_PACKAGE = "strata.labeller.labelstudio.label_configs"
 
 
 def read_template(name: str) -> str:
-    return (
-        resources.files(TEMPLATE_PACKAGE).joinpath(f"{name}.xml").read_text(encoding="utf-8")
-    )
+    return resources.files(TEMPLATE_PACKAGE).joinpath(f"{name}.xml").read_text(encoding="utf-8")
 
 
 def render_template(

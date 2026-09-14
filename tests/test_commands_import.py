@@ -45,9 +45,7 @@ def bare(make_project, tmp_path):
 @pytest.mark.parametrize("command", COMMANDS, ids=lambda c: " ".join(c))
 def test_a_command_fails_on_its_own_terms(command, bare):
     project, config = bare
-    result = runner.invoke(
-        app, [*command, "-p", str(project.root), "--config", str(config)]
-    )
+    result = runner.invoke(app, [*command, "-p", str(project.root), "--config", str(config)])
 
     exception = result.exception
     if isinstance(exception, ModuleNotFoundError | ImportError | AttributeError):

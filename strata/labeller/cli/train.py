@@ -41,7 +41,6 @@ def train(
     """
     project = _load_project(project_path)
 
-
     from ..round import RoundError, describe, run_round
 
     settings = _settings(config_path)

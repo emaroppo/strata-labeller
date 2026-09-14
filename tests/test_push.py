@@ -56,19 +56,24 @@ def stage(make_project, tmp_path, monkeypatch):
         path.write_bytes(name.encode())
         paths.append(path)
     ids = catalog.ingest(
-        paths, media="image", collections=["demo"],
+        paths,
+        media="image",
+        collections=["demo"],
         metadata_for=lambda p: {"source_path": str(p)},
     )
-    label_set_id = catalog.label_sets.create(
-        "demo", ClassificationSchema(classes=["cat", "dog"])
-    )
+    label_set_id = catalog.label_sets.create("demo", ClassificationSchema(classes=["cat", "dog"]))
 
     # A run with a checkpoint on disk, so push has something to predict with
     store = RunStore.local(project.runs_dir)
     run = store.record(
         Run(
-            id="", dataset="demo", dataset_version=1, label_set="demo",
-            model="multilabel", model_version="1", classes=["cat", "dog"],
+            id="",
+            dataset="demo",
+            dataset_version=1,
+            label_set="demo",
+            model="multilabel",
+            model_version="1",
+            classes=["cat", "dog"],
         ),
         {"val_accuracy": 0.9},
     )
@@ -79,7 +84,8 @@ def stage(make_project, tmp_path, monkeypatch):
         from strata.modelling.store import tables as t
 
         conn.execute(
-            update(t.run).where(t.run.c.id == run.id)
+            update(t.run)
+            .where(t.run.c.id == run.id)
             .values(checkpoint=str(store.checkpoint_path(run.id)))
         )
 
@@ -90,9 +96,11 @@ def stage(make_project, tmp_path, monkeypatch):
         row = catalog.samples.by_checksum(_checksum(catalog, sample_id))
         cache.put(
             run.id,
-            {row.checksum: ChoicesPrediction(
-                values=["cat", "dog"], confidences=CONFIDENCES[path.stem]
-            )},
+            {
+                row.checksum: ChoicesPrediction(
+                    values=["cat", "dog"], confidences=CONFIDENCES[path.stem]
+                )
+            },
         )
         by_name[path.stem] = row
 
@@ -117,15 +125,11 @@ def _checksum(catalog, sample_id):
     from strata.catalog.index import tables as t
 
     with catalog.engine.connect() as conn:
-        return conn.execute(
-            select(t.sample.c.checksum).where(t.sample.c.id == sample_id)
-        ).scalar()
+        return conn.execute(select(t.sample.c.checksum).where(t.sample.c.id == sample_id)).scalar()
 
 
 def push(project, config, *args):
-    return runner.invoke(
-        app, ["push", "-p", str(project.root), "--config", str(config), *args]
-    )
+    return runner.invoke(app, ["push", "-p", str(project.root), "--config", str(config), *args])
 
 
 # ----------------------------------------------------------------------
@@ -165,9 +169,7 @@ def test_the_score_shown_is_the_confidence_ranked_on(stage):
     assert prediction["score"] == pytest.approx(0.40)
 
 
-def test_a_push_addresses_the_projects_catalog_not_the_hosts_default(
-    stage, tmp_path, monkeypatch
-):
+def test_a_push_addresses_the_projects_catalog_not_the_hosts_default(stage, tmp_path, monkeypatch):
     """Two catalogs on two blob servers, and the project on the one that is
     not the host's default. Every task has to point at the project's."""
     project, config, fake, _, _, _ = stage
@@ -214,9 +216,7 @@ def test_the_task_map_survives_the_command(stage):
 
     push(project, config)
 
-    saved = json.loads(
-        next((project.state_dir).glob("tasks_*.json")).read_text()
-    )
+    saved = json.loads(next((project.state_dir).glob("tasks_*.json")).read_text())
     # Keyed on sample id; losing it means every task is re-created next time
     assert len(saved["tasks"]) == 3
     assert set(saved["tasks"].values()) == set(fake.tasks)

@@ -38,12 +38,18 @@ ALLOWED = {
 
 #: Third-party imports that would undo the point of a package.
 FORBIDDEN = {
-    "labels": {"torch", "timm", "transformers", "sqlalchemy", "boto3",
-               "fastapi", "label_studio_sdk"},
+    "labels": {
+        "torch",
+        "timm",
+        "transformers",
+        "sqlalchemy",
+        "boto3",
+        "fastapi",
+        "label_studio_sdk",
+    },
     # Thin by design: nothing but what its extras name, and never the
     # frameworks or the value types, or every consumer would carry them.
-    "common": {"torch", "timm", "transformers", "boto3", "fastapi",
-               "label_studio_sdk", "pydantic"},
+    "common": {"torch", "timm", "transformers", "boto3", "fastapi", "label_studio_sdk", "pydantic"},
     "catalog": {"torch", "timm", "transformers", "label_studio_sdk"},
     "modelling": {"label_studio_sdk"},
     # The job names no tool and carries no framework.
