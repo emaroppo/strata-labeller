@@ -85,7 +85,10 @@ def run_round(
         ModellingContext(store=store),
     )
     manifest = Manifest.model_validate_json((built.directory / MANIFEST_NAME).read_text())
-    return RoundResult(run=store.get(record.run_id), manifest=manifest, dataset_dir=built.directory)
+    run = store.get(record.run_id)
+    if run is None:
+        raise RuntimeError(f"Run {record.run_id} was recorded and cannot be read back")
+    return RoundResult(run=run, manifest=manifest, dataset_dir=built.directory)
 
 
 def describe(result: RoundResult) -> list[str]:

@@ -9,6 +9,7 @@ task and the classes remain the job's.
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from .base import LabelSchema, Result, strip_volatile
 from .bbox import BBoxSchema
@@ -90,7 +91,7 @@ def from_label_config(xml: str) -> LabelSchema:
         to_name = _attr(attrs, "toName") or media.data_key
         item = "Choice" if tag == "Choices" else "Label"
         classes = re.findall(rf"<{item}\s[^>]*value=\"([^\"]*)\"", xml)
-        params: dict[str, str] = {"from_name": from_name, "to_name": to_name}
+        params: dict[str, Any] = {"from_name": from_name, "to_name": to_name}
         if schema_cls is ClassificationSchema:
             params["choice"] = _attr(attrs, "choice") or "multiple"
         if schema_cls is SpanSchema:

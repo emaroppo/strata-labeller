@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from strata.catalog import SampleRow
-from strata.labels import feature_digest
+from strata.labels import AnyPrediction, feature_digest
 
 from .active_learning import rank
 
@@ -48,7 +48,7 @@ def feature_values(catalog, pool: Sequence[SampleRow], specs) -> tuple[list[Samp
 class Scored:
     """Predictions for a pool, and where they came from."""
 
-    scores: dict[str, object]
+    scores: dict[str, AnyPrediction]
     reused: int = 0
     made: int = 0
 
@@ -95,14 +95,14 @@ class Queue:
     """What is sent, in order, with a score where there is one."""
 
     ranked: list[SampleRow]
-    scored: dict[int, object]
+    scored: dict[int, AnyPrediction]
     #: How many went first because they were answered two ways.
     disputed: int = 0
 
 
 def plan(
     pool: Sequence[SampleRow],
-    scores: dict[str, object],
+    scores: dict[str, AnyPrediction],
     strategy: Callable,
     *,
     empty_share: float,

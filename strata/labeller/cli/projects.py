@@ -6,6 +6,8 @@ import typer
 from rich.markup import escape
 from rich.table import Table
 
+from strata.catalog import Catalog
+
 from ..project import PROJECTS_DIR, LabellingProject, ProjectError
 from ._shared import (
     ConfigOption,
@@ -104,7 +106,7 @@ def list_projects_cmd() -> None:
     # happens to be the default is how a listing reports numbers that
     # belong to another corpus.
     settings = _settings()
-    catalogs: dict[str, object] = {}
+    catalogs: dict[str, Catalog | None] = {}
 
     def catalog_for_project(project):
         name = project.catalog.name

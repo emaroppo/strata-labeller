@@ -247,7 +247,7 @@ def relink(
     with _exit_on(ProjectError):
         ls_project_id = project.require_ls_project_id(settings.label_studio.url)
 
-    where = addressing.base_url or f"the {addressing.prefix} mount"
+    where = addressing.urls.base_url if addressing.urls else f"the {addressing.prefix} mount"
     console.print(f"[bold]Label Studio project {ls_project_id}[/bold] → {where}\n")
 
     with console.status("Listing tasks..."):
@@ -281,7 +281,7 @@ def relink(
             progress.update(bar, advance=1)
 
     console.print(f"[green]{done:,} task(s) repointed[/green]")
-    if addressing.base_url:
+    if addressing.urls:
         console.print(
             "[dim]These URLs carry an expiry. Run this again if a queue sits "
             "long enough for images to stop loading.[/dim]"

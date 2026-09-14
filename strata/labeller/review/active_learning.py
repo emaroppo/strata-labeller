@@ -7,6 +7,7 @@ types, because which to use is a choice about review time. See
 """
 
 import math
+from collections.abc import Mapping
 
 from strata.labels import Value
 
@@ -151,25 +152,30 @@ def disagreement(prediction: Value, label: Value) -> float:
     return 1.0 - sum(by_class.get(c, 0.0) for c in asserted) / len(asserted)
 
 
-def against(labels: dict[str, Value]):
+def against(labels: Mapping[str, Value]):
     """A ranking strategy over predictions paired with the labels they are checked against.
 
     ``rank`` scores a prediction on its own; a disagreement needs the label
     too. The pairing is by the prediction object, which the queue holds one
     of per sample, so this binds each to its label before ranking.
     """
-    paired: dict[int, Value] = {}
+    return Against(labels)
 
-    def bind(checksum: str, prediction: Value) -> Value:
-        paired[id(prediction)] = labels[checksum]
+
+class Against:
+    """The ranking :func:`against` builds: callable on a prediction, once bound to its label."""
+
+    def __init__(self, labels: Mapping[str, Value]):
+        self._labels = labels
+        self._paired: dict[int, Value] = {}
+
+    def bind[V: Value](self, checksum: str, prediction: V) -> V:
+        self._paired[id(prediction)] = self._labels[checksum]
         return prediction
 
-    def strategy(prediction: Value) -> float:
-        label = paired.get(id(prediction))
+    def __call__(self, prediction: Value) -> float:
+        label = self._paired.get(id(prediction))
         return disagreement(prediction, label) if label is not None else 1.0
-
-    strategy.bind = bind  # type: ignore[attr-defined]
-    return strategy
 
 
 def certainty(prediction: Value) -> float:

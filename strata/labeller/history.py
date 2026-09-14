@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from strata.modelling import Run
+
 #: The number that summarises a run, by task. Defaulting to the
 #: classification one meant a span project reported nothing at all: every
 #: run had metrics, just not that name.
@@ -17,7 +19,7 @@ def headline_metric(task: str) -> str:
 
 @dataclass
 class HistoryRow:
-    run: object
+    run: Run
     value: float
     version: int | None
     #: Against the run's own parent, and only when both were scored on the

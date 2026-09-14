@@ -14,7 +14,7 @@ import json
 from dataclasses import dataclass, field
 
 from strata.catalog import Catalog, SampleRow
-from strata.labels import Choices
+from strata.labels import AnyValue
 
 from ..project import LabellingProject
 from .adapter import Addressing, Task, build_tasks, from_results
@@ -235,7 +235,7 @@ def pull_annotations(
     addressing: Addressing,
     declared: list[str],
     reviewed_only: bool = False,
-) -> tuple[list[tuple[int, Choices | None]], PullReport]:
+) -> tuple[list[tuple[int, AnyValue | None]], PullReport]:
     """Turn a Label Studio export into catalog writes.
 
     A task with no annotation is left alone rather than recorded as empty:
@@ -250,7 +250,7 @@ def pull_annotations(
     annotation, and an untouched one has none.
     """
     report = PullReport()
-    items: list[tuple[int, Choices | None]] = []
+    items: list[tuple[int, AnyValue | None]] = []
     known = set(declared)
     stored = schema.catalog_schema()
 

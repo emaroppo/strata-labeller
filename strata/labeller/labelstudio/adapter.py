@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from strata.catalog import Catalog, SampleRow, SignedUrls, blob_path, suffix_of
-from strata.labels import AnyValue, Choices, Prediction
+from strata.labels import AnyPrediction, AnyValue
 
 from .schemas import LabelSchema
 
@@ -25,7 +25,7 @@ LOCAL_FILES = "/data/local-files/?d="
 # ----------------------------------------------------------------------
 
 
-def to_results(value: Choices, schema: LabelSchema) -> list[dict]:
+def to_results(value: AnyValue, schema: LabelSchema) -> list[dict]:
     """A neutral value as Label Studio results."""
     return schema.encode_target(list(value.values))
 
@@ -45,7 +45,7 @@ def from_results(results: list[dict], schema: LabelSchema) -> AnyValue:
     return schema.value_type(values=list(schema.decode_target(results)))
 
 
-def prediction_to_results(prediction: Prediction, schema: LabelSchema) -> list[dict]:
+def prediction_to_results(prediction: AnyPrediction, schema: LabelSchema) -> list[dict]:
     """A model's output as Label Studio results.
 
     Delegated to the schema, so this is only as general as the schemas are —

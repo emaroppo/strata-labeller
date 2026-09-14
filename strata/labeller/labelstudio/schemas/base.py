@@ -13,6 +13,10 @@ carries.
 from string import Template
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
+from strata.labels import Boxes, Choices, Spans
+
+from .media import Media
+
 Result = dict[str, Any]
 
 # Fields Label Studio attaches that say nothing about the annotation itself;
@@ -30,15 +34,29 @@ class TemplateSyntax(Template):
 class LabelSchema(Protocol):
     """The contract every task type implements."""
 
-    #: "<media>_<task>", e.g. "text_classification"
-    type: str
-    #: Key under task["data"] Label Studio reads the sample from
-    data_key: str
+    #: Which task this is, as the catalog names it: "classification", "bbox", "span"
+    task: ClassVar[str]
+    #: What an annotation of this type is, so the boundary builds the value
+    #: the catalog stores rather than one of its own
+    value_type: ClassVar[type[Choices] | type[Spans] | type[Boxes]]
     #: The Label Studio control this schema annotates with
     control_tag: ClassVar[str]
+    media: Media
     classes: list[str]
     from_name: str
     to_name: str
+
+    def __init__(self, classes: list[str], media: Media = ..., **params: Any) -> None: ...
+
+    @property
+    def type(self) -> str:
+        """"<media>_<task>", e.g. "text_classification"."""
+        ...
+
+    @property
+    def data_key(self) -> str:
+        """Key under task["data"] Label Studio reads the sample from."""
+        ...
 
     def catalog_schema(self):
         """This schema as the catalog stores it, with Label Studio left behind.

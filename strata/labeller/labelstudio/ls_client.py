@@ -1,6 +1,7 @@
 from collections.abc import Callable
 
 from label_studio_sdk import PredictionRequest
+from label_studio_sdk.actions.types import CreateActionsRequestSelectedItemsIncluded
 from label_studio_sdk.client import LabelStudio
 
 from ..config import Settings
@@ -24,6 +25,8 @@ class LSClient:
             title=name,
             label_config=self.project.schema.label_config(),
         )
+        if project.id is None:
+            raise RuntimeError("Label Studio created a project and answered with no id")
         return project.id
 
     # ------------------------------------------------------------------
@@ -59,7 +62,7 @@ class LSClient:
         self.client.actions.create(
             id="delete_tasks_annotations",
             project=project_id,
-            selected_items={"all": False, "included": task_ids},
+            selected_items=CreateActionsRequestSelectedItemsIncluded(all_=False, included=task_ids),
         )
 
     def clear_predictions(self, project_id: int, task_ids: list[int]) -> None:
@@ -73,7 +76,7 @@ class LSClient:
         self.client.actions.create(
             id="delete_tasks_predictions",
             project=project_id,
-            selected_items={"all": False, "included": task_ids},
+            selected_items=CreateActionsRequestSelectedItemsIncluded(all_=False, included=task_ids),
         )
 
     # ------------------------------------------------------------------
@@ -143,7 +146,7 @@ class LSClient:
         offers — so callers pass the task's existing data with one key
         changed, not just the key.
         """
-        self.client.tasks.update(task_id, data=data)
+        self.client.tasks.update(str(task_id), data=data)
 
     def export_raw(self, project_id: int) -> list[dict]:
         """The export snapshot, unconverted.
@@ -178,7 +181,9 @@ class LSClient:
             self.client.actions.create(
                 id="delete_tasks_predictions",
                 project=project_id,
-                selected_items={"all": False, "included": [t for t, _, _ in to_push]},
+                selected_items=CreateActionsRequestSelectedItemsIncluded(
+                    all_=False, included=[t for t, _, _ in to_push]
+                ),
             )
 
         requests = [

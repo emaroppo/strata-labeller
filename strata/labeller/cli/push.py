@@ -4,6 +4,8 @@ from pathlib import Path
 
 import typer
 
+from strata.labels import AnyPrediction, AnyValue
+
 from ..project import ProjectError
 from ._remote import _follow, _trainer
 from ._shared import (
@@ -28,7 +30,7 @@ from ._shared import (
 
 def _run_for_push(
     settings, project, store, run_id, remote: bool, catalog_id: str | None = None
-) -> int | None:
+) -> str | None:
     """Which run scores this push, in the numbering of whoever will score it.
 
     Run ids belong to the store that issued them. Asking a modelling host to
@@ -74,7 +76,6 @@ def _remote_predictions(
     """
     from pydantic import TypeAdapter
 
-    from strata.labels import AnyPrediction
     from strata.modelling.remote.client import RemoteError
     from strata.modelling.remote.wire import PredictionRequest
 
@@ -192,6 +193,7 @@ def push(
             )
         save_task_map(project, ls_project_id, task_map, catalog.id)
 
+    labels: dict[str, AnyValue] = {}
     if review_imports:
         pool = catalog.samples.unreviewed(label_set_id, project.collections)
         if not pool:
@@ -207,7 +209,7 @@ def push(
 
     store = RunStore.local(project.runs_dir)
     remote = bool(settings.modelling.url)
-    scores: dict[str, object] = {}
+    scores: dict[str, AnyPrediction] = {}
     scoring_run = _run_for_push(settings, project, store, run_id, remote, catalog.id)
 
     if predictions and scoring_run is not None:

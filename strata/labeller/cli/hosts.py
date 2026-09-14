@@ -63,6 +63,7 @@ def models(
         project = None
 
     verdict = None
+    ref, servable = "", False
     if project is not None:
         ref = project.model.ref
         if ":" in ref:
