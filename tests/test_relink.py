@@ -7,7 +7,7 @@ describable.
 
 import pytest
 
-from strata.catalog import EVERYTHING
+from strata.catalog import EVERYTHING, SignedUrls
 from strata.labeller.labelstudio.adapter import Addressing, blob_url
 from strata.labeller.labelstudio.sync import relink
 from strata.labels import ClassificationSchema
@@ -15,7 +15,7 @@ from strata.labels import ClassificationSchema
 SECRET = "shared with the server"
 
 LOCAL = Addressing(prefix="blobs")
-SERVED = Addressing(prefix="blobs", base_url="http://minipc:8081", secret=SECRET)
+SERVED = Addressing(prefix="blobs", urls=SignedUrls("http://minipc:8081", SECRET))
 
 
 @pytest.fixture
@@ -81,9 +81,9 @@ def test_a_served_task_re_signs(stocked, monkeypatch):
     stale = SERVED.url_for(samples[0])
 
     # A queue that sat long enough for the signature to move on
-    import strata.labeller.labelstudio.adapter as adapter
+    import strata.catalog.storage.signing as signing
 
-    monkeypatch.setattr(adapter, "window_expiry", lambda ttl=0: 9_999_999_999)
+    monkeypatch.setattr(signing, "window_expiry", lambda ttl=0: 9_999_999_999)
     report = relink([task(1, stale)], catalog, SERVED, "image")
 
     # The whole reason this is re-runnable: an expired link is a task that

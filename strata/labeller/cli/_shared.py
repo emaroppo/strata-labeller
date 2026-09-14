@@ -113,19 +113,17 @@ def _addressing(settings, config):
     the wrong catalog's secret: right on every host with one catalog,
     wrong on a host with several, and nothing to say which.
     """
-    from ..labelstudio.adapter import AdapterError, Addressing
+    from strata.catalog import SigningError
+
+    from ..labelstudio.adapter import Addressing
 
     if config is None:
         raise TypeError(
             "_addressing needs the project's catalog config; the host's default "
             "catalog is not a stand-in for it."
         )
-    with _exit_on(AdapterError):
-        return Addressing(
-            prefix=config.blobs_prefix,
-            base_url=config.serve_url,
-            secret=config.blob_secret,
-        )
+    with _exit_on(SigningError):
+        return Addressing(prefix=config.blobs_prefix, urls=config.signed_urls())
 
 
 def _local_paths(root: Path, samples) -> list[Path]:

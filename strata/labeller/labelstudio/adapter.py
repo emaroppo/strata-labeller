@@ -9,20 +9,15 @@ See ``docs/adr/0013`` and ``docs/adr/0001``.
 
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import quote, unquote
 
-from strata.catalog import Catalog, SampleRow, blob_path
-from strata.catalog.storage.signing import DEFAULT_TTL, sign, window_expiry
+from strata.catalog import Catalog, SampleRow, SignedUrls, blob_path, suffix_of
 from strata.labels import AnyValue, Choices, Prediction
 
 from .schemas import LabelSchema
 
 #: What Label Studio serves local files under.
 LOCAL_FILES = "/data/local-files/?d="
-
-
-class AdapterError(Exception):
-    """A task or annotation that cannot be carried across the boundary."""
 
 
 # ----------------------------------------------------------------------
@@ -71,49 +66,28 @@ class Addressing:
     """How a task refers to its sample, in both directions.
 
     One object so the two directions cannot disagree. Writes the mount
-    form or, with ``base_url``, a signed HTTP URL; reads both, so old tasks
-    keep resolving until relinked. See ``docs/adr/0013``.
+    form or, with ``urls``, the catalog's signed HTTP URL; reads both, so
+    old tasks keep resolving until relinked. See ``docs/adr/0013``.
     """
 
     #: What Label Studio serves the blob mount under. A directory name that
     #: existing tasks point at, so changing it is a relink, not a rename.
     prefix: str = "blobs"
-    #: The serving API, e.g. ``http://minipc:8081``. Empty means the mount.
-    base_url: str = ""
-    #: Signs blob URLs. Required once ``base_url`` is set — a browser
-    #: fetching a sample cannot carry a header, so the URL is the credential.
-    secret: str = ""
-    ttl: int = DEFAULT_TTL
-
-    def __post_init__(self):
-        if self.base_url and not self.secret:
-            raise AdapterError(
-                "Serving blobs over HTTP needs a signing secret, or the URLs "
-                "authorise nothing. Set $STRATA_BLOB_SECRET to the same value "
-                "the server was started with."
-            )
+    #: The catalog's blob server, which signs its own URLs. None means the
+    #: mount.
+    urls: SignedUrls | None = None
 
     def url_for(self, sample: SampleRow) -> str:
         """Where Label Studio fetches this sample's bytes, whatever it is."""
-        if not self.base_url:
+        if self.urls is None:
             return blob_url(sample, self.prefix)
-        name = blob_path(sample.checksum, _suffix_of(sample)).rsplit("/", 1)[-1]
-        expires = window_expiry(self.ttl)
-        signature = sign(sample.checksum, self.secret, expires)
-        return f"{self.base_url.rstrip('/')}/blob/{name}?exp={expires}&sig={signature}"
+        return self.urls.url_for(sample)
 
     def checksum_from(self, url: str) -> str | None:
         """The sample a task's URL names, whichever form it is in."""
         if LOCAL_FILES in url:
             return checksum_from_url(url, self.prefix)
-        path = urlparse(url).path
-        if "/blob/" not in path:
-            return None
-        return _digest_or_none(Path(path.rsplit("/blob/", 1)[1]).stem)
-
-
-def _suffix_of(sample: SampleRow) -> str:
-    return Path((sample.metadata or {}).get("source_path") or "").suffix.lower()
+        return SignedUrls.checksum_from(url)
 
 
 def _digest_or_none(stem: str) -> str | None:
@@ -135,7 +109,7 @@ def blob_url(sample: SampleRow, prefix: str) -> str:
     Percent-encoded, because a path that reaches a query string unescaped
     breaks on characters a checksum will never contain but a suffix might.
     """
-    return f"{LOCAL_FILES}{prefix}/{quote(blob_path(sample.checksum, _suffix_of(sample)))}"
+    return f"{LOCAL_FILES}{prefix}/{quote(blob_path(sample.checksum, suffix_of(sample)))}"
 
 
 def checksum_from_url(url: str, prefix: str) -> str | None:
