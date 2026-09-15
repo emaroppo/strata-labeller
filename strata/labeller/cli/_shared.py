@@ -39,9 +39,8 @@ ProjectOption = typer.Option(
 
 def _config_path(value: Path | None) -> Path:
     """The host file: ``--config``, else ``$STRATA_CONFIG``, else ``./config.toml``."""
-    from strata.project import settings_path
-
     from strata.catalog.config import CatalogConfigError
+    from strata.project import settings_path
 
     with _exit_on(CatalogConfigError):
         return settings_path(value)
