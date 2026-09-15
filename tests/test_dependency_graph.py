@@ -100,7 +100,12 @@ def _modules(package: str):
     anything, which is how this suite spent its first minutes: green, and
     scanning a directory that does not exist.
     """
-    installed = importlib.import_module(f"strata.{package}")
+    try:
+        installed = importlib.import_module(f"strata.{package}")
+    except ModuleNotFoundError:
+        # Alone, this package has only what it depends on installed; the
+        # workspace, where every package is, checks the rest.
+        pytest.skip(f"strata.{package} is not installed here")
     roots = [pathlib.Path(p) for p in installed.__path__]
     found = sorted(path for root in roots for path in root.rglob("*.py"))
     assert found, f"no modules found under {roots} — this suite would pass vacuously"
