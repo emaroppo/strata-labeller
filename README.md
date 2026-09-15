@@ -146,12 +146,16 @@ Most take `-p/--project`; all take `--config`.
 
 ## Decisions
 
-Recorded in the umbrella repository's `docs/adr/`: ids mean nothing
+Recorded in the strata umbrella repository's `docs/adr/` (https://github.com/emaroppo/strata/tree/main/docs/adr): ids mean nothing
 outside their catalog (0008), disagreement is recorded (0009), the review
 queue is two pools (0012), and Label Studio stops at the adapter (0013).
 
 ## Tests
 
 ```bash
-uv run pytest packages/labeller
+.github/sibling-wheels.sh labels common catalog modelling project   # the strata packages this one needs, until they are on an index
+uv sync --find-links dist --group dev
+uv run pytest
 ```
+
+Inside the strata workspace: `uv run pytest packages/labeller` from its root.
