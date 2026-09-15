@@ -53,3 +53,17 @@ def test_a_command_fails_on_its_own_terms(command, bare):
             f"'{' '.join(command)}' did not reach its own logic: "
             f"{type(exception).__name__}: {exception}"
         )
+
+
+def test_the_environment_names_the_config_when_none_is_given(bare, monkeypatch):
+    """``$STRATA_CONFIG`` is read where ``--config`` is not given (docs/adr/0019)."""
+    project, config = bare
+    monkeypatch.setenv("STRATA_CONFIG", str(config))
+    result = runner.invoke(app, ["report", "-p", str(project.root)])
+    assert not isinstance(result.exception, ModuleNotFoundError | ImportError | AttributeError)
+    assert "absent.toml" not in result.output
+
+    monkeypatch.setenv("STRATA_CONFIG", str(config.parent / "absent.toml"))
+    result = runner.invoke(app, ["report", "-p", str(project.root)])
+    assert result.exit_code == 1
+    assert "STRATA_CONFIG" in result.output and "does not exist" in result.output

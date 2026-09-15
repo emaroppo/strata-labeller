@@ -37,8 +37,22 @@ ProjectOption = typer.Option(
 )
 
 
+def _config_path(value: Path | None) -> Path:
+    """The host file: ``--config``, else ``$STRATA_CONFIG``, else ``./config.toml``."""
+    from strata.project import settings_path
+
+    from strata.catalog.config import CatalogConfigError
+
+    with _exit_on(CatalogConfigError):
+        return settings_path(value)
+
+
 ConfigOption = typer.Option(
-    "config.toml", "--config", help="Host settings: Label Studio URL and API key"
+    None,
+    "--config",
+    callback=_config_path,
+    show_default="$STRATA_CONFIG, else config.toml",
+    help="Host settings: catalogs, the modelling host, Label Studio",
 )
 
 
@@ -164,11 +178,11 @@ def _catalog_for(settings, config_path: Path, create: bool = False, name: str = 
         raise typer.Exit(1) from None
 
 
-def _settings(config_path: Path = Path("config.toml")):
+def _settings(config_path: Path | None = None):
     """Host settings, or an exit saying what the file gets wrong.
 
-    Several catalogs and no default is refused at load. See
-    ``docs/adr/0020``.
+    ``None`` resolves as ``--config`` does. Several catalogs and no
+    default is refused at load. See ``docs/adr/0020``.
     """
     from strata.catalog.config import CatalogConfigError
 
