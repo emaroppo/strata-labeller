@@ -9,7 +9,7 @@ import json
 import shutil
 
 import pytest
-from toy_model import TOY_SOURCE
+from toy_labelling_model import TOY_SOURCE
 
 from strata.catalog import Catalog, CatalogError
 from strata.labeller.round import RoundError, describe, run_round

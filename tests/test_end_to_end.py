@@ -11,7 +11,7 @@ It needs no ML framework: the model is nine lines and imports nothing.
 import json
 import shutil
 
-from toy_model import TOY_SOURCE
+from toy_labelling_model import TOY_SOURCE
 
 from strata.catalog import EVERYTHING, Catalog
 from strata.modelling import PredictRequest, RunStore, TrainRequest, predict, train
