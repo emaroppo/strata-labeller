@@ -92,15 +92,18 @@ def _exported(package: types.ModuleType) -> set[str]:
 
 
 def _modules(package: str):
-    """Every module in a package, and never an empty list.
+    """Every module in a package as installed, and never an empty list.
 
-    A path that resolves to nothing makes all of these pass without reading
+    Read from the installed package rather than a sibling directory, so
+    the check is the same once the packages are repositories apart. A path
+    that resolves to nothing makes all of these pass without reading
     anything, which is how this suite spent its first minutes: green, and
     scanning a directory that does not exist.
     """
-    root = pathlib.Path(__file__).resolve().parents[2] / package / "strata" / package
-    found = sorted(root.rglob("*.py"))
-    assert found, f"no modules found under {root} — this suite would pass vacuously"
+    installed = importlib.import_module(f"strata.{package}")
+    roots = [pathlib.Path(p) for p in installed.__path__]
+    found = sorted(path for root in roots for path in root.rglob("*.py"))
+    assert found, f"no modules found under {roots} — this suite would pass vacuously"
     return found
 
 
