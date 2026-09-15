@@ -18,9 +18,8 @@ class Media:
 
 IMAGE = Media(name="image", data_key="image")
 
-# Documents are served from the same local-files mount as images; the
-# templates ask Label Studio to fetch them with valueType="url", so a text
-# project keeps every path, cache and export mechanism images use.
+# Documents are served the way images are, and fetched with
+# valueType="url". docs/adr/0013
 TEXT = Media(name="text", data_key="text")
 
 MEDIA: dict[str, Media] = {m.name: m for m in (IMAGE, TEXT)}

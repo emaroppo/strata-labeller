@@ -1,13 +1,8 @@
 """Keeping Label Studio and the catalog in step.
 
-One direction each way, and the catalog wins. Label Studio is where a human
-answers questions; the catalog is what remembers. That ordering is what lets
-a Label Studio project be deleted and rebuilt without losing anything, and
-it is why nothing here treats a task id as worth preserving.
-
-Task ids are cached rather than stored. A sample is recognised by the blob
-its task points at, so the map can always be rebuilt by listing tasks — the
-cache only saves the listing.
+One direction each way, and the catalog wins. Task ids are cached rather
+than stored: a sample is recognised by the blob its task points at, so the
+map can always be rebuilt by listing tasks. See ``docs/adr/0029``.
 """
 
 import json
@@ -58,7 +53,7 @@ def task_map_catalog(project: LabellingProject, ls_project_id: int) -> str | Non
     """Which catalog the cached map was written against, if it says.
 
     ``None`` for a map written before it recorded one, which is not the
-    same as a map that disagrees — see :func:`load_task_map`.
+    same as a map that disagrees. See ``docs/adr/0008``.
     """
     path = task_map_path(project, ls_project_id)
     if not path.exists():
@@ -105,8 +100,7 @@ def save_task_map(
     path = task_map_path(project, ls_project_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        # Stamped on every write, so a map adopted from before this becomes
-        # a guarded one the first time anything touches it
+        # Stamped on every write. docs/adr/0008
         "catalog": catalog_id or "",
         "tasks": {str(k): v for k, v in mapping.items()},
     }
@@ -135,14 +129,9 @@ def relink(
 ) -> RelinkReport:
     """Work out how each task's image URL should now read.
 
-    Two jobs, and they are the same operation. It moves tasks from the local
-    mount onto the serving API, which is what lets the mount go away. It also
-    re-signs: a signed URL expires, so a task that sits in a review queue
-    longer than the signature's life stops loading, and running this again
-    is the fix.
-
-    Computed here and applied by the caller, so a dry run costs nothing and
-    an interrupted apply leaves the rest still describable.
+    Two jobs, one operation: moving tasks off the mount onto the serving
+    API, and re-signing (``docs/adr/0013``). Computed here and applied by
+    the caller (``docs/adr/0030``).
     """
     report = RelinkReport()
     for task in tasks:
@@ -199,8 +188,8 @@ def tasks_to_push(
 ) -> tuple[list[Task], PushReport]:
     """Tasks for samples Label Studio does not have yet.
 
-    Skipping what is already there is what makes a push resumable: an
-    interrupted one can simply be run again.
+    Skipping what is already there is what makes a push resumable. See
+    ``docs/adr/0032``.
     """
     wanted = [s for s in samples if s.id not in existing]
     report = PushReport(pushed=len(wanted), already_present=len(samples) - len(wanted))
@@ -215,10 +204,8 @@ def tasks_to_push(
 def _was_opened(annotation: dict) -> bool:
     """Whether a person has actually been in this annotation.
 
-    Any of three marks will do. ``lead_time`` is the seconds Label Studio
-    measured; a draft means they started; ``updated_by`` means they saved.
-    An annotation that arrived through an import and was never opened
-    carries none of them.
+    Any of three marks will do: ``lead_time``, a draft, or ``updated_by``.
+    See ``docs/adr/0028``.
     """
     return bool(
         annotation.get("lead_time")
@@ -238,16 +225,9 @@ def pull_annotations(
 ) -> tuple[list[tuple[int, AnyValue | None]], PullReport]:
     """Turn a Label Studio export into catalog writes.
 
-    A task with no annotation is left alone rather than recorded as empty:
-    nobody has answered it, and writing an empty value would claim they had.
-    A task marked cancelled is a skip — reviewed, nothing applicable.
-
-    ``reviewed_only`` keeps back annotations nobody has opened. It matters
-    when a project was seeded from somewhere else: those tasks arrive
-    already answered, an export writes every answer back as a human one,
-    and a partly-reviewed queue then hands back the seed's own guesses
-    stamped as ground truth. Label Studio records the time spent on an
-    annotation, and an untouched one has none.
+    A task with no annotation is left alone rather than recorded as empty,
+    and a cancelled one is a skip (``docs/adr/0029``). ``reviewed_only``
+    keeps back annotations nobody has opened (``docs/adr/0028``).
     """
     report = PullReport()
     items: list[tuple[int, AnyValue | None]] = []
@@ -276,10 +256,8 @@ def pull_annotations(
             continue
 
         value = from_results(schema.canonicalize(annotation.get("result") or []), schema)
-        # Which classes a value asserts is the label type's own question,
-        # and every schema answers it — reading `values` as class names is
-        # true only for classification, where they happen to be strings.
-        # For spans they are Span objects, which do not even compare.
+        # Which classes a value asserts is the label type's own question.
+        # docs/adr/0039
         report.undeclared |= stored.classes_asserted(value) - known
         items.append((sample.id, value))
         report.annotated += 1

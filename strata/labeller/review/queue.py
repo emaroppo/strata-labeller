@@ -21,14 +21,13 @@ class Coverage:
     """Each sample's declared features, and the samples that lack one."""
 
     by_checksum: dict[str, dict]
-    #: Samples missing a declared feature. Left out of the queue rather than
-    #: scored on a blank, and said out loud: a queue that only surfaces
-    #: covered samples never gets the rest labelled.
+    #: Samples missing a declared feature, left out of the queue and said
+    #: out loud. docs/adr/0011
     uncovered: list[SampleRow] = field(default_factory=list)
 
     @property
     def digests(self) -> dict[str, str]:
-        """What keys a cached prediction: the third input, per sample."""
+        """What keys a cached prediction: the third input, per sample. See ``docs/adr/0006``."""
         return {checksum: feature_digest(values) for checksum, values in self.by_checksum.items()}
 
 
@@ -112,9 +111,7 @@ def plan(
     """Order the queue: disputed samples first, then the pool by ``strategy``, cut at ``limit``.
 
     Disputed samples have an answer, so they are not in the pool; they are
-    added, and ahead of the ranking, because where they would land there
-    depends on the model's opinion, which has no bearing on two people
-    disagreeing. See ``docs/adr/0009``.
+    added, ahead of the ranking. See ``docs/adr/0009``.
     """
     if scores:
         ranked = rank(pool, scores, strategy, empty_share=empty_share)

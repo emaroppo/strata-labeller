@@ -4,7 +4,7 @@ A template is ``<media>_<task>``: the task is the project's ``[label_set]``,
 the media is its sample type's. A project with a labeling config of its
 own (``[label_studio] config``) has the schema read from that XML, so the
 control names Label Studio already knows stay authoritative, while the
-task and the classes remain the job's.
+task and the classes remain the job's. See ``docs/adr/0016``.
 """
 
 import re
@@ -30,8 +30,8 @@ class TemplateSpec:
         return self.schema.control_tag
 
 
-# The valid media/task combinations, which is not their product: boxes
-# only make sense on images, character spans only on text
+# The valid media/task combinations, which is not their product.
+# docs/adr/0014
 TEMPLATES: dict[str, TemplateSpec] = {
     "image_classification": TemplateSpec(ClassificationSchema, IMAGE),
     "image_bbox": TemplateSpec(BBoxSchema, IMAGE),
@@ -96,10 +96,8 @@ def from_label_config(xml: str) -> LabelSchema:
         if schema_cls is ClassificationSchema:
             params["choice"] = _attr(attrs, "choice") or "multiple"
         if schema_cls is SpanSchema:
-            # What the config permits is what reviewers will produce, so it
-            # is what the label set has to accept. Overlap has no attribute
-            # to read — Label Studio always allows it — so it stays declared
-            # in project.toml.
+            # What the config permits, the label set has to accept; overlap
+            # has no attribute, so it stays in project.toml. docs/adr/0014
             params["multi_label"] = _attr(attrs, "choice") == "multiple"
         return schema_cls(classes, media=media, **params)
 

@@ -101,8 +101,7 @@ def describe(result: RoundResult) -> list[str]:
         and manifest.val_ratio_achieved is not None
         and abs(manifest.val_ratio_achieved - manifest.val_ratio) > 0.02
     ):
-        # Grouping can make the target unreachable, and a val figure read
-        # without knowing that is misleading
+        # Grouping can make the target unreachable. docs/adr/0003
         lines.append(
             f"  validation is {manifest.val_ratio_achieved:.0%}, not the "
             f"{manifest.val_ratio:.0%} asked for — groups are indivisible"

@@ -98,13 +98,8 @@ def list_projects_cmd() -> None:
         )
         return
 
-    # Counts live in the catalog now, and a project can be listed without
-    # one — a project that has never ingested is still a project.
-    #
-    # Opened per project rather than once: two projects on one host need
-    # not draw from the same catalog, and counting both against whichever
-    # happens to be the default is how a listing reports numbers that
-    # belong to another corpus.
+    # Counts live in the catalog, opened per project; a project that has
+    # never ingested is still listed. docs/adr/0020
     settings = _settings()
     catalogs: dict[str, Catalog | None] = {}
 
@@ -182,8 +177,7 @@ def class_add(
 
     with _exit_on(ProjectError):
         # No inference from what is in use: the label set holds the class
-        # list now, and guessing it from annotations was how an unpinned
-        # project got one before there was anywhere to pin it
+        # list. docs/adr/0014
         classes = project.add_classes(names)
     console.print(f"[green]Added {', '.join(names)}[/green] — classes: {', '.join(classes)}")
 
@@ -228,10 +222,9 @@ def class_add(
 def _add_to_label_set(project: LabellingProject, settings, classes: list[str]) -> None:
     """Widen the catalog's label set to match the project's class list.
 
-    Both have to move together: the labeling config Label Studio renders
-    comes from project.toml, while what an export is validated against comes
-    from the label set. A class in one and not the other means a reviewer can
-    apply a label the catalog will then refuse.
+    Both have to move together: the labeling config comes from
+    project.toml, and an export is validated against the label set. See
+    ``docs/adr/0016``.
     """
     from strata.catalog import CatalogError
 
@@ -241,15 +234,14 @@ def _add_to_label_set(project: LabellingProject, settings, classes: list[str]) -
     try:
         label_set_id, schema = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
-        # No label set yet: ingest creates it from project.toml, so the
-        # classes arrive with it
+        # No label set yet: ingest creates it from project.toml.
+        # docs/adr/0016
         return
 
     added = [c for c in classes if c not in schema.classes]
     if not added:
         return
-    # Append-only, because a checkpoint maps output neurons to this list by
-    # position and a run records the list it trained with
+    # Append-only. docs/adr/0005
     catalog.label_sets.set_classes(
         label_set_id, schema.model_copy(update={"classes": list(classes)})
     )
@@ -281,9 +273,8 @@ def class_list(
     declared = set(project.label_set.classes)
     drifted = set(schema.classes) ^ declared
     if declared and drifted:
-        # Label Studio renders its config from project.toml while an export
-        # is validated against the label set, so a class in one and not the
-        # other lets a reviewer apply a label the catalog then refuses
+        # A class in one and not the other lets a reviewer apply a label
+        # the catalog then refuses. docs/adr/0016
         console.print(
             f"[yellow]project.toml and the label set disagree: "
             f"{', '.join(sorted(drifted))}[/yellow]"

@@ -68,8 +68,7 @@ class LSClient:
     def clear_predictions(self, project_id: int, task_ids: list[int]) -> None:
         """Take the pre-annotations off the given tasks.
 
-        For a blind second look: a task shown with what the model thought
-        is not a second opinion, it is the first one again.
+        For a blind second look. See ``docs/adr/0028``.
         """
         if not task_ids:
             return
@@ -106,8 +105,7 @@ class LSClient:
     ) -> dict[int, int]:
         """Create tasks from :class:`adapter.Task` and map sample id -> task id.
 
-        Chunked; a chunk that fails leaves the ones before it created, so
-        the map is returned as it goes and a re-run skips what exists.
+        Chunked, with the map returned as it goes. See ``docs/adr/0013``.
         """
         mapping: dict[int, int] = {}
         for i in range(0, len(tasks), chunk_size):
@@ -120,8 +118,7 @@ class LSClient:
             task_ids = (response.model_extra or {}).get("task_ids") or []
             if len(task_ids) != len(batch):
                 # Without a positional match there is no saying which task is
-                # which, and guessing would corrupt the map. The tasks exist;
-                # --rebuild-map recovers the mapping by listing them.
+                # which; --rebuild-map recovers the mapping. docs/adr/0032
                 continue
             mapping.update(
                 {task.sample_id: task_id for task, task_id in zip(batch, task_ids, strict=True)}

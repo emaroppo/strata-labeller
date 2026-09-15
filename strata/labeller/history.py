@@ -4,9 +4,7 @@ from dataclasses import dataclass, field
 
 from strata.modelling import Run, Unchecked
 
-#: The number that summarises a run, by task. Defaulting to the
-#: classification one meant a span project reported nothing at all: every
-#: run had metrics, just not that name.
+#: The number that summarises a run, by task. docs/adr/0035
 HEADLINE_METRIC = {
     "classification": "val_accuracy",
     "span": "val_span_f1",
@@ -23,8 +21,7 @@ class HistoryRow:
     value: float
     version: int | None
     #: Against the run's own parent, and only when both were scored on the
-    #: same held-out samples. None means "cannot be compared", which is not
-    #: the same statement as "did not move".
+    #: same held-out samples. None means "cannot be compared". docs/adr/0035
     delta: float | None
     #: Whether it continued a run in the store. False is a cold start.
     warm: bool
@@ -36,16 +33,9 @@ class HistoryRow:
 def history(store, dataset: str, metric: str, catalog_id: str | None = None) -> list[HistoryRow]:
     """One row per run that recorded ``metric`` over ``dataset``, oldest first.
 
-    Within ``catalog_id`` when given: a project's run store can hold runs
-    from a catalog it no longer names, and a delta across the two
-    measures nothing.
-
-    The delta rule is the whole reason this is not a plain dump of the
-    store: a warm-started number means something against its parent and
-    nothing against a run from another lineage. A dataset version going
-    backwards means the lineage crossed in from the old layout, where the
-    split was recomputed every round, and comparing those measured nothing
-    but a change of validation set.
+    Within ``catalog_id`` when given (``docs/adr/0008``). A delta is taken
+    only against a run's own parent, and not across a dataset version
+    going backwards (``docs/adr/0035``).
     """
     rows: list[HistoryRow] = []
     seen: dict[str, float] = {}
@@ -73,8 +63,7 @@ def history(store, dataset: str, metric: str, catalog_id: str | None = None) -> 
 def unchecked_share(rows: list[Unchecked], side: str) -> tuple[int, int] | None:
     """``(unreviewed, samples)`` on one side, or None when the run did not say.
 
-    Validation is the side that matters: a validation set of unreviewed
-    imports measures agreement with whoever labelled them, not accuracy.
+    Validation is the side that matters. See ``docs/adr/0005``.
     """
     on_side = [r for r in rows if r.side == side]
     if not on_side:
@@ -92,11 +81,8 @@ def unchecked_json(rows: list[Unchecked]) -> list[dict]:
 def run_json(run) -> dict:
     """One run, as something to compute on rather than to read.
 
-    Everything the store holds, including ``params`` and ``classes``. Those
-    are the fields that answer whether two runs are asking the same
-    question: a metric moved by changing the data, the model, or what the
-    model was told to do, and only the last of those is invisible in a
-    table of numbers.
+    Everything the store holds, including ``params`` and ``classes``. See
+    ``docs/adr/0035``.
     """
     data = run.model_dump(mode="json")
     # Not a field on the model, and the one thing a caller would otherwise

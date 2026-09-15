@@ -2,8 +2,7 @@
 
 What ``prepare`` and ``ingest`` do between reading a directory and saying
 what happened. Nothing here prints; each step returns what it found and
-what it left out, so a corpus never ends up quietly smaller than the
-directory it came from.
+what it left out. See ``docs/adr/0030`` and ``docs/adr/0036``.
 """
 
 from collections.abc import Callable, Iterable
@@ -26,11 +25,7 @@ class Scan:
 
 
 def scan(root: Path, allows: Callable[[Path], bool]) -> Scan:
-    """Everything under ``root``, then checked.
-
-    Filtering on the way in is how a corpus ends up quietly smaller than
-    the directory it came from.
-    """
+    """Everything under ``root``, then checked. See ``docs/adr/0010``."""
     everything = [p for p in sorted(Path(root).rglob("*")) if p.is_file()]
     found = [p for p in everything if allows(p)]
     admitted = set(found)
@@ -49,10 +44,9 @@ def ingest_files(
 ) -> dict[Path, int]:
     """Register ``found`` in ``catalog`` as ``sample_type`` says; returns each file's sample id.
 
-    In batches, because a batch is one transaction: a chunk that fails
-    leaves the ones before it committed, so a re-run after fixing the file
-    carries on. What a sample is grouped by, if anything, is in the metadata
-    the type records — a frame's video — and nothing here treats it apart.
+    In batches, each one transaction, so a re-run after a failure carries
+    on (``docs/adr/0032``). A grouping is in the metadata the type records,
+    and nothing here treats it apart (``docs/adr/0023``).
     """
     paths = list(found)
     canonicalise = sample_type.canonicalise if type(sample_type).canonicalises() else None
@@ -80,11 +74,10 @@ def ingest_files(
 def land_labels(catalog, label_set_id: int, data_dir: Path, registered: dict[Path, int], batch):
     """Store the labels the prepared index carries for ``registered`` files, as one import.
 
-    A corpus that arrives labelled is labelled the moment it is catalogued:
-    the index beside the files is what a preparer wrote about them, and its
-    labels enter with them, under ``source="import"`` and the batch name
-    given. A file the index labels but ingest did not register is counted,
-    not guessed at. Returns what was written and how many were not there.
+    The labels enter with the files, under ``source="import"`` and the batch
+    name given (``docs/adr/0028``). A file the index labels but ingest did
+    not register is counted. Returns what was written and how many were not
+    there.
     """
     from strata.catalog import PreparedIndex
     from strata.catalog.types.prepared import relative_key
@@ -129,8 +122,8 @@ def catalogued(catalog, label_set_id: int, collections) -> tuple[int, int]:
 def choose_preparer(name: str, produces: str, sample: Path):
     """The preparer class to run: by name, or resolved from what the corpus holds.
 
-    Refuses one whose output this project would not ingest: the corpus
-    would convert, and ingest would then admit none of it.
+    Refuses one whose output this project would not ingest. See
+    ``docs/adr/0033``.
     """
     from strata.catalog.types.preparers import PreparerError, for_source, resolve
 

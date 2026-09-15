@@ -111,10 +111,7 @@ def init(
     client = _ls_client(settings, project, config_path)
     ls_project_id = client.create_project(project.name)
     if not config.serve_url:
-        # Only when Label Studio is the one reading files. Once tasks carry
-        # signed URLs to the serving API, a local storage connection points
-        # at a mount this deployment no longer has, and configuring one
-        # would suggest the mount still matters.
+        # Only when Label Studio is the one reading files. docs/adr/0013
         client.setup_local_storage(ls_project_id, path=f"/label-studio/data/{config.blobs_prefix}")
 
     tasks, _ = tasks_to_push(
@@ -196,8 +193,7 @@ def export_annotations(
         )
 
     if report.undeclared:
-        # The catalog validates against the label set, so this would fail
-        # partway through rather than at the end
+        # Refused before the first write. docs/adr/0030
         _error(
             f"Label(s) nobody declared: {', '.join(sorted(report.undeclared))}. "
             f"Add them with 'strata-labeller class add', then export again."

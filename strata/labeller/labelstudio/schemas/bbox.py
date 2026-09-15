@@ -1,9 +1,7 @@
 """Bounding boxes: zero or more labelled rectangles per image.
 
-Label Studio stores box geometry as percentages of the image (0-100) plus
-the original pixel dimensions. Models work in fractions of the image
-(0-1) with a top-left origin, so the conversion lives here and nowhere
-else.
+Label Studio's percentages become fractions of the image with a top-left
+origin here and nowhere else. See ``docs/adr/0013``.
 """
 
 from strata.labels import Box, Boxes
@@ -18,8 +16,7 @@ GEOMETRY_FIELDS = ("original_width", "original_height", "image_rotation")
 
 class BBoxSchema(LabelSchema):
     task = "bbox"
-    #: What an annotation of this type is, so the boundary builds the value
-    #: the catalog stores rather than one of its own.
+    #: What an annotation of this type is. docs/adr/0013
     value_type = Boxes
     control_tag = "RectangleLabels"
 

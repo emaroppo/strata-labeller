@@ -77,9 +77,8 @@ def train(
                 fresh=fresh,
                 val_ratio=val_ratio,
                 on_progress=tick,
-                # Blobs already on this host, whatever the backend is. Every
-                # version shares almost all its samples with the last, so
-                # without this each one re-fetches a corpus sitting on disk.
+                # Blobs already on this host, whatever the backend is.
+                # docs/adr/0002
                 cache=catalog_root / "blobs",
             )
     except RoundError as e:
@@ -94,10 +93,7 @@ def train(
 def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> None:
     """Freeze a dataset here, and have another host train on it.
 
-    The split is where the knowledge is. Which samples make a dataset is the
-    project's business — its collections, its label set, its val ratio — and
-    the catalog is reachable from both machines. Everything after that needs
-    a GPU and the checkpoints, and both live there.
+    The split is where the knowledge is. See ``docs/adr/0007``.
     """
     from strata.catalog import CatalogError
     from strata.catalog.stages import Context as CatalogContext
@@ -108,9 +104,7 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
 
     trainer = _trainer(settings)
 
-    # Asked before anything is frozen. A host on another catalog would refuse
-    # the round anyway; asking first says which machine to repoint, and
-    # leaves no dataset version behind for a round that never ran.
+    # Asked before anything is frozen. docs/adr/0030
     with _exit_on(RemoteError):
         served = trainer.served_catalog()
     if served.get("id") != catalog.id:

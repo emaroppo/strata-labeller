@@ -76,9 +76,8 @@ def ingest(
         console.print(f"[yellow]No files under {data_dir} yet.[/yellow]")
         return
     if not scanned.found:
-        # Files, and none of them admitted: the wrong folder, or a type that
-        # does not describe what is in it. Returning quietly would report an
-        # empty corpus as a success.
+        # Files, and none of them admitted: an error, not an empty success.
+        # docs/adr/0010
         _error(
             f"None of the {len(scanned.everything):,} file(s) under {data_dir} are "
             f"{project.sample_type_name} "
@@ -90,9 +89,7 @@ def ingest(
 
     carrying = corpus.labelled_in_index(data_dir)
     if carrying and import_name is None:
-        # Said before anything is written: the labels are part of what the
-        # corpus is, and landing them under no name would leave nothing to
-        # review or report them by
+        # Said before anything is written. docs/adr/0028
         _error(
             f"The prepared corpus labels {carrying:,} file(s). Name the import to land "
             f"them with the files: --import <batch>."
@@ -113,8 +110,8 @@ def ingest(
                 on_sample=lambda _p: progress.advance(bar),
             )
         except CatalogError as e:
-            # A file this type cannot store. The chunks before it are
-            # committed, so re-running after fixing it carries on.
+            # A file this type cannot store; the chunks before it are
+            # committed. docs/adr/0032
             progress.stop()
             _error(str(e))
             raise typer.Exit(1) from None
@@ -217,7 +214,7 @@ def prepare(
         f"[green]{len(scanned.found):,} source file(s) → {len(index.samples):,} "
         f"sample(s)[/green] in {out_dir}"
     )
-    # Anything left behind, said out loud.
+    # Anything left behind, said out loud. docs/adr/0036
     for key, count in sorted(preparer.report().items()):
         console.print(f"  {key.replace('_', ' ')}: {count:,}")
     carrying = sum(1 for entry in index.samples.values() if entry.value is not None)

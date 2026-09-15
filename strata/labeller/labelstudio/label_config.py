@@ -1,9 +1,7 @@
 """Editing a Label Studio labeling config without disturbing its layout.
 
-Adding a class means inserting one element into XML that may have been
-hand-tuned in the Label Studio UI — two-column layouts, zoom settings,
-hotkeys. Regenerating the config from a template would throw that away, so
-these helpers do a text-level insert and leave every other byte alone.
+Adding a class is a text-level insert that leaves every other byte alone.
+See ``docs/adr/0029``.
 """
 
 import re
@@ -44,8 +42,8 @@ def get_classes(xml: str) -> list[str]:
 def _next_hotkey(xml: str, item: str) -> str | None:
     """The next free numeric hotkey, or None if this config doesn't use them.
 
-    Only offered when every existing class already has one, so a config that
-    deliberately avoids hotkeys keeps avoiding them.
+    Only offered when every existing class already has one. See
+    ``docs/adr/0029``.
     """
     entries = re.findall(rf"<{item}\s[^>]*>", xml)
     if not entries:

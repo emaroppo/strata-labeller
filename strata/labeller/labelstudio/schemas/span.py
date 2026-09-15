@@ -4,12 +4,10 @@ Label Studio addresses spans by character offsets into the raw text, and
 carries the covered substring alongside. Offsets are what matter; the text
 is kept because it makes a stored annotation readable on its own.
 
-Its model is a region with a *list* of labels, and this read the first and
-dropped the rest — an annotation tool being more permissive than the layer
-storing what it produced. What a label set allows is now declared:
-``multi_label`` puts ``choice="multiple"`` on the control so a reviewer can
-say it, and ``overlapping`` says two regions may intersect. Both default to
-off, which is what every existing project means.
+A region carries a *list* of labels. What a label set allows is declared:
+``multi_label`` puts ``choice="multiple"`` on the control, and
+``overlapping`` says two regions may intersect. Both default to off. See
+``docs/adr/0014``.
 """
 
 from strata.labels import Span, Spans
@@ -65,10 +63,8 @@ class SpanSchema(LabelSchema):
             indent="    ",
             from_name=self.from_name,
             to_name=self.to_name,
-            # Rendered as a whole attribute rather than a value, so a
-            # single-label project's config is byte for byte what it was.
-            # A config that changes shape re-validates in Label Studio and
-            # is one more thing to explain in a diff.
+            # A whole attribute, so a single-label project's config is byte
+            # for byte what it was. docs/adr/0029
             choice=' choice="multiple"' if self.multi_label else "",
         )
 
@@ -81,9 +77,7 @@ class SpanSchema(LabelSchema):
             value = r.get("value", {})
             spans.append(
                 Span(
-                    # Every label the region carries. Reading the first was
-                    # a silent loss: nothing raised, and the second label a
-                    # reviewer chose simply never reached the catalog.
+                    # Every label the region carries. docs/adr/0014
                     labels=list(value.get("labels") or []),
                     start=int(value.get("start", 0)),
                     end=int(value.get("end", 0)),

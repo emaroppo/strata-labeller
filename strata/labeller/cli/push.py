@@ -46,8 +46,8 @@ def _run_for_push(
 ) -> str | None:
     """Which run scores this push, in the numbering of whoever will score it.
 
-    Run ids belong to the store that issued them: a run made here is not on
-    the host, so the host is asked for its own.
+    Run ids belong to the store that issued them, so the host is asked for
+    its own. See ``docs/adr/0005``.
     """
     if not remote:
         if store is None:
@@ -61,9 +61,8 @@ def _run_for_push(
 
     trainer = Trainer(settings.modelling.url, settings.modelling.token)
     with _exit_on(RemoteError):
-        # Asked for by id or not, the host is the one that knows. Checking
-        # now costs one request; not checking costs a pool fetched and
-        # scored before anything notices.
+        # Asked for by id or not, the host is the one that knows, and it is
+        # asked before the pool is fetched. docs/adr/0030
         found = (
             trainer.run(run_id) if run_id else trainer.latest_run(project.dataset_name, catalog_id)
         )
@@ -84,9 +83,7 @@ def _remote_predictions(
 ) -> dict:
     """Score a review pool on the host that has the GPU and the blobs.
 
-    The same job machinery as a round, for the same reason: this is minutes
-    of work over tens of thousands of samples, and a laptop that closes
-    should not take it with it.
+    The same job machinery as a round. See ``docs/adr/0007``.
     """
     from pydantic import TypeAdapter
 
@@ -108,8 +105,7 @@ def _remote_predictions(
             f"does not know — left out of the ranking[/yellow]"
         )
     # Through the union: a remote scoring pass returns whatever the task
-    # emits, and reading spans as choices parses to an empty value rather
-    # than failing — which would rank the queue by nothing at all.
+    # emits. docs/adr/0006
     prediction = TypeAdapter(AnyPrediction)
     return {
         checksum: prediction.validate_python(value)
@@ -237,8 +233,8 @@ def push(
                 f"they stay out of this queue until they do.[/yellow]"
             )
         if remote:
-            # The host keeps its own cache, keyed on its own run ids — which
-            # is the only place that key means anything.
+            # The host keeps its own cache, keyed on its own run ids.
+            # docs/adr/0006
             scores = _remote_predictions(
                 settings, scoring_run, [s.checksum for s in pool], coverage.by_checksum
             )
@@ -267,9 +263,8 @@ def push(
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
 
     if review_imports:
-        # Ranked by how far the model is from the imported label, not by
-        # how unsure it is; and nothing disputed joins this queue, since a
-        # dispute is two people and this is one person and a corpus
+        # Ranked by how far the model is from the imported label, and
+        # nothing disputed joins this queue. docs/adr/0028
         ordering = against(labels)
         scores = {c: ordering.bind(c, p) for c, p in scores.items() if c in labels}
         planned = queue.plan(pool, scores, ordering, empty_share=1.0, limit=limit)
@@ -305,8 +300,8 @@ def push(
     )
 
     if review_imports:
-        # What the reviewer sees is the imported label, to confirm or
-        # correct; the score beside it is the model's distance from it
+        # The reviewer sees the imported label, scored by the model's
+        # distance from it. docs/adr/0028
         payload = [
             (
                 s.id,

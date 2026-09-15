@@ -19,9 +19,8 @@ __all__ = ["LabelStudioConfig", "ModellingConfig", "Settings"]
 class LabelStudioConfig:
     url: str = "http://localhost:8080"
     api_key: str = ""
-    # Names a directory inside the Label Studio container, not a media:
-    # whatever a project labels is served from it. The word stays because
-    # deployments already mount it under this path.
+    # A directory inside the Label Studio container, not a media; the word
+    # stays because deployments mount it there. docs/adr/0013
     local_storage_path: str = "/label-studio/data/images"
 
 
@@ -33,8 +32,7 @@ class Settings(HostSettings):
         super()._read(data, environ)
         if "label_studio" in data:
             self.label_studio = LabelStudioConfig(**data["label_studio"])
-        # Credentials belong in the environment rather than in a file that
-        # gets copied around
+        # Credentials come from the environment. docs/adr/0019
         api_key = environ.get("LABEL_STUDIO_API_KEY")
         if api_key:
             self.label_studio.api_key = api_key

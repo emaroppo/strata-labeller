@@ -19,8 +19,6 @@ from ._shared import (
 )
 
 
-#: What "how is it going" means per task. A model may report anything it
-#: likes alongside; this is only which one the history plots by default.
 @app.command()
 def report(
     project_path: Path | None = ProjectOption,
@@ -108,8 +106,8 @@ def report(
     table.add_column("Dataset", justify="right")
     table.add_column(metric, justify="right")
     table.add_column("Δ", justify="right")
-    # Beside the metric, because it bounds what the metric means: a
-    # validation set nobody checked measures agreement with an import
+    # Beside the metric, because it bounds what the metric means.
+    # docs/adr/0005
     table.add_column("Unchecked val", justify="right")
     table.add_column("Lineage")
     for row in rows:
@@ -125,7 +123,7 @@ def report(
 
     if reviews:
         # How the labels that arrived with the corpus fared under review,
-        # per import: the number a labelling-time claim rests on
+        # per import. docs/adr/0028
         imports = Table(title="Imported labels under review")
         imports.add_column("Batch")
         imports.add_column("Accepted", justify="right")
@@ -137,8 +135,7 @@ def report(
         console.print(imports)
 
     if agreed or changed:
-        # A person looked at a person's answer again: an audit's blind
-        # second look, or a correction somebody came back for
+        # A person looked at a person's answer again. docs/adr/0028
         console.print(f"Second looks: {agreed} agreed, {changed} changed")
 
 
@@ -154,13 +151,7 @@ def _unchecked_cell(row) -> str:
 
 
 def _emit_json(payload: dict) -> None:
-    """Straight to stdout, past rich.
-
-    ``console.print`` would wrap it to the terminal width and colour it,
-    which is right for a table and fatal for something being piped into
-    ``jq``. Written with ``print`` for the same reason the width is not
-    consulted: this output has no reader to be considerate of.
-    """
+    """Straight to stdout, past rich. See ``docs/adr/0030``."""
     print(json.dumps(payload, indent=2, sort_keys=True, default=str))
 
 
@@ -198,8 +189,8 @@ def _print_run(store, run) -> None:
 
     unchecked = store.unchecked(run.id)
     if unchecked:
-        # What the numbers above rest on: per side and per import batch,
-        # how much of it a person never vouched for
+        # Per side and per import batch, how much of it a person never
+        # vouched for. docs/adr/0005
         table = Table(title="Of what it saw, nobody checked")
         table.add_column("Side")
         table.add_column("Batch")

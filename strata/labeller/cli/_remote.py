@@ -48,8 +48,7 @@ def _print_run_result(result: dict) -> None:
 def _follow(trainer, job_id: str) -> dict:
     """Watch a round to its end, surviving a network that comes and goes.
 
-    Interrupting this stops watching, not training. That distinction is
-    worth stating out loud, because Ctrl-C usually means the opposite.
+    Interrupting this stops watching, not training. See ``docs/adr/0007``.
     """
     from strata.modelling.remote.client import RemoteError
 
@@ -120,9 +119,9 @@ def _on_another_catalog(where: str, served: dict, catalog, config) -> str:
 def _unreachable(error: Exception, config) -> str:
     """Why an index could not be opened, in a line, and the likely fix.
 
-    The usual reason on a machine that just switched catalogs is the one
-    that is easiest to miss: the file names the index without its password,
-    and nothing in this shell supplies it.
+    The usual reason on a machine that just switched catalogs: the file
+    names the index without its password, and nothing in this shell
+    supplies it. See ``docs/adr/0019``.
     """
     import os
 

@@ -73,8 +73,8 @@ class LabellingProject(Project):
 
     def _validate(self) -> None:
         super()._validate()
-        # Built here so a bad config or parameter is an error at load time
-        # rather than mid-push
+        # Built here so a bad config or parameter is an error at load time.
+        # docs/adr/0030
         _ = self.schema
 
     # ------------------------------------------------------------------
@@ -112,10 +112,9 @@ class LabellingProject(Project):
     def _schema_from_config(self) -> LabelSchema:
         """A project's own config: control names from the XML, the rest from the job.
 
-        The XML may offer no class the job does not declare, because a
-        reviewer could then apply a label the catalog refuses on export.
-        The job may declare more than the XML offers; that is what
-        ``class add`` leaves behind until the live config is updated.
+        The XML may offer no class the job does not declare. The job may
+        declare more than the XML offers; that is what ``class add`` leaves
+        behind until the live config is updated. See ``docs/adr/0016``.
         """
         path = self.label_config_path
         if not path.exists():
@@ -140,10 +139,9 @@ class LabellingProject(Project):
     def schema_with(self, classes: list[str]) -> LabelSchema:
         """This project's schema, but carrying someone else's class list.
 
-        The label set is what an export is validated against and what a
-        checkpoint maps its output neurons to, so it is authoritative for
-        which classes exist. project.toml still says what kind of job this
-        is, and seeds the list when the label set is first created.
+        The label set is authoritative for which classes exist; project.toml
+        says what kind of job this is, and seeds the list when the label set
+        is first created. See ``docs/adr/0014``.
         """
         schema = self.schema
         schema.classes = list(classes)

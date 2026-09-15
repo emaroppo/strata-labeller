@@ -33,14 +33,9 @@ def to_results(value: AnyValue, schema: LabelSchema) -> list[dict]:
 def from_results(results: list[dict], schema: LabelSchema) -> AnyValue:
     """Label Studio results as a neutral value.
 
-    Built through the schema's own value type, so a bbox schema yields boxes
-    rather than a Choices holding objects that are not classes. Reading every
-    task type back as one of them is how a corpus annotated with boxes came
-    back empty.
-
-    Note what this does with an empty list: it produces an empty value, not
-    nothing. A reviewer who looked and found none of the classes present has
-    answered the question, and the catalog stores that as a real annotation.
+    Built through the schema's own value type (``docs/adr/0013``). An empty
+    list produces an empty value, not nothing: a reviewer who found none of
+    the classes present has answered (``docs/adr/0009``).
     """
     return schema.value_type(values=list(schema.decode_target(results)))
 
@@ -68,8 +63,8 @@ class Addressing:
     old tasks keep resolving until relinked. See ``docs/adr/0013``.
     """
 
-    #: What Label Studio serves the blob mount under. A directory name that
-    #: existing tasks point at, so changing it is a relink, not a rename.
+    #: What Label Studio serves the blob mount under. Changing it is a
+    #: relink, not a rename. docs/adr/0013
     prefix: str = "blobs"
     #: The catalog's blob server, which signs its own URLs. None means the
     #: mount.
@@ -98,11 +93,7 @@ def blob_url(sample: SampleRow, prefix: str) -> str:
     """Where Label Studio fetches a sample's bytes.
 
     Built from the checksum, not from where the sample's bytes currently
-    sit. The two agree while blobs are files — the local layout *is* the
-    checksum — but they part company the moment those files are packed into
-    shards, and a task URL outlives that. Addressing a task by location
-    would mean every task in Label Studio silently stopped resolving on the
-    day the blobs moved.
+    sit (``docs/adr/0001``).
 
     Percent-encoded, because a path that reaches a query string unescaped
     breaks on characters a checksum will never contain but a suffix might.
@@ -142,9 +133,7 @@ class Task:
     data: dict
     annotations: list[dict]
     #: Whether anyone has answered, which is not the same as the answer
-    #: being non-empty. Without this an annotation of "none of these apply"
-    #: is indistinguishable from an unasked task, and a rebuilt project
-    #: would put every such sample back in the queue.
+    #: being non-empty. docs/adr/0009
     answered: bool = False
 
     def as_import(self) -> dict:
@@ -163,9 +152,7 @@ def build_tasks(
 ) -> list[Task]:
     """Tasks for a batch of samples, carrying any annotation they already have.
 
-    Sending the existing annotation matters when a project is rebuilt: Label
-    Studio is a view of the catalog rather than a second copy of it, so
-    everything already answered should arrive answered.
+    Everything already answered arrives answered. See ``docs/adr/0029``.
     """
     tasks = []
     for sample in samples:

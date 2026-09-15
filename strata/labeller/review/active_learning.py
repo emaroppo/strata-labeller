@@ -19,10 +19,8 @@ def _confidences(prediction: Value) -> list[float]:
 def least_confident(prediction: Value) -> float:
     """How far the model's best guess is from certain.
 
-    The default, and the one that needs no tuning: a sample nothing scored
-    highly is one the model could not commit to. A prediction with nothing
-    in it is maximally uncertain — either there was nothing to find or the
-    model missed everything, and only a human settles which.
+    The default. A prediction with nothing in it is maximally uncertain.
+    See ``docs/adr/0012``.
     """
     scores = _confidences(prediction)
     return 1.0 - max(scores) if scores else 1.0
@@ -53,7 +51,7 @@ def entropy(prediction: Value) -> float:
 
 
 #: A span the model is this sure of is usually right enough to confirm at a
-#: glance. Below it, checking costs about what marking from scratch does.
+#: glance. docs/adr/0012
 CONFIDENT = 0.9
 
 
@@ -67,18 +65,15 @@ def density(prediction: Value, threshold: float = CONFIDENT) -> float:
     """
     confidences = _confidences(prediction)
     if not confidences:
-        # A model may assert something and say nothing about how sure it is.
-        # Absent is unknown, not unconfident, so everything it named counts —
-        # scoring it zero would hide such a model's output from this ranking
-        # entirely.
+        # Absent confidences are unknown, not unconfident, so everything the
+        # model named counts. docs/adr/0012
         return float(len(getattr(prediction, "values", None) or []))
     return float(sum(1 for c in confidences if c >= threshold))
 
 
-#: How much of a review batch may be documents the model found nothing in.
-#: Not zero: a document it missed everything in is worth seeing, and only a
-#: reader can tell that from one that is genuinely empty. Not unbounded
-#: either, for the reason `rank` describes.
+#: How much of a review batch may be documents the model found nothing in:
+#: not zero, since only a reader can tell a miss from an empty document,
+#: and not unbounded. docs/adr/0012
 DEFAULT_EMPTY_SHARE = 0.2
 
 #: Selectable by name, so a strategy can be a setting rather than an edit.
@@ -117,9 +112,8 @@ def rank(samples, scores, strategy=None, empty_share: float = DEFAULT_EMPTY_SHAR
     merged, i, j = [], 0, 0
     while i < len(found) or j < len(nothing):
         # Take from the empty pool only while it is under its share of what
-        # has been emitted so far, so the proportion holds at every prefix
-        # rather than only over the whole list — a caller taking the top N
-        # gets the same mix as one taking all of it.
+        # has been emitted so far, so the proportion holds at every prefix.
+        # docs/adr/0012
         take_nothing = j < len(nothing) and (i >= len(found) or j < empty_share * (len(merged) + 1))
         if take_nothing:
             merged.append(nothing[j])
@@ -133,13 +127,11 @@ def rank(samples, scores, strategy=None, empty_share: float = DEFAULT_EMPTY_SHAR
 def disagreement(prediction: Value, label: Value) -> float:
     """How far the model's prediction is from a label the corpus arrived with.
 
-    For a spot review of imported labels: imports are trusted and trained
-    on, and the ones worth a person's look are those the model disagrees
-    with most. One minus the model's mean confidence in the classes the
-    label asserts, so a class the model never named counts as zero
-    confidence. Classification only; a label with no classes, or a
-    prediction with no confidences, is maximally suspect, since nothing
-    can vouch for it.
+    For a spot review of imported labels: one minus the model's mean
+    confidence in the classes the label asserts, a class the model never
+    named counting as zero. Classification only; a label with no classes,
+    or a prediction with no confidences, is maximally suspect. See
+    ``docs/adr/0028``.
     """
     asserted = list(getattr(label, "values", None) or [])
     named = list(getattr(prediction, "values", None) or [])
@@ -180,8 +172,7 @@ def certainty(prediction: Value) -> float:
     """How sure the model was of its best assertion.
 
     What a reviewer is shown beside a pre-annotation, and the inverse of
-    :func:`least_confident` — so the number on a task and the order it
-    arrives in cannot tell different stories. Positional confidences make
+    :func:`least_confident` (``docs/adr/0012``). Positional confidences make
     the first one meaningless on its own: for multi-label choices it is
     whichever class came first, and for boxes whichever box did.
     """

@@ -4,9 +4,8 @@
 Label Studio only inside :mod:`strata.labeller.labelstudio`
 (``docs/adr/0013``).
 
-What another package may use is what is exported here (``docs/adr/0015``).
-Nothing in the workspace needs anything of it today: the job every tool
-reads is ``strata.project``'s, and this package is a consumer of it too.
+What another package may use is what is exported here; the job every tool
+reads is ``strata.project``'s. See ``docs/adr/0015`` and ``docs/adr/0016``.
 """
 
 from .config import Settings

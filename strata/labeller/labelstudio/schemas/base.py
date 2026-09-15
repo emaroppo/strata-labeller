@@ -2,12 +2,9 @@
 
 A schema owns what is specific to a task type at the Label Studio boundary:
 the labeling config it generates, and the translation between Label Studio
-results and the :mod:`strata.labels` values a catalog stores. Nothing else
-in the labeller knows whether a project labels classes, boxes or spans.
-
-Ranking a prediction for review is not a schema's business: see
-:mod:`strata.labeller.review.active_learning`, which reads the confidences a value
-carries.
+results and the :mod:`strata.labels` values a catalog stores. Ranking a
+prediction for review is :mod:`strata.labeller.review.active_learning`'s.
+See ``docs/adr/0013`` and ``docs/adr/0012``.
 """
 
 from string import Template
@@ -36,8 +33,7 @@ class LabelSchema(Protocol):
 
     #: Which task this is, as the catalog names it: "classification", "bbox", "span"
     task: ClassVar[str]
-    #: What an annotation of this type is, so the boundary builds the value
-    #: the catalog stores rather than one of its own
+    #: What an annotation of this type is. docs/adr/0013
     value_type: ClassVar[type[Choices] | type[Spans] | type[Boxes]]
     #: The Label Studio control this schema annotates with
     control_tag: ClassVar[str]
@@ -61,10 +57,7 @@ class LabelSchema(Protocol):
     def catalog_schema(self):
         """This schema as the catalog stores it, with Label Studio left behind.
 
-        Media does not survive the crossing: ``image_classification`` and
-        ``text_classification`` were template names, and classifying a
-        photograph and classifying a document are the same task. What a
-        sample is made of is the catalog's business, on the sample.
+        Media does not survive the crossing. See ``docs/adr/0014``.
         """
         raise NotImplementedError
 
