@@ -14,6 +14,7 @@ from ._shared import (
     _load_project,
     _progress,
     _settings,
+    _where_index,
     app,
     console,
 )
@@ -90,9 +91,8 @@ def ingest(
         )
         raise typer.Exit(1)
 
-    catalog, catalog_root = _catalog_for(
-        settings, config_path, create=True, name=project.catalog.name
-    )
+    catalog, _ = _catalog_for(settings, config_path, create=True, name=project.catalog.name)
+    index = _where_index(settings, project.catalog.name)
     try:
         label_set_id, _ = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
@@ -120,7 +120,7 @@ def ingest(
     after, skipped = corpus.catalogued(catalog, label_set_id, project.collections)
     console.print(
         f"[green]{len(admission.entries):,} file(s) prepared, {after - before} new[/green] "
-        f"into {catalog_root}"
+        f"into {index}"
     )
     console.print(f"  {after + skipped} sample(s) catalogued")
 

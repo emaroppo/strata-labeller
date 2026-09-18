@@ -248,3 +248,20 @@ def test_labels_the_corpus_arrived_with_land_at_ingest(make_project, tmp_path):
     [answer] = catalog.annotations.history(labelled[0].id, label_set_id)
     assert (answer.source, answer.batch) == ("import", "pv-1")
     assert len(catalog.samples.unlabelled(label_set_id, EVERYTHING)) == 1
+
+
+def test_ingest_says_where_the_index_is(workspace, tmp_path):
+    # A local catalog by its directory; see the test below for a shared one
+    result = run(workspace(2))
+    assert str(tmp_path / "catalog") in " ".join(result.stdout.split())
+
+
+def test_a_shared_index_is_named_by_its_url_not_a_local_directory():
+    # root has a default even when url is set, and naming it would point at
+    # a directory a remote catalog never uses
+    from strata.catalog.config import read_catalogs
+    from strata.labeller.cli._shared import _index_at
+
+    section = {"url": "postgresql+psycopg://strata@pi:5432/demo", "s3_bucket": "demo"}
+    config = read_catalogs(section, {}).default
+    assert _index_at(config) == "postgresql+psycopg://strata@pi:5432/demo"

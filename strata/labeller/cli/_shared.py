@@ -171,10 +171,25 @@ def _catalog_for(settings, config_path: Path, create: bool = False, name: str = 
         return open_catalog(config, create=create), Path(config.root)
     except CatalogMissing:
         _error(
-            f"No catalog at {config.root}. Run 'strata-labeller ingest' to make one, "
-            f"or point [catalog] root in {config_path} at an existing one."
+            f"No catalog at {_index_at(config)}. Run 'strata-labeller ingest' to make one, "
+            f"or point [catalog] in {config_path} at an existing one."
         )
         raise typer.Exit(1) from None
+
+
+def _index_at(config) -> str:
+    """Where a catalog's index is, as a person would look for it.
+
+    The URL for a shared index, which config.toml writes without its
+    password; the directory for a local one. ``root`` alone would name a
+    local directory a remote catalog never uses.
+    """
+    return config.url or str(Path(config.root))
+
+
+def _where_index(settings, name: str = "") -> str:
+    """Where the index of one of this host's catalogs is."""
+    return _index_at(_catalog_config(settings, name))
 
 
 def _settings(config_path: Path | None = None):
