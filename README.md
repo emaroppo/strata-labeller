@@ -5,8 +5,19 @@ the review tool. Label a small seed set, train a model, let it pre-label
 the rest, then only correct what it got wrong. Each round the model
 improves and there is less to fix.
 
+Not on PyPI: it installs from its repository at a release tag. uv takes a
+git source only for a package named directly, so the strata packages
+beneath it are named beside it.
+
 ```bash
-uv add strata-labeller
+g=git+https://github.com/emaroppo
+uv add "strata-labeller @ $g/strata-labeller@v0.1.0"   \
+       "strata-project @ $g/strata-project@v0.1.0"     \
+       "strata-modelling @ $g/strata-modelling@v0.1.0" \
+       "strata-prepare @ $g/strata-prepare@v0.1.0"     \
+       "strata-catalog @ $g/strata-catalog@v0.1.0"     \
+       "strata-contracts @ $g/strata-contracts@v0.1.0" \
+       "strata-common @ $g/strata-common@v0.1.0"
 ```
 
 Depends on `strata-contracts`, `strata-catalog`, `strata-modelling`, typer
@@ -154,7 +165,7 @@ queue is two pools (0012), and Label Studio stops at the adapter (0013).
 ## Tests
 
 ```bash
-.github/sibling-wheels.sh contracts common catalog prepare modelling project   # the strata packages this one needs, until they are on an index
+.github/sibling-wheels.sh contracts common catalog prepare modelling project   # the strata packages this one needs, from their repositories
 uv sync --find-links dist --group dev
 uv run pytest
 ```
