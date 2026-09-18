@@ -2,7 +2,7 @@
 
 A schema owns what is specific to a task type at the Label Studio boundary:
 the labeling config it generates, and the translation between Label Studio
-results and the :mod:`strata.labels` values a catalog stores. Ranking a
+results and the :mod:`strata.contracts` values a catalog stores. Ranking a
 prediction for review is :mod:`strata.labeller.review.active_learning`'s.
 See ``docs/adr/0013`` and ``docs/adr/0012``.
 """
@@ -10,7 +10,7 @@ See ``docs/adr/0013`` and ``docs/adr/0012``.
 from string import Template
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
-from strata.labels import Boxes, Choices, Spans
+from strata.contracts import Boxes, Choices, Spans
 
 from .media import Media
 

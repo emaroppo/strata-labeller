@@ -175,7 +175,7 @@ def test_labels_the_corpus_arrived_with_land_at_ingest(make_project, tmp_path):
     a person can spot-review later.
     """
     from strata.catalog import PreparedIndex, PreparedSample
-    from strata.labels import Choices
+    from strata.contracts import Choices
 
     project = make_project("demo", classes=["cat", "dog"])
     (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')

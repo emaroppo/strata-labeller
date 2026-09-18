@@ -9,7 +9,7 @@ import json
 from dataclasses import dataclass, field
 
 from strata.catalog import Catalog, SampleRow
-from strata.labels import AnyValue
+from strata.contracts import AnyValue
 
 from ..project import LabellingProject
 from .adapter import Addressing, Task, build_tasks, from_results

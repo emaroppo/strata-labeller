@@ -19,7 +19,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: .github/sibling-wheels.sh labels common catalog modelling project
+      - run: .github/sibling-wheels.sh contracts common catalog modelling project
       - run: uv sync --no-cache --find-links dist --group dev
       - run: uv run --no-sync ruff check .
       - run: uv run --no-sync ruff format --check .
@@ -31,7 +31,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: .github/sibling-wheels.sh labels common catalog modelling project
+      - run: .github/sibling-wheels.sh contracts common catalog modelling project
       - run: uv sync --no-cache --find-links dist --group dev
       - run: uv run --no-sync pytest -q
 
@@ -42,7 +42,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: .github/sibling-wheels.sh labels common catalog modelling project
+      - run: .github/sibling-wheels.sh contracts common catalog modelling project
       - run: uv sync --no-cache --find-links dist --group dev
       - run: uv run --no-sync pyright
 
@@ -58,7 +58,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - run: .github/sibling-wheels.sh labels common catalog modelling project
+      - run: .github/sibling-wheels.sh contracts common catalog modelling project
       - run: uv build --wheel --out-dir dist .
       - run: uv venv --python 3.13 standalone
       - name: install the package alone

@@ -12,7 +12,7 @@ from pathlib import Path
 from strata.catalog import Catalog, CatalogError
 from strata.catalog.stages import Context as CatalogContext
 from strata.catalog.stages import DatasetRequest, MaterialiseRequest, dataset, materialise
-from strata.labels import MANIFEST_NAME, Manifest
+from strata.contracts import MANIFEST_NAME, Manifest
 from strata.modelling import Run, RunStore
 from strata.modelling.stages import Context as ModellingContext
 from strata.modelling.stages import TrainStageRequest, train

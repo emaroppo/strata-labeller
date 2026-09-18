@@ -1,6 +1,6 @@
 """Ordering the review queue so the most informative samples come first.
 
-Each strategy takes a strata.labels prediction and returns a number where
+Each strategy takes a strata.contracts prediction and returns a number where
 higher means "ask a human sooner". They live here, not with the value
 types, because which to use is a choice about review time. See
 ``docs/adr/0012``.
@@ -9,7 +9,7 @@ types, because which to use is a choice about review time. See
 import math
 from collections.abc import Mapping
 
-from strata.labels import Value
+from strata.contracts import Value
 
 
 def _confidences(prediction: Value) -> list[float]:

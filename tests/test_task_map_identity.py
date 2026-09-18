@@ -147,8 +147,8 @@ def test_unskip_refuses_a_foreign_map(tmp_path, monkeypatch):
     """unskip deletes annotations by task id, straight out of the map."""
     from typer.testing import CliRunner
 
+    from strata.contracts import ClassificationSchema
     from strata.labeller.cli import app
-    from strata.labels import ClassificationSchema
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')

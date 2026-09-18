@@ -4,7 +4,7 @@ from pathlib import Path
 
 import typer
 
-from strata.labels import AnyPrediction, AnyValue
+from strata.contracts import AnyPrediction, AnyValue
 from strata.modelling import RunStore, RunStoreMissing
 
 from ..project import ProjectError

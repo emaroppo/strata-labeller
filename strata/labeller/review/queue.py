@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from strata.catalog import SampleRow
-from strata.labels import AnyPrediction, feature_digest
+from strata.contracts import AnyPrediction, feature_digest
 
 from .active_learning import rank
 

@@ -9,10 +9,10 @@ improves and there is less to fix.
 uv add strata-labeller
 ```
 
-Depends on `strata-labels`, `strata-catalog`, `strata-modelling`, typer
+Depends on `strata-contracts`, `strata-catalog`, `strata-modelling`, typer
 and the Label Studio SDK. Everything that knows Label Studio's shape stops
 in one module; past it a sample is a catalog row and an annotation is a
-`strata.labels` value.
+`strata.contracts` value.
 
 ## The loop
 
@@ -153,7 +153,7 @@ queue is two pools (0012), and Label Studio stops at the adapter (0013).
 ## Tests
 
 ```bash
-.github/sibling-wheels.sh labels common catalog modelling project   # the strata packages this one needs, until they are on an index
+.github/sibling-wheels.sh contracts common catalog modelling project   # the strata packages this one needs, until they are on an index
 uv sync --find-links dist --group dev
 uv run pytest
 ```

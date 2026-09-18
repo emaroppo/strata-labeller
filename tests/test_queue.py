@@ -1,9 +1,9 @@
 """The queue as a plan: what goes first, what is left out, what a cache is asked."""
 
 from strata.catalog import Location, SampleRow
+from strata.contracts import ChoicesPrediction
 from strata.labeller.review import queue
 from strata.labeller.review.active_learning import least_confident
-from strata.labels import ChoicesPrediction
 
 
 def _row(i: int) -> SampleRow:

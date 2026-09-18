@@ -1,6 +1,6 @@
 """Every label type through the Label Studio boundary and the ranking.
 
-Checked against the examples ``strata.labels`` ships, as the catalog and
+Checked against the examples ``strata.contracts`` ships, as the catalog and
 modelling check their own layers, so a type added there is covered here on
 the next upgrade. A type with no Label Studio mapping below fails here —
 which is the point: it can be stored and trained on, but not yet reviewed.
@@ -8,12 +8,12 @@ which is the point: it can be stored and trained on, but not yet reviewed.
 
 import pytest
 
+from strata.contracts.examples import EXAMPLES
 from strata.labeller.labelstudio.adapter import prediction_to_results
 from strata.labeller.labelstudio.schemas.bbox import BBoxSchema as LSBBox
 from strata.labeller.labelstudio.schemas.classification import ClassificationSchema as LSChoices
 from strata.labeller.labelstudio.schemas.span import SpanSchema as LSSpan
 from strata.labeller.review.active_learning import certainty, least_confident
-from strata.labels.examples import EXAMPLES
 
 each_type = pytest.mark.parametrize("example", EXAMPLES, ids=lambda e: e.name)
 

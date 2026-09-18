@@ -12,7 +12,7 @@ so a checkpoint can be read back.
 import json
 from pathlib import Path
 
-from strata.labels import ChoicesPrediction
+from strata.contracts import ChoicesPrediction
 from strata.modelling import Model
 
 TOY_SOURCE = Path(__file__)

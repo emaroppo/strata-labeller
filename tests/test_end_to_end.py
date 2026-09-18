@@ -36,7 +36,7 @@ def _ingested(project, tmp_path, n: int = 20):
 
 def test_a_project_becomes_a_trained_run(project, tmp_path):
     # 20 files, 16 of them labelled — the shape of a project a few rounds in
-    from strata.labels import Choices
+    from strata.contracts import Choices
 
     catalog, ids = _ingested(project, tmp_path)
     label_set_id = catalog.label_sets.create("demo", project.schema.catalog_schema())
@@ -74,7 +74,7 @@ def test_a_project_becomes_a_trained_run(project, tmp_path):
 
 
 def test_a_second_round_keeps_the_split_and_chains_the_run(project, tmp_path):
-    from strata.labels import Choices
+    from strata.contracts import Choices
 
     catalog, ids = _ingested(project, tmp_path)
     label_set_id = catalog.label_sets.create("demo", project.schema.catalog_schema())

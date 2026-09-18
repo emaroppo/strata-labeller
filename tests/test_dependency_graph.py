@@ -24,21 +24,21 @@ import pytest
 
 #: Which strata packages each may import.
 ALLOWED = {
-    "labels": set(),
+    "contracts": set(),
     "common": set(),
-    "catalog": {"labels", "common"},
-    "modelling": {"labels", "catalog", "common"},
+    "catalog": {"contracts", "common"},
+    "modelling": {"contracts", "catalog", "common"},
     # The job: the one file the two tools above it both read (docs/adr/0016).
-    "project": {"labels", "catalog", "modelling"},
-    "labeller": {"labels", "catalog", "modelling", "project"},
+    "project": {"contracts", "catalog", "modelling"},
+    "labeller": {"contracts", "catalog", "modelling", "project"},
     # Sequences the others' stages over a project. Nothing may import it,
     # and it does not import the labeller: the two are peers over the job.
-    "experiment": {"labels", "common", "catalog", "modelling", "project"},
+    "experiment": {"contracts", "common", "catalog", "modelling", "project"},
 }
 
 #: Third-party imports that would undo the point of a package.
 FORBIDDEN = {
-    "labels": {
+    "contracts": {
         "torch",
         "timm",
         "transformers",

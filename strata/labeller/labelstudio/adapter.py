@@ -1,7 +1,7 @@
 """The Label Studio boundary.
 
 Everything that knows Label Studio's shape stops here. Past this module a
-sample is a catalog row and an annotation is a :mod:`strata.labels` value;
+sample is a catalog row and an annotation is a :mod:`strata.contracts` value;
 inside it, results carry control names, media keys and percentages, and
 ``schemas/`` does the conversion. A task's sample URL names the checksum.
 See ``docs/adr/0013`` and ``docs/adr/0001``.
@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from strata.catalog import Catalog, SampleRow, SignedUrls, blob_path, suffix_of
-from strata.labels import AnyPrediction, AnyValue
+from strata.contracts import AnyPrediction, AnyValue
 
 from .schemas import LabelSchema
 

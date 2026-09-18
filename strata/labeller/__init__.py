@@ -1,6 +1,6 @@
 """Active learning over a catalog, and the Label Studio adapter that feeds it.
 
-**May import:** ``labels``, ``catalog``, ``modelling`` and ``project``;
+**May import:** ``contracts``, ``catalog``, ``modelling`` and ``project``;
 Label Studio only inside :mod:`strata.labeller.labelstudio`
 (``docs/adr/0013``).
 

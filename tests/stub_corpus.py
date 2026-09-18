@@ -17,7 +17,7 @@ from typing import ClassVar
 
 from strata.catalog.types.builtin_types import Text
 from strata.catalog.types.preparers import Prepared, Preparer
-from strata.labels import Span, Spans
+from strata.contracts import Span, Spans
 
 
 class Note(Text):

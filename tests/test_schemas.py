@@ -7,6 +7,10 @@ model's output has to reach Label Studio in the shape it expects.
 
 import pytest
 
+from strata.contracts import (
+    Box,
+    Span,
+)
 from strata.labeller.labelstudio import schemas
 from strata.labeller.labelstudio.schemas import (
     BBoxSchema,
@@ -15,10 +19,6 @@ from strata.labeller.labelstudio.schemas import (
     strip_volatile,
 )
 from strata.labeller.labelstudio.schemas.media import IMAGE, TEXT
-from strata.labels import (
-    Box,
-    Span,
-)
 
 # ----------------------------------------------------------------------
 # Classification

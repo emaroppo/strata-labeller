@@ -17,7 +17,7 @@ from strata.labeller.round import RoundError, describe, run_round
 
 def stock(project, catalog, labelled: int, total: int):
     """Ingest files and answer some, the way a project fills a catalog."""
-    from strata.labels import Choices
+    from strata.contracts import Choices
 
     paths = []
     for i in range(total):
@@ -243,7 +243,7 @@ def test_an_unreachable_ratio_is_called_out(project, tmp_path):
     A val figure read without knowing that is misleading, so the round says
     what grouping actually allowed.
     """
-    from strata.labels import Choices
+    from strata.contracts import Choices
 
     shutil.copyfile(TOY_SOURCE, project.root / "toy.py")
     toml = project.root / "project.toml"
@@ -357,7 +357,7 @@ def test_a_retry_does_not_refetch_a_version_it_already_has(project, monkeypatch)
     goes through it.
     """
     from strata.catalog.stages import Context, MaterialiseRequest, materialise
-    from strata.labels import MANIFEST_FORMAT, MANIFEST_NAME, ClassificationSchema, Manifest
+    from strata.contracts import MANIFEST_FORMAT, MANIFEST_NAME, ClassificationSchema, Manifest
 
     version_dir = project.datasets_dir / project.dataset_name / "v002"
     (version_dir / "files").mkdir(parents=True)

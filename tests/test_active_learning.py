@@ -17,7 +17,7 @@ class Sample:
 
 
 def scored(*confidences):
-    from strata.labels import ChoicesPrediction
+    from strata.contracts import ChoicesPrediction
 
     return ChoicesPrediction(values=["a"] * len(confidences), confidences=list(confidences))
 
@@ -69,8 +69,8 @@ def test_certainty_is_not_the_first_confidence():
 
 
 def test_nothing_asserted_is_no_certainty():
+    from strata.contracts import ChoicesPrediction
     from strata.labeller.review.active_learning import certainty
-    from strata.labels import ChoicesPrediction
 
     assert certainty(ChoicesPrediction()) == 0.0
 
@@ -82,7 +82,7 @@ def test_nothing_asserted_is_no_certainty():
 
 def _pool(n_found: int, n_nothing: int):
     """Predictions that assert something, and predictions that assert nothing."""
-    from strata.labels import Span, SpansPrediction
+    from strata.contracts import Span, SpansPrediction
 
     samples, scores = [], {}
     for i in range(n_found):
@@ -162,7 +162,7 @@ def test_a_share_outside_a_proportion_is_refused():
 
 
 def _spans(*confidences):
-    from strata.labels import Span, SpansPrediction
+    from strata.contracts import Span, SpansPrediction
 
     return SpansPrediction(
         values=[Span(labels=["PER"], start=i, end=i + 1) for i in range(len(confidences))],
@@ -209,7 +209,7 @@ def test_density_counts_confident_spans_not_every_guess():
 
 
 def test_density_of_an_empty_prediction_is_nothing_to_check():
+    from strata.contracts import SpansPrediction
     from strata.labeller.review.active_learning import density
-    from strata.labels import SpansPrediction
 
     assert density(SpansPrediction(values=[], confidences=[])) == 0.0

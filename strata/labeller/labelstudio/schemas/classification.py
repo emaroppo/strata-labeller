@@ -1,6 +1,6 @@
 """Classification: one or more classes for a whole sample."""
 
-from strata.labels import Choices
+from strata.contracts import Choices
 
 from .base import LabelSchema, Result, strip_volatile
 from .media import IMAGE, Media
@@ -41,7 +41,7 @@ class ClassificationSchema(LabelSchema):
     # ------------------------------------------------------------------
 
     def catalog_schema(self):
-        from strata.labels import ClassificationSchema as Stored
+        from strata.contracts import ClassificationSchema as Stored
 
         return Stored(classes=list(self.classes), multiple=self.choice != "single")
 

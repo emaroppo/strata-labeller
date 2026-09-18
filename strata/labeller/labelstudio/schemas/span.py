@@ -10,7 +10,7 @@ A region carries a *list* of labels. What a label set allows is declared:
 ``docs/adr/0014``.
 """
 
-from strata.labels import Span, Spans
+from strata.contracts import Span, Spans
 
 from .base import LabelSchema, Result, strip_volatile
 from .media import TEXT, Media
@@ -47,7 +47,7 @@ class SpanSchema(LabelSchema):
         return self.media.data_key
 
     def catalog_schema(self):
-        from strata.labels import SpanSchema as Stored
+        from strata.contracts import SpanSchema as Stored
 
         return Stored(
             classes=list(self.classes),

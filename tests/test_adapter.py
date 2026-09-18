@@ -10,6 +10,7 @@ from typing import ClassVar
 import pytest
 
 from strata.catalog import EVERYTHING
+from strata.contracts import Choices, ChoicesPrediction
 from strata.labeller.labelstudio.adapter import (
     LOCAL_FILES,
     Addressing,
@@ -19,7 +20,6 @@ from strata.labeller.labelstudio.adapter import (
     from_results,
     to_results,
 )
-from strata.labels import Choices, ChoicesPrediction
 
 ADDRESSING = Addressing(prefix="blobs")
 
@@ -32,7 +32,7 @@ def schema(project):
 @pytest.fixture
 def stocked(catalog, files):
     """A catalog with samples and a label set over them."""
-    from strata.labels import ClassificationSchema
+    from strata.contracts import ClassificationSchema
 
     paths = files(4)
     ids = catalog.ingest(paths, media="image")

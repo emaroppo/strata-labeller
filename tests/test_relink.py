@@ -8,9 +8,9 @@ describable.
 import pytest
 
 from strata.catalog import EVERYTHING, SignedUrls
+from strata.contracts import ClassificationSchema
 from strata.labeller.labelstudio.adapter import Addressing, blob_url
 from strata.labeller.labelstudio.sync import relink
-from strata.labels import ClassificationSchema
 
 SECRET = "shared with the server"
 

@@ -7,6 +7,7 @@ these work on the payloads the SDK hands over and hands back.
 import pytest
 
 from strata.catalog import EVERYTHING, Catalog
+from strata.contracts import Choices, ClassificationSchema
 from strata.labeller.labelstudio.adapter import Addressing, blob_url
 from strata.labeller.labelstudio.sync import (
     load_task_map,
@@ -15,7 +16,6 @@ from strata.labeller.labelstudio.sync import (
     save_task_map,
     tasks_to_push,
 )
-from strata.labels import Choices, ClassificationSchema
 
 ADDRESSING = Addressing(prefix="blobs")
 

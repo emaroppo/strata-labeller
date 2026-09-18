@@ -10,7 +10,7 @@ the project's features.
 import pytest
 
 from strata.catalog import Catalog
-from strata.labels import MANIFEST_NAME, Choices, Manifest
+from strata.contracts import MANIFEST_NAME, Choices, Manifest
 
 SPECIES = {"name": "species", "source": "metadata", "ref": "species"}
 

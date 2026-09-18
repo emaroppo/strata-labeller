@@ -9,8 +9,8 @@ import pytest
 from typer.testing import CliRunner
 
 from strata.catalog import EVERYTHING, Catalog
+from strata.contracts import Choices, ClassificationSchema
 from strata.labeller.cli import app
-from strata.labels import Choices, ClassificationSchema
 from strata.modelling import Run, RunStore
 
 runner = CliRunner()
@@ -151,7 +151,7 @@ def test_report_shows_the_projects_catalogs_history_only(runs, tmp_path):
 
 def test_report_says_how_imported_labels_fared_under_review(runs, tmp_path):
     from strata.catalog import Catalog
-    from strata.labels import Choices, ClassificationSchema
+    from strata.contracts import Choices, ClassificationSchema
 
     project, store = runs
     a_run(store)

@@ -7,13 +7,13 @@ review time, which is why they live here and not with the value types.
 
 import pytest
 
+from strata.contracts import ChoicesPrediction
 from strata.labeller.review.active_learning import (
     STRATEGIES,
     entropy,
     least_confident,
     margin,
 )
-from strata.labels import ChoicesPrediction
 
 
 def prediction(*confidences: float) -> ChoicesPrediction:

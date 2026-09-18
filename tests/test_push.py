@@ -17,8 +17,8 @@ import pytest
 from fake_label_studio import FakeLabelStudio
 from typer.testing import CliRunner
 
+from strata.contracts import Choices, ChoicesPrediction
 from strata.labeller.cli import app
-from strata.labels import Choices, ChoicesPrediction
 from strata.modelling import PredictionCache, RunStore
 from strata.modelling.requests import Run
 
@@ -42,7 +42,7 @@ CONFIDENCES = {
 def stage(make_project, tmp_path, monkeypatch):
     """A project, a catalog with three unlabelled samples, and a recorded run."""
     from strata.catalog import Catalog
-    from strata.labels import ClassificationSchema
+    from strata.contracts import ClassificationSchema
 
     project = make_project("demo", classes=["cat", "dog"])
     catalog_root = tmp_path / "catalog"
@@ -355,7 +355,7 @@ def test_a_disputed_sample_is_pushed_first(stage):
     model's opinion, which has no bearing on the disagreement — and the
     model is confident about this one.
     """
-    from strata.labels import Choices
+    from strata.contracts import Choices
 
     project, config, fake, by_name, catalog, label_set_id = stage
     settled = by_name["confident"]
