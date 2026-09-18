@@ -23,6 +23,7 @@ from ._shared import (
     app,
     console,
 )
+from .data import _prepare_hint
 
 
 @app.command()
@@ -45,8 +46,9 @@ def new(
 ) -> None:
     """Scaffold a new project under projects/ (or at an explicit path)."""
     directory = Path(name_or_path)
-    # A bare name lands in projects/; anything path-shaped is taken literally
-    if len(directory.parts) == 1 and not directory.is_absolute():
+    # A bare name lands in projects/; anything path-shaped is taken literally.
+    # Read off what was typed: Path("./cats") has dropped its "./" already.
+    if "/" not in name_or_path and not name_or_path.startswith("."):
         directory = Path(PROJECTS_DIR) / directory
     directory.mkdir(parents=True, exist_ok=True)
     with _exit_on(ProjectError):
@@ -61,7 +63,10 @@ def new(
         )
 
     console.print(f"[green]Created project '{project.name}' in {directory}[/green]")
+    # Ingest takes a prepared corpus, so the first step is preparing one.
+    # docs/adr/0040
     console.print(f"  Put {project.schema.media.name} files in {project.data_dir}, then run:")
+    console.print(f"    {_prepare_hint(project)}")
     console.print(f"    strata-labeller ingest --project {project.name}")
 
 
