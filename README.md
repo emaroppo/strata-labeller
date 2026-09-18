@@ -30,8 +30,8 @@ in one module; past it a sample is a catalog row and an annotation is a
                                                    └──────────────────────┘
 ```
 
-1. `prepare` converts a corpus into what the catalog holds, when it did not arrive that way
-2. `ingest` registers files in the catalog, content-addressed, so re-running over a growing directory is safe
+1. `prepare` gets a corpus into the shape the project's type takes and writes the prepared index naming it: converting mail or video, or indexing a folder already in shape where it sits
+2. `ingest` checks the index against the type, refuses the corpus whole if any file falls short, and registers the rest content-addressed, so re-running over a growing directory is safe
 3. `push` scores everything unreviewed and sends the least confident to Label Studio with the model's guess attached
 4. Review in Label Studio: confirm what is right, fix what is not
 5. `export` pulls the corrections back into the catalog
@@ -67,7 +67,7 @@ choice = "multiple"                  # "single" for mutually exclusive classes
 [data]
 type = "image"                       # a registered sample type
 # source_root = "data/source"        # a corpus that needs converting first
-# preparer = "eml"
+# preparer = "eml"                   # else chosen by type and extension; see strata-prepare preparers
 
 # [[data.features]]                  # what the model is told besides the bytes
 # name = "species"
@@ -117,6 +117,7 @@ repository root starts a Label Studio for development.
 ```bash
 strata-labeller new cats --class cat --class dog
 cp -r /path/to/images/* projects/cats/data/raw/
+strata-labeller prepare -p cats --preparer image-folder --from projects/cats/data/raw   # indexes them in place
 strata-labeller ingest -p cats
 strata-labeller init -p cats                 # creates the Label Studio project
 ```
@@ -131,8 +132,8 @@ Then label a seed set and run `train`, `push`, `export` in a loop.
 | `templates` | list label config templates |
 | `projects` | list projects and their counts |
 | `class add` / `class list` | extend or inspect a project's classes |
-| `prepare` | convert a corpus into what this project ingests |
-| `ingest` | register files from the project's data root |
+| `prepare` | get a corpus into the shape this project ingests, with its prepared index |
+| `ingest` | register the prepared corpus in the project's data root |
 | `init` | create the Label Studio project and fill it |
 | `push` | send unreviewed samples, least confident first |
 | `export` | pull corrections back into the catalog |
@@ -153,7 +154,7 @@ queue is two pools (0012), and Label Studio stops at the adapter (0013).
 ## Tests
 
 ```bash
-.github/sibling-wheels.sh contracts common catalog modelling project   # the strata packages this one needs, until they are on an index
+.github/sibling-wheels.sh contracts common catalog prepare modelling project   # the strata packages this one needs, until they are on an index
 uv sync --find-links dist --group dev
 uv run pytest
 ```

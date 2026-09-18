@@ -18,8 +18,8 @@ from importlib.metadata import EntryPoint
 import pytest
 from typer.testing import CliRunner
 
-from strata.catalog.types.prepared import PreparedIndex
 from strata.labeller.cli import app
+from strata.prepare import load_index
 
 runner = CliRunner()
 
@@ -38,8 +38,8 @@ NOTES = [
 @pytest.fixture(autouse=True)
 def stub_plugins(monkeypatch):
     """Register the stand-ins, beside whatever the environment really has."""
-    import strata.catalog.types.preparers as preparers
-    import strata.catalog.types.sample_types as sample_types
+    import strata.contracts.sample_types as sample_types
+    import strata.prepare.preparers as preparers
 
     real_types = sample_types.entries()
     monkeypatch.setattr(
@@ -93,12 +93,16 @@ def test_the_documents_are_already_canonical(notes_project):
     # Otherwise ingest rewrites them, and the file on disk and the sample
     # in the catalog stop having the same checksum
     assert b"\r" not in data
-    assert notes_project.sample_type().canonicalise(data) == data
+    # And a candidate span on them addresses what the catalog stores: a
+    # catalog refuses one riding on bytes it would rewrite
+    from strata.catalog import canonical_form
+
+    assert canonical_form(type(notes_project.sample_type()))(data) == data
 
 
 def test_the_index_lands_where_ingest_will_read_it(notes_project):
     prepare(notes_project)
-    index = PreparedIndex.load(notes_project.data_dir)
+    index = load_index(notes_project.data_dir)
     assert index is not None and index.produced_by == "notes-json"
     [entry] = index.samples.values()
     assert entry.metadata["subject"] == "Hello"
@@ -109,7 +113,7 @@ def test_candidates_are_reported_but_not_landed(notes_project):
     # They are guesses. Saying so is the point; storing them without anyone
     # asking would make an export stamp them as answers.
     assert "candidate annotations" in result.output
-    index = PreparedIndex.load(notes_project.data_dir)
+    index = load_index(notes_project.data_dir)
     [entry] = index.samples.values()
     assert entry.value.values[0].labels == ["PER"]
 

@@ -1,4 +1,4 @@
-"""Getting a project's files into its catalog: what a directory holds, and registering it.
+"""Getting a project's files into its catalog: preparing a source, then registering it.
 
 What ``prepare`` and ``ingest`` do between reading a directory and saying
 what happened. Nothing here prints; each step returns what it found and
@@ -24,9 +24,10 @@ class Scan:
         return sorted({p.suffix.lower() or "(none)" for p in self.skipped})
 
 
-def scan(root: Path, allows: Callable[[Path], bool]) -> Scan:
-    """Everything under ``root``, then checked. See ``docs/adr/0010``."""
-    everything = [p for p in sorted(Path(root).rglob("*")) if p.is_file()]
+def scan(root: Path, allows: Callable[[Path], bool], ignore: Iterable[Path] = ()) -> Scan:
+    """Everything under ``root`` but ``ignore``, then checked. See ``docs/adr/0010``."""
+    ignored = set(ignore)
+    everything = [p for p in sorted(Path(root).rglob("*")) if p.is_file() and p not in ignored]
     found = [p for p in everything if allows(p)]
     admitted = set(found)
     return Scan(everything, found, [p for p in everything if p not in admitted])
@@ -35,34 +36,32 @@ def scan(root: Path, allows: Callable[[Path], bool]) -> Scan:
 def ingest_files(
     catalog,
     sample_type,
-    data_dir: Path,
-    found: Iterable[Path],
+    admission,
     *,
     collections,
     batch: int,
     on_sample: Callable[[Path], None] | None = None,
 ) -> dict[Path, int]:
-    """Register ``found`` in ``catalog`` as ``sample_type`` says; returns each file's sample id.
+    """Register an admitted corpus in ``catalog``; returns each file's sample id.
 
-    In batches, each one transaction, so a re-run after a failure carries
-    on (``docs/adr/0032``). A grouping is in the metadata the type records,
-    and nothing here treats it apart (``docs/adr/0023``).
+    ``admission`` is what the catalog checked the prepared index against the
+    type into: each file with the metadata to record, ``source_path``
+    included. In batches, each one transaction, so a re-run after a failure
+    carries on (``docs/adr/0032``). A grouping is in that metadata, and
+    nothing here treats it apart (``docs/adr/0023``).
     """
-    paths = list(found)
-    canonicalise = sample_type.canonicalise if type(sample_type).canonicalises() else None
+    from strata.catalog import canonical_form
+
+    paths = list(admission.entries)
+    canonicalise = canonical_form(type(sample_type))
     registered: dict[Path, int] = {}
     for start in range(0, len(paths), batch):
         chunk = paths[start : start + batch]
-        sources = {p: str(p.relative_to(data_dir)) for p in chunk}
         ids = catalog.ingest(
             chunk,
             media=sample_type.media,
             subtype=type(sample_type).subtype(),
-            # What only the type knows, plus where it came from
-            metadata_for=lambda p, sources=sources: {
-                "source_path": sources[p],
-                **sample_type.metadata_for(p, data_dir),
-            },
+            metadata_for=admission.entries.__getitem__,
             canonicalise=canonicalise,
             collections=collections,
             on_sample=on_sample,
@@ -71,43 +70,18 @@ def ingest_files(
     return registered
 
 
-def land_labels(catalog, label_set_id: int, data_dir: Path, registered: dict[Path, int], batch):
-    """Store the labels the prepared index carries for ``registered`` files, as one import.
+def land_labels(catalog, label_set_id: int, admission, registered: dict[Path, int], batch):
+    """Store the candidate labels an admitted corpus carries, as one import.
 
     The labels enter with the files, under ``source="import"`` and the batch
-    name given (``docs/adr/0028``). A file the index labels but ingest did
-    not register is counted. Returns what was written and how many were not
-    there.
+    name given (``docs/adr/0028``). Every labelled file was admitted, so
+    every one is registered. Returns what was written, or None where the
+    corpus carried no labels.
     """
-    from strata.catalog import PreparedIndex
-    from strata.catalog.types.prepared import relative_key
-
-    index = PreparedIndex.load(data_dir)
-    if index is None:
-        return None, 0
-    by_name = {relative_key(path, data_dir): sample_id for path, sample_id in registered.items()}
-    items, missing = [], 0
-    for name, entry in index.samples.items():
-        if entry.value is None:
-            continue
-        if name not in by_name:
-            missing += 1
-            continue
-        items.append((by_name[name], entry.value))
+    items = [(registered[path], value) for path, value in admission.values.items()]
     if not items:
-        return None, missing
-    written = catalog.annotations.annotate_many(label_set_id, items, source="import", batch=batch)
-    return written, missing
-
-
-def labelled_in_index(data_dir: Path) -> int:
-    """How many entries of the prepared index beside ``data_dir`` carry a label."""
-    from strata.catalog import PreparedIndex
-
-    index = PreparedIndex.load(data_dir)
-    if index is None:
-        return 0
-    return sum(1 for entry in index.samples.values() if entry.value is not None)
+        return None
+    return catalog.annotations.annotate_many(label_set_id, items, source="import", batch=batch)
 
 
 def catalogued(catalog, label_set_id: int, collections) -> tuple[int, int]:
@@ -125,9 +99,9 @@ def choose_preparer(name: str, produces: str, sample: Path):
     Refuses one whose output this project would not ingest. See
     ``docs/adr/0033``.
     """
-    from strata.catalog.types.preparers import PreparerError, for_source, resolve
+    from strata.prepare import PreparerError, preparers
 
-    cls = resolve(name) if name else for_source(produces, sample)
+    cls = preparers.resolve(name) if name else preparers.for_source(produces, sample)
     if cls.produces != produces:
         raise PreparerError(
             f"'{cls.name}' produces '{cls.produces}' samples and this project ingests '{produces}'."

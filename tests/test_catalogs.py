@@ -136,6 +136,11 @@ root = "{tmp_path / "text"}"
         )
         for i in range(count):
             (root / "data" / "raw" / f"{i}.jpg").write_bytes(f"{job} {i}".encode())
+        raw = str(root / "data" / "raw")
+        prepared = runner.invoke(
+            app, ["prepare", "-p", str(root), "--preparer", "image-folder", "--from", raw]
+        )
+        assert prepared.exit_code == 0, prepared.stdout
         result = runner.invoke(app, ["ingest", "-p", str(root), "--config", str(config)])
         assert result.exit_code == 0, result.stdout
 

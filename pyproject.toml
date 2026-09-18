@@ -12,6 +12,7 @@ dependencies = [
     # from the start rather than at the phase that first imports them.
     "strata-contracts>=0.1,<0.2",
     "strata-catalog>=0.1,<0.2",
+    "strata-prepare>=0.1,<0.2",
     "strata-modelling>=0.1,<0.2",
     "strata-project>=0.1,<0.2",
 ]

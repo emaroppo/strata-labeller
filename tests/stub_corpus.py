@@ -15,9 +15,8 @@ import json
 from pathlib import Path
 from typing import ClassVar
 
-from strata.catalog.types.builtin_types import Text
-from strata.catalog.types.preparers import Prepared, Preparer
-from strata.contracts import Span, Spans
+from strata.contracts import Span, Spans, Text
+from strata.prepare import Prepared, Preparer
 
 
 class Note(Text):
@@ -39,7 +38,7 @@ class NotesPreparer(Preparer):
     def report(self) -> dict[str, int]:
         return {"skipped_empty": self._empty} if self._empty else {}
 
-    def prepare(self, source: Path, out_dir: Path) -> list[Prepared]:
+    def prepare(self, source: Path, out_dir: Path, *, root: Path) -> list[Prepared]:
         written = []
         for note in json.loads(Path(source).read_text()):
             body = note["body"].replace("\r\n", "\n")
@@ -69,5 +68,5 @@ class FramesStub(Preparer):
     produces: ClassVar[str] = "frames"
     sources: ClassVar[frozenset[str]] = frozenset({"mp4"})
 
-    def prepare(self, source: Path, out_dir: Path) -> list[Prepared]:
+    def prepare(self, source: Path, out_dir: Path, *, root: Path) -> list[Prepared]:
         return []

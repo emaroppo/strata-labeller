@@ -2,8 +2,8 @@
 
 import pytest
 
-from strata.catalog.types.preparers import PreparerError
 from strata.labeller import corpus
+from strata.prepare import PreparerError
 
 
 def test_a_scan_keeps_what_is_admitted_and_names_the_kinds_it_skipped(tmp_path):
@@ -21,7 +21,7 @@ def test_a_scan_keeps_what_is_admitted_and_names_the_kinds_it_skipped(tmp_path):
 
 
 def test_a_preparer_producing_the_wrong_type_is_refused_by_name(monkeypatch, tmp_path):
-    from strata.catalog.types import preparers
+    from strata.prepare import preparers
 
     class Frames:
         name = "video-frames"

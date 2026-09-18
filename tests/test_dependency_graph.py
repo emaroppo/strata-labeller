@@ -24,13 +24,18 @@ import pytest
 
 #: Which strata packages each may import.
 ALLOWED = {
-    "contracts": set(),
+    # The sample type registry resolves through common's entry-point
+    # resolver; nothing else of it (docs/adr/0040).
+    "contracts": {"common"},
     "common": set(),
     "catalog": {"contracts", "common"},
+    # Fills a catalog without knowing one: what passes between them is the
+    # prepared index, which contracts defines (docs/adr/0040).
+    "prepare": {"contracts", "common"},
     "modelling": {"contracts", "catalog", "common"},
     # The job: the one file the two tools above it both read (docs/adr/0016).
     "project": {"contracts", "catalog", "modelling"},
-    "labeller": {"contracts", "catalog", "modelling", "project"},
+    "labeller": {"contracts", "catalog", "prepare", "modelling", "project"},
     # Sequences the others' stages over a project. Nothing may import it,
     # and it does not import the labeller: the two are peers over the job.
     "experiment": {"contracts", "common", "catalog", "modelling", "project"},
@@ -51,6 +56,17 @@ FORBIDDEN = {
     # frameworks or the value types, or every consumer would carry them.
     "common": {"torch", "timm", "transformers", "boto3", "fastapi", "label_studio_sdk", "pydantic"},
     "catalog": {"torch", "timm", "transformers", "label_studio_sdk"},
+    # A decoder is a plugin's to carry, and a storage layer is the catalog's.
+    "prepare": {
+        "torch",
+        "timm",
+        "transformers",
+        "sqlalchemy",
+        "boto3",
+        "fastapi",
+        "label_studio_sdk",
+        "cv2",
+    },
     "modelling": {"label_studio_sdk"},
     # The job names no tool and carries no framework.
     "project": {"label_studio_sdk", "torch", "timm", "transformers"},
