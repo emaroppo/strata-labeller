@@ -15,7 +15,7 @@ GEOMETRY_FIELDS = ("original_width", "original_height", "image_rotation")
 
 
 class BBoxSchema(LabelSchema):
-    task = "bbox"
+    label_type = "bbox"
     #: What an annotation of this type is. docs/adr/0013
     value_type = Boxes
     control_tag = "RectangleLabels"
@@ -34,7 +34,7 @@ class BBoxSchema(LabelSchema):
 
     @property
     def type(self) -> str:
-        return f"{self.media.name}_{self.task}"
+        return f"{self.media.name}_{self.label_type}"
 
     @property
     def data_key(self) -> str:

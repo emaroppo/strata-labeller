@@ -29,10 +29,10 @@ class TemplateSyntax(Template):
 
 @runtime_checkable
 class LabelSchema(Protocol):
-    """The contract every task type implements."""
+    """The contract every label type implements."""
 
-    #: Which task this is, as the catalog names it: "classification", "bbox", "span"
-    task: ClassVar[str]
+    #: Which label type this is, as the catalog names it: "classification", "bbox", "span"
+    label_type: ClassVar[str]
     #: What an annotation of this type is. docs/adr/0013
     value_type: ClassVar[type[Choices] | type[Spans] | type[Boxes]]
     #: The Label Studio control this schema annotates with
@@ -46,7 +46,7 @@ class LabelSchema(Protocol):
 
     @property
     def type(self) -> str:
-        """ "<media>_<task>", e.g. "text_classification"."""
+        """ "<media>_<label type>", e.g. "text_classification"."""
         ...
 
     @property

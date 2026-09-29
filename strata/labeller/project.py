@@ -9,8 +9,8 @@ which is not part of a handoff (``docs/adr/0016``):
     ├── label_config.xml        # [label_studio] config only: a config of the project's own
     └── .state/                 # Label Studio bookkeeping: which queue is whose
 
-The schema a project labels with is built from the job: the task and
-classes are ``[label_set]``'s, and the media is the sample type's. A
+The schema a project labels with is built from the job: the label type
+and classes are ``[label_set]``'s, and the media is the sample type's. A
 project with a config of its own supplies the control names Label Studio
 already knows, and has to agree with the job on the rest.
 """
@@ -52,7 +52,7 @@ class LabelStudioSpec:
     """The ``[label_studio]`` section: what this tool keeps in the job's file."""
 
     #: A labeling config of the project's own, relative to the project root.
-    #: It supplies control names and layout; the task and the classes are
+    #: It supplies control names and layout; the label type and the classes are
     #: ``[label_set]``'s, and the config has to agree with them.
     config: str = ""
 
@@ -93,10 +93,11 @@ class LabellingProject(Project):
             if self.label_studio.config:
                 return self._schema_from_config()
             media = self.sample_type().media
-            template = f"{media}_{spec.task}"
+            template = f"{media}_{spec.label_type}"
             if template not in schemas.TEMPLATES:
                 raise ProjectError(
-                    f'No labeling template for task = "{spec.task}" over {media} samples '
+                    f'No labeling template for label_type = "{spec.label_type}" '
+                    f"over {media} samples "
                     f"(available: {', '.join(sorted(schemas.TEMPLATES))})"
                 )
             declared = {
@@ -120,9 +121,10 @@ class LabellingProject(Project):
         if not path.exists():
             raise ProjectError(f"[label_studio] config names {path}, which does not exist")
         schema = schemas.from_label_config(path.read_text())
-        if schema.task != self.label_set.task:
+        if schema.label_type != self.label_set.label_type:
             raise ProjectError(
-                f"{path.name} annotates {schema.task}; [label_set] task is {self.label_set.task}"
+                f"{path.name} annotates {schema.label_type}; [label_set] label_type is "
+                f"{self.label_set.label_type}"
             )
         declared = self.label_set.classes
         undeclared = [c for c in schema.classes if c not in declared] if declared else []
@@ -217,14 +219,19 @@ class LabellingProject(Project):
         root: Path,
         name: str | None = None,
         classes: list[str] | None = None,
-        task: str = "classification",
+        label_type: str = "classification",
         choice: str = "multiple",
         sample_type: str = "image",
         custom: bool = False,
     ) -> "LabellingProject":
         """Scaffold the job, and with ``custom`` a labeling config of its own."""
         project = super().create(
-            root, name=name, classes=classes, task=task, choice=choice, sample_type=sample_type
+            root,
+            name=name,
+            classes=classes,
+            label_type=label_type,
+            choice=choice,
+            sample_type=sample_type,
         )
         if not custom:
             return project

@@ -17,16 +17,16 @@ def test_create_then_load_round_trip(project):
 
 
 def test_the_template_follows_the_task_and_the_media(make_project):
-    spans = make_project("spans", task="span", sample_type="text", classes=["PER"])
+    spans = make_project("spans", label_type="span", sample_type="text", classes=["PER"])
     assert spans.schema.type == "text_span"
-    boxes = make_project("boxes", task="bbox")
+    boxes = make_project("boxes", label_type="bbox")
     assert boxes.schema.type == "image_bbox"
 
 
 def test_a_task_with_no_template_over_its_media_fails_at_load(make_project):
     # Spans over images: the job is well-formed, the tool has no template for it
     with pytest.raises(ProjectError, match="No labeling template"):
-        make_project("odd", task="span")
+        make_project("odd", label_type="span")
 
 
 def test_an_unknown_section_is_refused_by_the_tool(project):
@@ -77,12 +77,12 @@ def test_a_custom_config_may_not_offer_a_class_the_job_does_not_declare(make_pro
         LabellingProject.load(project.root)
 
 
-def test_a_custom_config_must_annotate_the_jobs_task(make_project):
+def test_a_custom_config_must_annotate_the_jobs_label_type(make_project):
     project = make_project("custom", custom=True)
     toml = project.root / "project.toml"
     toml.write_text(
         toml.read_text()
-        .replace('task = "classification"', 'task = "bbox"')
+        .replace('label_type = "classification"', 'label_type = "bbox"')
         .replace('choice = "multiple"', "")
     )
     with pytest.raises(ProjectError, match="annotates classification"):

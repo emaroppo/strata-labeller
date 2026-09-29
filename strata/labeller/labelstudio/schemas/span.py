@@ -18,7 +18,7 @@ from .render import render_template
 
 
 class SpanSchema(LabelSchema):
-    task = "span"
+    label_type = "span"
     value_type = Spans
     control_tag = "Labels"
 
@@ -40,7 +40,7 @@ class SpanSchema(LabelSchema):
 
     @property
     def type(self) -> str:
-        return f"{self.media.name}_{self.task}"
+        return f"{self.media.name}_{self.label_type}"
 
     @property
     def data_key(self) -> str:

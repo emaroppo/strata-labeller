@@ -19,7 +19,7 @@ TOY_SOURCE = Path(__file__)
 
 
 class Toy(Model):
-    task = "classification"
+    label_type = "classification"
     version = "1"
 
     def __init__(

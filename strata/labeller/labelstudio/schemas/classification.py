@@ -11,7 +11,7 @@ class ClassificationSchema(LabelSchema):
     value_type = Choices
     """Classes for a whole sample, whatever the sample is made of."""
 
-    task = "classification"
+    label_type = "classification"
     control_tag = "Choices"
 
     def __init__(
@@ -30,7 +30,7 @@ class ClassificationSchema(LabelSchema):
 
     @property
     def type(self) -> str:
-        return f"{self.media.name}_{self.task}"
+        return f"{self.media.name}_{self.label_type}"
 
     @property
     def data_key(self) -> str:

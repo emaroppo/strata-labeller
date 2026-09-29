@@ -55,7 +55,7 @@ def report(
     settings = _settings(config_path)
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     within = catalog.id
-    metric = metric or history.headline_metric(project.schema.task)
+    metric = metric or history.headline_metric(project.schema.label_type)
 
     if run_id is not None:
         run = store.get(run_id)

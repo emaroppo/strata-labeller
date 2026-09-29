@@ -69,7 +69,7 @@ my-project/
 
 ```toml
 [label_set]
-task = "classification"              # or bbox, span
+label_type = "classification"        # or bbox, span
 classes = ["cat", "dog"]
 choice = "multiple"                  # "single" for mutually exclusive classes
 # multi_label = true      # span projects: one region may carry several labels
@@ -103,7 +103,7 @@ The label set is authoritative for classes: the file seeds them once, and
 `class add` extends them, append-only. The file is the job, read by
 `strata-project`; what is the labeller's own goes under `[label_studio]`,
 where `config = "label_config.xml"` names a labeling config of the
-project's own. Its task and classes are still `[label_set]`'s.
+project's own. Its label type and classes are still `[label_set]`'s.
 
 ## Setup
 

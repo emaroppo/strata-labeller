@@ -34,8 +34,10 @@ def new(
     name: str | None = typer.Option(None, help="Project name (default: directory name)"),
     classes: list[str] = typer.Option([], "--class", help="Label class (repeatable)"),
     single: bool = typer.Option(False, "--single", help="Classes are mutually exclusive"),
-    task: str = typer.Option(
-        "classification", help="What is annotated: classification, bbox or span"
+    label_type: str = typer.Option(
+        "classification",
+        "--label-type",
+        help="What an annotation looks like: classification, bbox or span",
     ),
     sample_type: str = typer.Option(
         "image", "--type", help="A registered sample type (see 'strata-catalog types')"
@@ -57,7 +59,7 @@ def new(
             name=name,
             classes=list(classes),
             choice="single" if single else "multiple",
-            task=task,
+            label_type=label_type,
             sample_type=sample_type,
             custom=custom,
         )
@@ -77,14 +79,14 @@ def templates() -> None:
 
     table = Table(title="Labeling templates")
     table.add_column("Template", style="cyan")
-    table.add_column("Task", style="magenta")
+    table.add_column("Label type", style="magenta")
     table.add_column("Media", style="magenta")
     table.add_column("Annotations", style="green")
     for name, spec in sorted(schemas.TEMPLATES.items()):
-        table.add_row(name, spec.schema.task, spec.media.name, spec.control_tag)
+        table.add_row(name, spec.schema.label_type, spec.media.name, spec.control_tag)
     console.print(table)
     console.print(
-        "[dim]A project picks one by its [label_set] task and the media of its "
+        "[dim]A project picks one by its [label_set] label_type and the media of its "
         "[data] type; a [label_studio] config of its own supplies the layout.[/dim]"
     )
 

@@ -4,15 +4,15 @@ from dataclasses import dataclass, field
 
 from strata.modelling import Run, Unchecked
 
-#: The number that summarises a run, by task. docs/adr/0035
+#: The number that summarises a run, by label type. docs/adr/0035
 HEADLINE_METRIC = {
     "classification": "val_accuracy",
     "span": "val_span_f1",
 }
 
 
-def headline_metric(task: str) -> str:
-    return HEADLINE_METRIC.get(task, "val_accuracy")
+def headline_metric(label_type: str) -> str:
+    return HEADLINE_METRIC.get(label_type, "val_accuracy")
 
 
 @dataclass
