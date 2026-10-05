@@ -111,3 +111,26 @@ def test_an_unreachable_machine_fails(setup, monkeypatch):
     result = _check(config)
     assert result.exit_code == 1
     assert "unreachable" in result.output
+
+
+def test_every_modelling_host_is_asked(tmp_path, monkeypatch):
+    catalog = Catalog.local(tmp_path / "catalog")
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'[catalog]\nroot = "{tmp_path / "catalog"}"\n\n'
+        '[modelling]\ndefault = "gpu"\n\n'
+        '[modelling.gpu]\nurl = "http://gpu:8082"\n\n'
+        '[modelling.gx10]\nurl = "http://gx10:8082"\n'
+    )
+
+    def fake_urlopen(request, timeout=None):
+        url = request if isinstance(request, str) else request.full_url
+        on = ELSEWHERE if "gx10" in url else catalog.id
+        return Reply({"ok": True, "protocol": PROTOCOL, "catalog": {"name": "d", "id": on}})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    result = _check(config)
+
+    assert result.exit_code == 1
+    assert "modelling host gpu" in result.output and "modelling host gx10" in result.output
+    assert ELSEWHERE in result.output

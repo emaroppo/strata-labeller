@@ -62,6 +62,14 @@ CatalogOption = typer.Option(
 )
 
 
+#: Which modelling host, over the project's [model] host. docs/adr/0043
+HostOption = typer.Option(
+    "",
+    "--host",
+    help="Which modelling host in config.toml (default: the project's, else the machine's)",
+)
+
+
 def _error(message: str) -> None:
     """Print an error. Escaped, since messages carry TOML section names."""
     console.print(escape(message), style="red")
@@ -147,7 +155,7 @@ def _local_paths(root: Path, samples) -> list[Path]:
         if not path.exists():
             _error(
                 f"Predicting needs the bytes as files, and {path} is not on "
-                f"this host. Three ways forward: set [modelling] url so a host "
+                f"this host. Three ways forward: give [modelling] a url so a host "
                 f"that has them scores the pool, run this where the blobs are, "
                 f"or push without --predictions. Fetching a whole review pool "
                 f"out of the bucket to rank it here is not something to do by "
@@ -233,6 +241,18 @@ def _catalog_config(settings, name: str = ""):
 
     with _exit_on(CatalogConfigError):
         return settings.catalogs.named(name)
+
+
+def _modelling(settings, name: str = ""):
+    """One of this machine's modelling hosts by name, or an exit saying which exist.
+
+    ``name`` is ``--host``, else the project's ``[model] host``; empty is the
+    machine's default. See ``docs/adr/0043``.
+    """
+    from strata.project import ModellingConfigError
+
+    with _exit_on(ModellingConfigError):
+        return settings.modelling.named(name)
 
 
 def _catalog_if_any(settings, name: str = ""):

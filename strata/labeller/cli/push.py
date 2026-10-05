@@ -11,6 +11,7 @@ from ..project import ProjectError
 from ._remote import _follow, _trainer
 from ._shared import (
     ConfigOption,
+    HostOption,
     ProjectOption,
     _addressing,
     _catalog_config,
@@ -21,6 +22,7 @@ from ._shared import (
     _load_project,
     _local_paths,
     _ls_client,
+    _modelling,
     _schema_for,
     _settings,
     _task_map,
@@ -42,7 +44,7 @@ def _store_if_any(project):
 
 
 def _run_for_push(
-    settings, project, store, run_id, remote: bool, catalog_id: str | None = None
+    host, project, store, run_id, remote: bool, catalog_id: str | None = None
 ) -> str | None:
     """Which run scores this push, in the numbering of whoever will score it.
 
@@ -59,7 +61,7 @@ def _run_for_push(
 
     from strata.modelling.remote.client import RemoteError, Trainer
 
-    trainer = Trainer(settings.modelling.url, settings.modelling.token)
+    trainer = Trainer(host.url, host.token)
     with _exit_on(RemoteError):
         # Asked for by id or not, the host is the one that knows, and it is
         # asked before the pool is fetched. docs/adr/0030
@@ -71,7 +73,7 @@ def _run_for_push(
         return None
     if not found["run"].get("checkpoint"):
         _error(
-            f"Run {found['run']['id']} on {settings.modelling.url} has no "
+            f"Run {found['run']['id']} on {host.describe()} has no "
             f"checkpoint, so there is nothing to predict with."
         )
         raise typer.Exit(1)
@@ -79,7 +81,7 @@ def _run_for_push(
 
 
 def _remote_predictions(
-    settings, run_id: str, checksums: list[str], features: dict | None = None
+    host, run_id: str, checksums: list[str], features: dict | None = None
 ) -> dict:
     """Score a review pool on the host that has the GPU and the blobs.
 
@@ -90,14 +92,14 @@ def _remote_predictions(
     from strata.modelling.remote.client import RemoteError
     from strata.modelling.remote.wire import PredictionRequest
 
-    trainer = _trainer(settings)
+    trainer = _trainer(host)
     with _exit_on(RemoteError):
         job = trainer.predict(
             PredictionRequest(run_id=run_id, checksums=checksums, features=features or {})
         )
 
     console.print(f"Scoring {len(checksums):,} sample(s) as job [bold]{job['id']}[/bold]")
-    result = _follow(trainer, job["id"])
+    result = _follow(trainer, job["id"], host.name)
 
     if result.get("unknown"):
         console.print(
@@ -155,6 +157,7 @@ def push(
             "most first, shown with the imported label as the pre-annotation"
         ),
     ),
+    host_name: str = HostOption,
 ) -> None:
     """Send unreviewed samples to Label Studio, least confident first.
 
@@ -218,9 +221,12 @@ def push(
             return
 
     store = _store_if_any(project)
-    remote = bool(settings.modelling.url)
+    # The host that trained the run is the only one that holds it.
+    # docs/adr/0043
+    host = _modelling(settings, host_name or project.model.host)
+    remote = bool(host.url)
     scores: dict[str, AnyPrediction] = {}
-    scoring_run = _run_for_push(settings, project, store, run_id, remote, catalog.id)
+    scoring_run = _run_for_push(host, project, store, run_id, remote, catalog.id)
 
     if predictions and scoring_run is not None:
         assert store is not None or remote  # a local scoring run came from the store
@@ -236,7 +242,7 @@ def push(
             # The host keeps its own cache, keyed on its own run ids.
             # docs/adr/0006
             scores = _remote_predictions(
-                settings, scoring_run, [s.checksum for s in pool], coverage.by_checksum
+                host, scoring_run, [s.checksum for s in pool], coverage.by_checksum
             )
         else:
             assert store is not None
@@ -394,7 +400,7 @@ def audit(
 
     # What the model showed, where this machine recorded it
     store = _store_if_any(project)
-    scoring_run = _run_for_push(settings, project, store, run_id, remote=False)
+    scoring_run = _run_for_push(None, project, store, run_id, remote=False)
     accepted: list = []
     if scoring_run is not None:
         pool, coverage = queue.feature_values(catalog, answered, project.feature_specs)

@@ -7,12 +7,14 @@ import typer
 from ._remote import _job_state, _on_another_catalog, _reattach, _trainer
 from ._shared import (
     ConfigOption,
+    HostOption,
     ProjectOption,
     _catalog_config,
     _catalog_for,
     _error,
     _exit_on,
     _load_project,
+    _modelling,
     _progress,
     _settings,
     app,
@@ -31,6 +33,7 @@ def train(
     job: str | None = typer.Option(
         None, "--job", help="Reattach to a round already running on the modelling host"
     ),
+    host_name: str = HostOption,
 ) -> None:
     """Train on the project's labelled data.
 
@@ -46,11 +49,13 @@ def train(
     settings = _settings(config_path)
     catalog, catalog_root = _catalog_for(settings, config_path, name=project.catalog.name)
 
+    host = _modelling(settings, host_name or project.model.host)
+
     if job is not None:
-        _reattach(settings, job)
+        _reattach(host, job)
         return
-    if settings.modelling.url:
-        _remote_round(project, catalog, settings, fresh=fresh, val_ratio=val_ratio)
+    if host.url:
+        _remote_round(project, catalog, settings, host, fresh=fresh, val_ratio=val_ratio)
         return
 
     try:
@@ -90,7 +95,7 @@ def train(
     console.print(f"  checkpoint: {result.run.checkpoint}")
 
 
-def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> None:
+def _remote_round(project, catalog, settings, host, fresh: bool, val_ratio: float) -> None:
     """Freeze a dataset here, and have another host train on it.
 
     The split is where the knowledge is. See ``docs/adr/0007``.
@@ -102,14 +107,16 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
     from strata.modelling.stages import Context as ModellingContext
     from strata.modelling.stages import DatasetIdentity, Host, TrainStageRequest, train
 
-    trainer = _trainer(settings)
+    trainer = _trainer(host)
 
     # Asked before anything is frozen. docs/adr/0030
     with _exit_on(RemoteError):
         served = trainer.served_catalog()
     if served.get("id") != catalog.id:
         config = _catalog_config(settings, project.catalog.name)
-        _error(_on_another_catalog("The modelling host", served, catalog, config))
+        _error(
+            _on_another_catalog(f"The modelling host {host.describe()}", served, catalog, config)
+        )
         raise typer.Exit(1)
 
     with _exit_on(CatalogError):
@@ -124,7 +131,7 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
             ),
             CatalogContext(catalog, project.datasets_dir),
         )
-    console.print(f"Dataset {frozen.name} v{frozen.version} → {settings.modelling.url}")
+    console.print(f"Dataset {frozen.name} v{frozen.version} → {host.describe()}")
 
     with _progress(elapsed=True, transient=True) as progress:
         bar = progress.add_task("Waiting for the host...")
@@ -146,7 +153,7 @@ def _remote_round(project, catalog, settings, fresh: bool, val_ratio: float) -> 
                 ),
                 ModellingContext(
                     store=None,
-                    host=Host(settings.modelling.url, settings.modelling.token),
+                    host=Host(host.url, host.token),
                     on_state=_job_state(progress, bar),
                     # The client already spoken to, so the handshake is not
                     # repeated and a test's fake host is the one asked

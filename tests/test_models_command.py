@@ -94,3 +94,52 @@ def test_without_a_host_the_list_is_this_machines(tmp_path, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "this machine" in result.output and "multilabel" in result.output
+
+
+@pytest.fixture
+def two_hosts(tmp_path, monkeypatch):
+    """Two modelling hosts serving different models; the default is gpu."""
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'[catalog]\nroot = "{tmp_path / "catalog"}"\n\n'
+        '[modelling]\ndefault = "gpu"\n\n'
+        '[modelling.gpu]\nurl = "http://gpu:8082"\n\n'
+        '[modelling.gx10]\nurl = "http://gx10:8082"\n'
+    )
+    served = {"gpu": SERVED, "gx10": {"spans": "strata.modelling.baselines:Spans"}}
+
+    def fake_urlopen(request, timeout=None):
+        url = request if isinstance(request, str) else request.full_url
+        if url.endswith("/healthz"):
+            return Reply({"ok": True, "protocol": PROTOCOL, "catalog": {"name": "d", "id": "c"}})
+        return Reply({"models": served["gx10" if "gx10" in url else "gpu"]})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    return config
+
+
+def test_host_asks_the_host_it_names(two_hosts):
+    payload = json.loads(_models(two_hosts, "--json", "--host", "gx10").output)
+    assert payload["where"] == "modelling host gx10"
+    assert payload["url"] == "http://gx10:8082" and "spans" in payload["models"]
+
+
+def test_a_project_naming_a_host_is_asked_against_that_host(two_hosts, make_project):
+    project = make_project("demo", classes=["cat"])
+    toml = project.root / "project.toml"
+    toml.write_text(
+        toml.read_text().replace('ref = "multilabel"', 'ref = "multilabel"\nhost = "gx10"')
+    )
+
+    result = _models(two_hosts, "-p", str(project.root))
+
+    # gx10 serves no multilabel, though the default host does
+    assert result.exit_code == 1
+    assert "gx10" in result.output
+
+
+def test_an_unknown_host_is_refused_naming_the_ones_there_are(two_hosts):
+    result = _models(two_hosts, "--host", "dgx")
+    assert result.exit_code == 1
+    assert "gpu, gx10" in result.output

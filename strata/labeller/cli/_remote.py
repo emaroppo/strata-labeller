@@ -7,29 +7,29 @@ import typer
 from ._shared import _error, _progress, console
 
 
-def _reattach(settings, job_id: str) -> None:
-    """Pick up a round that is already running elsewhere."""
+def _reattach(host, job_id: str) -> None:
+    """Pick up a round that is already running on ``host``, a job id being its own."""
     from strata.modelling.remote.client import Trainer
 
-    if not settings.modelling.url:
+    if not host.url:
         _error("No modelling host configured, so there is no job to reattach to.")
         raise typer.Exit(1)
 
-    trainer = Trainer(settings.modelling.url, settings.modelling.token)
-    _print_run_result(_follow(trainer, job_id))
+    trainer = Trainer(host.url, host.token)
+    _print_run_result(_follow(trainer, job_id, host.name))
 
 
-def _trainer(settings):
-    """The modelling host's client, refused without the token it was started with."""
+def _trainer(host):
+    """A modelling host's client, refused without the token it was started with."""
     from strata.modelling.remote.client import Trainer
 
-    if not settings.modelling.token:
+    if not host.token:
         _error(
-            "No token for the modelling host. Set $STRATA_MODELLING_TOKEN to "
-            "the same value it was started with."
+            f"No token for the modelling host {host.describe()}. Set "
+            f"{host.token_from()} to the same value it was started with."
         )
         raise typer.Exit(1)
-    return Trainer(settings.modelling.url, settings.modelling.token)
+    return Trainer(host.url, host.token)
 
 
 def _print_run_result(result: dict) -> None:
@@ -45,7 +45,7 @@ def _print_run_result(result: dict) -> None:
         console.print(f"  {metric}: {value}")
 
 
-def _follow(trainer, job_id: str) -> dict:
+def _follow(trainer, job_id: str, host_name: str = "") -> dict:
     """Watch a round to its end, surviving a network that comes and goes.
 
     Interrupting this stops watching, not training. See ``docs/adr/0007``.
@@ -76,9 +76,12 @@ def _follow(trainer, job_id: str) -> dict:
             job = trainer.follow(job_id, on_state=show)
         except KeyboardInterrupt:
             progress.stop()
+            again = f"strata-labeller train --job {job_id}"
+            if host_name:
+                again += f" --host {host_name}"
             console.print(
                 f"[yellow]Stopped watching. The round is still running on the "
-                f"host.[/yellow]\n  strata-labeller train --job {job_id}"
+                f"host.[/yellow]\n  {again}"
             )
             raise typer.Exit(0) from None
         except RemoteError as e:
@@ -107,7 +110,8 @@ def _on_another_catalog(where: str, served: dict, catalog, config) -> str:
             f" This catalog's index is SQLite under {config.root}, which only this "
             f"machine can read: the modelling host and the blob server open the index "
             f"themselves, so they can use this catalog only if they run here too. Give "
-            f"it a Postgres url to share it, or unset [modelling] url to train here."
+            f"it a Postgres url to share it, or train with a [modelling] host whose "
+            f"url is empty, which trains here."
         )
     else:
         message += (

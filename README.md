@@ -122,7 +122,10 @@ url = ""                             # a URL sends rounds to a GPU host
 ```
 
 Credentials come from the environment: `LABEL_STUDIO_API_KEY`, and
-`STRATA_MODELLING_TOKEN` for a remote host. `docker-compose.yml` at the
+`STRATA_MODELLING_TOKEN` for a remote host. Several hosts are
+`[modelling.<name>]` tables with a `default`; a project picks one with
+`[model] host`, a command with `--host`, and a named host's token can come
+from `STRATA_MODELLING_TOKEN_<NAME>` (the strata repository's ADR 0043). `docker-compose.yml` at the
 repository root starts a Label Studio for development.
 
 ```bash
