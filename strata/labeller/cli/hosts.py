@@ -32,8 +32,8 @@ def models(
 
     With a modelling host url in config.toml this is that host's list, read
     from what it has installed; without one it is this machine's, since
-    rounds then run here. The host is --host, else the project's, else the
-    machine's default. The backend is the only authority on what it can
+    rounds then run here. The host is --host, else the project's, else its
+    catalog's default, else the machine's. The backend is the only authority on what it can
     serve, so the list is not used to validate a round — the round is
     checked when it arrives — but nothing else asks until a train, which
     can be after labelling a few hundred samples. With a project, says
@@ -55,7 +55,11 @@ def models(
             raise
         project = None
 
-    host = _modelling(settings, host_name or (project.model.host if project else ""))
+    host = (
+        _modelling(settings, host_name or project.model.host, project.catalog.name)
+        if project is not None
+        else _modelling(settings, host_name)
+    )
     if host.url:
         where, url = f"modelling host {host.name}".rstrip(), host.url
         try:

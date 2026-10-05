@@ -19,6 +19,7 @@ from ._shared import (
     _label_set_for,
     _load_project,
     _ls_client,
+    _ls_url,
     _settings,
     app,
     console,
@@ -124,7 +125,6 @@ def list_projects_cmd() -> None:
     table.add_column("Labeled", justify="right")
     table.add_column("LS id", justify="right")
 
-    ls_url = settings.label_studio.url
     for directory in found:
         try:
             project = LabellingProject.load(directory)
@@ -151,7 +151,7 @@ def list_projects_cmd() -> None:
             ", ".join(project.schema.classes) or "-",
             total,
             labeled,
-            str(project.ls_project_id(ls_url) or "-"),
+            str(project.ls_project_id(_ls_url(settings, project)) or "-"),
         )
     console.print(table)
 
@@ -190,7 +190,7 @@ def class_add(
 
     _add_to_label_set(project, settings, classes)
 
-    ls_project_id = project.ls_project_id(settings.label_studio.url)
+    ls_project_id = project.ls_project_id(_ls_url(settings, project))
     if push and ls_project_id is not None:
         client = _ls_client(settings, project, config_path)
         for name in names:

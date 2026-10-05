@@ -49,7 +49,7 @@ def train(
     settings = _settings(config_path)
     catalog, catalog_root = _catalog_for(settings, config_path, name=project.catalog.name)
 
-    host = _modelling(settings, host_name or project.model.host)
+    host = _modelling(settings, host_name or project.model.host, project.catalog.name)
 
     if job is not None:
         _reattach(host, job)

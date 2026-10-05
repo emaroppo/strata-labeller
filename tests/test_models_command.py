@@ -143,3 +143,17 @@ def test_an_unknown_host_is_refused_naming_the_ones_there_are(two_hosts):
     result = _models(two_hosts, "--host", "dgx")
     assert result.exit_code == 1
     assert "gpu, gx10" in result.output
+
+
+def test_a_projects_catalog_chooses_the_host_when_nothing_else_does(two_hosts, make_project):
+    toml = two_hosts.read_text().replace(
+        '[modelling.gx10]\nurl = "http://gx10:8082"\n',
+        '[modelling.gx10]\nurl = "http://gx10:8082"\ndefault_for = ["default"]\n',
+    )
+    two_hosts.write_text(toml)
+    project = make_project("demo", classes=["cat"])
+
+    payload = json.loads(_models(two_hosts, "--json", "-p", str(project.root)).output)
+
+    # The machine's default is gpu; the catalog's is gx10, and wins
+    assert payload["url"] == "http://gx10:8082"

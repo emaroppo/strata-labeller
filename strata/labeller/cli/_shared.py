@@ -66,7 +66,10 @@ CatalogOption = typer.Option(
 HostOption = typer.Option(
     "",
     "--host",
-    help="Which modelling host in config.toml (default: the project's, else the machine's)",
+    help=(
+        "Which modelling host in config.toml "
+        "(default: the project's, else its catalog's, else the machine's)"
+    ),
 )
 
 
@@ -105,14 +108,21 @@ def _load_project(path: Path | None) -> LabellingProject:
         return LabellingProject.load(path)
 
 
+def _ls_url(settings: Settings, project: LabellingProject) -> str:
+    """The Label Studio a project is labelled on: its catalog's. docs/adr/0044"""
+    return settings.label_studio_for(project.catalog.name).url
+
+
 def _ls_client(settings: Settings, project: LabellingProject, config_path: Path):
     """Build a Label Studio client, failing early on a missing token."""
     from ..labelstudio.ls_client import LSClient
 
-    if not settings.label_studio.api_key:
+    instance = settings.label_studio_for(project.catalog.name)
+    if not instance.api_key:
         _error(
-            f"No Label Studio API key. Set it in {config_path} "
-            "(see config.example.toml) or in $LABEL_STUDIO_API_KEY."
+            f"No API key for the Label Studio at {instance.url}. Set "
+            f"{instance.key_from()}, or api_key in {config_path} "
+            "(see config.example.toml)."
         )
         raise typer.Exit(1)
     return LSClient(settings, project)
@@ -243,16 +253,17 @@ def _catalog_config(settings, name: str = ""):
         return settings.catalogs.named(name)
 
 
-def _modelling(settings, name: str = ""):
-    """One of this machine's modelling hosts by name, or an exit saying which exist.
+def _modelling(settings, name: str = "", catalog: str = ""):
+    """The modelling host a command uses, or an exit saying which exist.
 
-    ``name`` is ``--host``, else the project's ``[model] host``; empty is the
-    machine's default. See ``docs/adr/0043``.
+    ``name`` is ``--host``, else the project's ``[model] host``; empty is
+    the one ``catalog`` names as its default, else the machine's. See
+    ``docs/adr/0043``.
     """
     from strata.project import ModellingConfigError
 
     with _exit_on(ModellingConfigError):
-        return settings.modelling.named(name)
+        return settings.modelling_for(catalog, name)
 
 
 def _catalog_if_any(settings, name: str = ""):

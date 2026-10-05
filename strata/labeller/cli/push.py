@@ -22,6 +22,7 @@ from ._shared import (
     _load_project,
     _local_paths,
     _ls_client,
+    _ls_url,
     _modelling,
     _schema_for,
     _settings,
@@ -190,7 +191,7 @@ def push(
     schema = _schema_for(project, catalog)
 
     with _exit_on(ProjectError):
-        ls_project_id = project.require_ls_project_id(settings.label_studio.url)
+        ls_project_id = project.require_ls_project_id(_ls_url(settings, project))
 
     client = _ls_client(settings, project, config_path)
     task_map = _task_map(project, ls_project_id, catalog)
@@ -223,7 +224,7 @@ def push(
     store = _store_if_any(project)
     # The host that trained the run is the only one that holds it.
     # docs/adr/0043
-    host = _modelling(settings, host_name or project.model.host)
+    host = _modelling(settings, host_name or project.model.host, project.catalog.name)
     remote = bool(host.url)
     scores: dict[str, AnyPrediction] = {}
     scoring_run = _run_for_push(host, project, store, run_id, remote, catalog.id)
@@ -385,7 +386,7 @@ def audit(
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
     label_set_id, label_schema = _label_set_for(catalog, project)
     with _exit_on(ProjectError):
-        ls_project_id = project.require_ls_project_id(settings.label_studio.url)
+        ls_project_id = project.require_ls_project_id(_ls_url(settings, project))
     client = _ls_client(settings, project, config_path)
     task_map = _task_map(project, ls_project_id, catalog)
 

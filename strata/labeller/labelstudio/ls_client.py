@@ -11,9 +11,11 @@ from . import label_config
 
 class LSClient:
     def __init__(self, settings: Settings, project: LabellingProject):
+        # The instance the project's catalog is labelled on. docs/adr/0044
+        self.instance = settings.label_studio_for(project.catalog.name)
         self.client = LabelStudio(
-            base_url=settings.label_studio.url,
-            api_key=settings.label_studio.api_key,
+            base_url=self.instance.url,
+            api_key=self.instance.api_key,
             # Bulk imports on large projects can exceed the SDK's 60s default
             timeout=300,
         )
@@ -85,7 +87,7 @@ class LSClient:
     def setup_local_storage(self, project_id: int, path: str | None = None) -> None:
         self.client.import_storage.local.create(
             project=project_id,
-            path=path or self.settings.label_studio.local_storage_path,
+            path=path or self.instance.local_storage_path,
             # What is on the mount is whatever the project labels —
             # pictures, documents, frames
             title="Local files",

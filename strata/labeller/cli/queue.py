@@ -17,6 +17,7 @@ from ._shared import (
     _label_set_for,
     _load_project,
     _ls_client,
+    _ls_url,
     _progress,
     _schema_for,
     _settings,
@@ -52,7 +53,7 @@ def unskip(
 
     selected = skipped[:limit] if limit is not None else skipped
 
-    ls_project_id = project.ls_project_id(settings.label_studio.url)
+    ls_project_id = project.ls_project_id(_ls_url(settings, project))
     if ls_project_id is not None:
         task_map = _task_map(project, ls_project_id, catalog)
         task_ids = [task_map[s.id] for s in selected if s.id in task_map]
@@ -123,7 +124,7 @@ def init(
             ls_project_id, tasks, on_progress=lambda n: progress.advance(bar, n)
         )
     save_task_map(project, ls_project_id, mapping, catalog.id)
-    project.save_ls_project_id(settings.label_studio.url, ls_project_id)
+    project.save_ls_project_id(_ls_url(settings, project), ls_project_id)
 
     if len(mapping) != len(tasks):
         console.print(
@@ -171,7 +172,7 @@ def export_annotations(
     schema = _schema_for(project, catalog)
 
     with _exit_on(ProjectError):
-        ls_project_id = project.require_ls_project_id(settings.label_studio.url)
+        ls_project_id = project.require_ls_project_id(_ls_url(settings, project))
 
     client = _ls_client(settings, project, config_path)
     with console.status("Exporting from Label Studio (slow on large projects)..."):
@@ -241,7 +242,7 @@ def relink(
 
     client = _ls_client(settings, project, config_path)
     with _exit_on(ProjectError):
-        ls_project_id = project.require_ls_project_id(settings.label_studio.url)
+        ls_project_id = project.require_ls_project_id(_ls_url(settings, project))
 
     where = addressing.urls.base_url if addressing.urls else f"the {addressing.prefix} mount"
     console.print(f"[bold]Label Studio project {ls_project_id}[/bold] → {where}\n")

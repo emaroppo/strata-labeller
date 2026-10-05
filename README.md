@@ -124,8 +124,12 @@ url = ""                             # a URL sends rounds to a GPU host
 Credentials come from the environment: `LABEL_STUDIO_API_KEY`, and
 `STRATA_MODELLING_TOKEN` for a remote host. Several hosts are
 `[modelling.<name>]` tables with a `default`; a project picks one with
-`[model] host`, a command with `--host`, and a named host's token can come
-from `STRATA_MODELLING_TOKEN_<NAME>` (the strata repository's ADR 0043). `docker-compose.yml` at the
+`[model] host`, a command with `--host`, a catalog with `default_for` in
+the host's table, and a named host's token can come from
+`STRATA_MODELLING_TOKEN_<NAME>` (the strata repository's ADR 0043). A
+catalog can be labelled on a Label Studio of its own, a
+`[label_studio.<catalog>]` table whose key comes from
+`LABEL_STUDIO_API_KEY_<CATALOG>` (ADR 0044). `docker-compose.yml` at the
 repository root starts a Label Studio for development.
 
 ```bash
