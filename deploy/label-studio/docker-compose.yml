@@ -1,0 +1,36 @@
+# A Label Studio for a shared catalog, on the machine beside its blob server.
+#
+# Labelling a shared catalog on one instance keeps one queue whichever machine
+# the labelling is done from, and its images come from the blob server through
+# signed URLs, so nothing is mounted here: the volume holds Label Studio's own
+# database and nothing of the catalog's. A machine's config.toml points the
+# catalog at it with
+#
+#   [label_studio.main]
+#   url = "http://catalog-host:8090"
+#
+# and $LABEL_STUDIO_API_KEY_MAIN holds a key from this instance's Account &
+# Settings. See the strata repository's docs/adr/0044.
+#
+#   docker compose up -d
+#
+# Local catalogs keep a Label Studio of their own: the development stack in
+# the strata repository's docker-compose.yml.
+
+# Pinned, so the volume is label-studio_label-studio-data wherever the
+# checkout sits; a moved checkout would otherwise start on an empty one.
+name: label-studio
+
+services:
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    restart: unless-stopped
+    ports:
+      # 8090 rather than Label Studio's own 8080, which a catalog host is
+      # likely to have taken already.
+      - "${LABEL_STUDIO_PORT:-8090}:8080"
+    volumes:
+      - label-studio-data:/label-studio/data
+
+volumes:
+  label-studio-data:
