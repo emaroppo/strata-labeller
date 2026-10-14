@@ -27,6 +27,7 @@ COMMANDS = [
     ["init"],
     ["ingest"],
     ["relink"],
+    ["trim", "--dry-run"],
     ["report"],
     ["unskip", "--all"],
     ["class", "list"],

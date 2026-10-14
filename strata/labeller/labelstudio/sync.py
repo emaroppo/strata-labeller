@@ -9,9 +9,10 @@ import json
 from dataclasses import dataclass, field
 
 from strata.catalog import Catalog, SampleRow
-from strata.contracts import AnyValue
+from strata.contracts import AnyValue, Spans
 
 from ..project import LabellingProject
+from ..trim import text_of
 from .adapter import Addressing, Task, build_tasks, from_results
 from .schemas import LabelSchema
 
@@ -28,6 +29,8 @@ class PullReport:
     skipped: int = 0
     #: Answered in Label Studio, but by an import rather than by a person
     untouched: int = 0
+    #: Spans whose edges were moved off whitespace on the way in
+    trimmed: int = 0
     unrecognised: list[str] = field(default_factory=list)
     undeclared: set[str] = field(default_factory=set)
 
@@ -228,6 +231,10 @@ def pull_annotations(
     A task with no annotation is left alone rather than recorded as empty,
     and a cancelled one is a skip (``docs/adr/0029``). ``reviewed_only``
     keeps back annotations nobody has opened (``docs/adr/0028``).
+
+    Spans are trimmed of surrounding whitespace against the document:
+    Label Studio renders a run of spaces as one, so a selection after
+    aligned text starts inside the run, and the reviewer can't see it.
     """
     report = PullReport()
     items: list[tuple[int, AnyValue | None]] = []
@@ -256,6 +263,9 @@ def pull_annotations(
             continue
 
         value = from_results(schema.canonicalize(annotation.get("result") or []), schema)
+        if isinstance(value, Spans) and value.values:
+            value, moved = value.trimmed(text_of(catalog, sample))
+            report.trimmed += moved
         # Which classes a value asserts is the label type's own question.
         # docs/adr/0039
         report.undeclared |= stored.classes_asserted(value) - known

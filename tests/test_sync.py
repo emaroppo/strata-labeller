@@ -338,3 +338,53 @@ def test_an_undeclared_class_is_found_whatever_kind_of_value_carries_it(tmp_path
     )
     _items, report = pull_annotations([task], catalog, label_set_id, schema, ADDRESSING, ["PER"])
     assert report.undeclared == {"NOBODY_DECLARED_THIS"}
+
+
+def test_a_span_starting_inside_a_run_of_spaces_comes_in_trimmed(tmp_path):
+    """Label Studio shows a run of spaces as one, so a selection made after
+    aligned text starts inside the run. The reviewer selected ``B2``.
+    """
+    from strata.contracts import Span, Spans
+    from strata.labeller.labelstudio.schemas.span import SpanSchema as LSSpan
+
+    catalog = Catalog.local(tmp_path / "catalog")
+    source = tmp_path / "doc.txt"
+    source.write_text("Location:   B2\nRoom: 4120")
+    catalog.ingest([source], media="text")
+    schema = LSSpan(classes=["LOC"])
+    label_set_id = catalog.label_sets.create("x", schema.catalog_schema())
+    [row] = catalog.samples.unlabelled(label_set_id, EVERYTHING)
+
+    def result(start, end, text):
+        return {
+            "from_name": "label",
+            "to_name": "text",
+            "type": "labels",
+            "value": {"start": start, "end": end, "text": text, "labels": ["LOC"]},
+        }
+
+    task = ls_task(
+        1,
+        blob_url(row, "blobs"),
+        data_key="text",
+        annotations=[
+            {
+                "was_cancelled": False,
+                "lead_time": 9.0,
+                "result": [result(10, 14, "  B2"), result(21, 25, "4120")],
+            }
+        ],
+    )
+    items, report = pull_annotations([task], catalog, label_set_id, schema, ADDRESSING, ["LOC"])
+    assert report.trimmed == 1
+    assert items == [
+        (
+            row.id,
+            Spans(
+                values=[
+                    Span(labels=["LOC"], start=12, end=14, text="B2"),
+                    Span(labels=["LOC"], start=21, end=25, text="4120"),
+                ]
+            ),
+        )
+    ]

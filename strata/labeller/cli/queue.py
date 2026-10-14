@@ -206,6 +206,8 @@ def export_annotations(
         f"[green]{written.annotated} annotation(s) and {written.skipped} skip(s) "
         f"into the catalog[/green]"
     )
+    if report.trimmed:
+        console.print(f"{report.trimmed} span(s) trimmed of surrounding whitespace")
     if report.unrecognised:
         console.print(
             f"[yellow]{len(report.unrecognised)} task(s) point at nothing this "
@@ -283,3 +285,57 @@ def relink(
             "[dim]These URLs carry an expiry. Run this again if a queue sits "
             "long enough for images to stop loading.[/dim]"
         )
+
+
+@app.command()
+def trim(
+    project_path: Path = ProjectOption,
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would change; touch nothing"
+    ),
+    config_path: Path = ConfigOption,
+) -> None:
+    """Move stored spans off the whitespace around them.
+
+    Label Studio renders a run of spaces as one, so a span selected after
+    aligned text can start inside the run, and nobody reviewing it can see
+    that. Export trims what comes in from now on; this repairs what is
+    already in the catalog. Each change is a new answer under the same
+    source, so history keeps the old one and frozen versions are untouched.
+    A sample whose answer is disputed is left alone and named.
+    """
+    from .. import trim as trimming
+
+    project = _load_project(project_path)
+    settings = _settings(config_path)
+    catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
+    label_set_id, _ = _label_set_for(catalog, project)
+
+    with console.status("Reading spans against their documents..."):
+        report = trimming.plan(catalog, label_set_id, project.collections)
+
+    console.print(
+        f"  {report.checked:,} answer(s) with spans: {len(report.changes):,} to change, "
+        f"{report.moved:,} span(s) to move, {report.dropped:,} to drop as only whitespace"
+    )
+    for change in report.changes[:10]:
+        console.print(
+            f"    [dim]{change.checksum[:12]} ({change.source}): "
+            f"{change.moved} moved, {change.dropped} dropped[/dim]"
+        )
+    if len(report.changes) > 10:
+        console.print(f"    [dim]…and {len(report.changes) - 10:,} more[/dim]")
+    if report.disputed:
+        console.print(
+            f"  [yellow]{len(report.disputed):,} disputed, left alone: settle them first[/yellow]"
+        )
+
+    if dry_run:
+        console.print("\n[dim]Nothing was changed.[/dim]")
+        return
+    if not report.changes:
+        console.print("\n[green]Nothing to do.[/green]")
+        return
+
+    written = trimming.apply(catalog, label_set_id, report)
+    console.print(f"[green]{written:,} answer(s) rewritten[/green]")
