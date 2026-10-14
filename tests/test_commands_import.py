@@ -67,3 +67,13 @@ def test_the_environment_names_the_config_when_none_is_given(bare, monkeypatch):
     result = runner.invoke(app, ["report", "-p", str(project.root)])
     assert result.exit_code == 1
     assert "STRATA_CONFIG" in result.output and "does not exist" in result.output
+
+
+def test_the_label_studio_client_imports_against_the_installed_sdk():
+    """The commands above stop at a missing token, before the client is
+    imported, so an SDK that renames a type gets past them. This doesn't.
+    """
+    from strata.labeller.labelstudio.ls_client import SelectedItemsIncluded
+
+    selected = SelectedItemsIncluded(all_=False, included=[1, 2])
+    assert selected.model_dump(by_alias=True) == {"all": False, "included": [1, 2]}

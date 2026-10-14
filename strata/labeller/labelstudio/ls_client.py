@@ -1,8 +1,17 @@
 from collections.abc import Callable
 
 from label_studio_sdk import PredictionRequest
-from label_studio_sdk.actions.types import CreateActionsRequestSelectedItemsIncluded
 from label_studio_sdk.client import LabelStudio
+
+# The SDK renamed this type in 2.1, fields unchanged.
+try:
+    from label_studio_sdk.actions.types import (
+        PrepareParamsRequestRequestSelectedItemsIncluded as SelectedItemsIncluded,
+    )
+except ImportError:
+    from label_studio_sdk.actions.types import (
+        CreateActionsRequestSelectedItemsIncluded as SelectedItemsIncluded,
+    )
 
 from ..config import Settings
 from ..project import LabellingProject
@@ -64,7 +73,7 @@ class LSClient:
         self.client.actions.create(
             id="delete_tasks_annotations",
             project=project_id,
-            selected_items=CreateActionsRequestSelectedItemsIncluded(all_=False, included=task_ids),
+            selected_items=SelectedItemsIncluded(all_=False, included=task_ids),
         )
 
     def clear_predictions(self, project_id: int, task_ids: list[int]) -> None:
@@ -77,7 +86,7 @@ class LSClient:
         self.client.actions.create(
             id="delete_tasks_predictions",
             project=project_id,
-            selected_items=CreateActionsRequestSelectedItemsIncluded(all_=False, included=task_ids),
+            selected_items=SelectedItemsIncluded(all_=False, included=task_ids),
         )
 
     # ------------------------------------------------------------------
@@ -180,7 +189,7 @@ class LSClient:
             self.client.actions.create(
                 id="delete_tasks_predictions",
                 project=project_id,
-                selected_items=CreateActionsRequestSelectedItemsIncluded(
+                selected_items=SelectedItemsIncluded(
                     all_=False, included=[t for t, _, _ in to_push]
                 ),
             )
