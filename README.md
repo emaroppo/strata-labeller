@@ -14,14 +14,15 @@ g=git+https://github.com/emaroppo
 uv add "strata-labeller @ $g/strata-labeller@v0.1.0"   \
        "strata-project @ $g/strata-project@v0.1.0"     \
        "strata-modelling @ $g/strata-modelling@v0.1.0" \
+       "strata-evaluation @ $g/strata-evaluation@v0.1.0" \
        "strata-prepare @ $g/strata-prepare@v0.1.0"     \
        "strata-catalog @ $g/strata-catalog@v0.1.0"     \
        "strata-contracts @ $g/strata-contracts@v0.1.0" \
        "strata-common @ $g/strata-common@v0.1.0"
 ```
 
-Depends on `strata-contracts`, `strata-catalog`, `strata-modelling`, typer
-and the Label Studio SDK. Everything that knows Label Studio's shape stops
+Depends on `strata-project`, `strata-catalog`, `strata-prepare`,
+`strata-modelling`, `strata-contracts`, typer and the Label Studio SDK. Everything that knows Label Studio's shape stops
 in one module; past it a sample is a catalog row and an annotation is a
 `strata.contracts` value.
 
@@ -156,9 +157,12 @@ Then label a seed set and run `train`, `push`, `export` in a loop.
 | `push` | send unreviewed samples, least confident first |
 | `export` | pull corrections back into the catalog |
 | `train` | freeze a version, materialise it, train; `--job ID` reattaches to a remote round |
+| `models` | what the modelling host can serve, and whether this project's model is on the list |
+| `audit` | re-queue a sample of answered samples for a blind second look |
 | `report` | training history, or one run in detail; `--json` for a chart or a script |
 | `unskip` | return skipped samples to the queue |
 | `relink` | repoint tasks at their current sample URLs, re-signing them |
+| `trim` | move stored spans off the whitespace around them |
 | `catalog-check` | ask the blob server and the modelling host which catalog they serve |
 
 Most take `-p/--project`; all take `--config`.
