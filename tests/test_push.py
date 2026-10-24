@@ -310,7 +310,7 @@ def test_an_unknown_strategy_says_what_there_is(stage):
     result = push(project, config, "--strategy", "vibes")
 
     assert result.exit_code == 1
-    assert "least-confident" in result.stdout
+    assert "least-confident" in result.stderr
     # Refused before anything was created, not halfway through a queue
     assert fake.tasks == {}
 

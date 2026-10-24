@@ -143,7 +143,7 @@ def test_a_missing_data_root_is_an_error(project, tmp_path, monkeypatch):
     shutil.rmtree(project.data_dir)
     result = run(project)
     assert result.exit_code == 1
-    assert "Data root does not exist" in result.stdout
+    assert "Data root does not exist" in result.output
 
 
 def test_an_empty_data_root_says_so_rather_than_failing(workspace, tmp_path):
@@ -162,8 +162,8 @@ def test_files_nobody_prepared_are_an_error_that_says_how(workspace, tmp_path):
 
     # Files, and nothing saying what they are: the catalog does not guess
     assert result.exit_code == 1
-    assert "prepared.json" in result.stdout
-    assert "--preparer image-folder" in result.stdout
+    assert "prepared.json" in result.output
+    assert "--preparer image-folder" in result.output
 
 
 def test_a_frame_without_its_video_refuses_the_corpus(workspace, tmp_path):
@@ -175,8 +175,8 @@ def test_a_frame_without_its_video_refuses_the_corpus(workspace, tmp_path):
     result = run(project)
 
     assert result.exit_code == 1
-    assert "vid1/img001.jpg" in result.stdout
-    assert "nothing was ingested" in result.stdout
+    assert "vid1/img001.jpg" in result.output
+    assert "nothing was ingested" in result.output
     # Not even the two good frames: refused before the catalog is opened
     assert not (tmp_path / "catalog").exists()
 
@@ -189,7 +189,7 @@ def test_a_corpus_prepared_as_another_type_is_refused(workspace, tmp_path):
     result = run(project)
 
     assert result.exit_code == 1
-    assert "prepared as 'image'" in result.stdout
+    assert "prepared as 'image'" in result.output
 
 
 def test_registering_is_not_queueing(workspace, tmp_path):

@@ -145,7 +145,7 @@ def test_a_host_on_another_catalog_is_refused_before_anything_is_frozen(
         assert conn.execute(select(func.count()).select_from(t.dataset)).scalar() == 0
     # This catalog's index is SQLite, which the host could only read by
     # running here — the one case where repointing the host is not the fix
-    assert "SQLite" in capsys.readouterr().out
+    assert "SQLite" in capsys.readouterr().err
 
 
 def test_the_request_says_what_its_dataset_id_means(featured, host):

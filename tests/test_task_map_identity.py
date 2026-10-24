@@ -170,4 +170,4 @@ def test_unskip_refuses_a_foreign_map(tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["unskip", "-p", str(root), "--config", "config.toml"])
 
     assert result.exit_code == 1
-    assert B in result.stdout
+    assert B in result.stderr

@@ -15,6 +15,7 @@ from ._shared import (
     _catalog_if_any,
     _error,
     _modelling,
+    _print_json,
     _settings,
     app,
     console,
@@ -40,8 +41,6 @@ def models(
     whether its model is on the list: a file reference runs here and never
     on a host.
     """
-    import json
-
     from strata.modelling.plugins.registry import available
     from strata.modelling.remote.client import RemoteError, Trainer
 
@@ -50,9 +49,12 @@ def models(
     settings = _settings(config_path)
     try:
         project = LabellingProject.load(project_path)
-    except ProjectError:
+    except ProjectError as e:
+        # Asked for by name and not there is a refusal; none asked for and
+        # none found is the list without a verdict.
         if project_path is not None:
-            raise
+            _error(str(e))
+            raise typer.Exit(1) from None
         project = None
 
     host = (
@@ -65,7 +67,7 @@ def models(
         try:
             served = Trainer(url, host.token).models()
         except (RemoteError, OSError, ValueError) as e:
-            _error(f"The {where} at {url} did not answer: {escape(str(e))}")
+            _error(f"The {where} at {url} did not answer: {e}")
             raise typer.Exit(1) from None
     else:
         where, url = "this machine", ""
@@ -90,7 +92,7 @@ def models(
         payload = {"where": where, "url": url, "models": served}
         if project is not None:
             payload["project"] = {"name": project.name, "model": ref, "servable": servable}
-        print(json.dumps(payload, indent=2, sort_keys=True))
+        _print_json(payload)
     else:
         console.print(f"[bold]{where}[/bold]  {escape(url)}".rstrip())
         if not served:

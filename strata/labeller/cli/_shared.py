@@ -1,11 +1,13 @@
 """What every command starts from: the app, the console, the options, and the preambles."""
 
+import json
+import sys
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich import get_console
-from rich.markup import escape
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -73,17 +75,40 @@ HostOption = typer.Option(
 )
 
 
+# The refusal idiom of every strata command, as ``strata.common.cli`` has it
+# (``refuse``, ``exit_on``, ``print_json``), written out again here with the
+# standard library: the labeller may not import ``strata.common`` (the
+# workspace's dependency graph does not allow it), and the catalog does not
+# re-export the kit. Same line on stderr, same exit status, same JSON.
+
+
 def _error(message: str) -> None:
-    """Print an error. Escaped, since messages carry TOML section names."""
-    console.print(escape(message), style="red")
+    """Say why on stderr, plain. Stdout carries only the record. docs/adr/0030"""
+    print(message, file=sys.stderr)
+
+
+def _print_json(payload: Any) -> None:
+    """The payload whole, on stdout, for a program; nothing else goes there."""
+    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
 
 
 @contextmanager
 def _exit_on(*errors: type[Exception]):
-    """Report a refusal and stop. Anything not named is a crash, and stays one."""
+    """Report a refusal and stop. Anything not named is a crash, and stays one.
+
+    A store behind its migrations is always a refusal, as everywhere in
+    strata (``docs/adr/0018``). The labeller may not import the class that
+    says so, ``strata.common.errors.SchemaOutOfDate``, so it is known by
+    where it lives: the module path is the promise.
+    """
     try:
         yield
     except errors as e:
+        _error(str(e))
+        raise typer.Exit(1) from None
+    except Exception as e:
+        if type(e).__module__ != "strata.common.errors":
+            raise
         _error(str(e))
         raise typer.Exit(1) from None
 

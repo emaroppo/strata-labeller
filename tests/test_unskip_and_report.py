@@ -129,7 +129,17 @@ def test_report_needs_a_run_store(project, tmp_path, monkeypatch):
     (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
     result = report_cmd(project)
     assert result.exit_code == 1
-    assert "No runs recorded" in result.stdout
+    assert "No runs recorded" in result.output
+
+
+def test_a_refusal_under_json_stays_off_stdout(project, tmp_path, monkeypatch):
+    """A script reading stdout gets JSON or nothing; why goes to stderr. docs/adr/0030"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.toml").write_text(f'[catalog]\nroot = "{tmp_path / "catalog"}"\n')
+    result = report_cmd(project, "--json")
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "No runs recorded" in result.stderr
 
 
 def test_report_shows_the_projects_catalogs_history_only(runs, tmp_path):
@@ -231,7 +241,8 @@ def test_an_unknown_metric_suggests_another(runs):
     a_run(store, metrics={"accuracy": 0.9})
     result = report_cmd(project, "--metric", "f1")
     assert result.exit_code == 1
-    assert "--metric accuracy" in result.stdout
+    assert "--metric accuracy" in result.stderr
+    assert result.stdout == ""
 
 
 # ----------------------------------------------------------------------

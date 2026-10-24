@@ -1,6 +1,5 @@
 """The report command: the training history, or one run in detail."""
 
-import json
 from pathlib import Path
 
 import typer
@@ -13,6 +12,7 @@ from ._shared import (
     _error,
     _exit_on,
     _load_project,
+    _print_json,
     _settings,
     app,
     console,
@@ -63,7 +63,7 @@ def report(
             _error(f"No run with id {run_id}")
             raise typer.Exit(1)
         if as_json:
-            _emit_json(history.run_detail(store, run))
+            _print_json(history.run_detail(store, run))
             return
         _print_run(store, run)
         return
@@ -98,7 +98,7 @@ def report(
             for batch, c in reviews.items()
         }
         payload["second_looks"] = {"agreed": agreed, "changed": changed}
-        _emit_json(payload)
+        _print_json(payload)
         return
 
     table = Table(title=f"{project.dataset_name} — {metric}")
@@ -148,11 +148,6 @@ def _unchecked_cell(row) -> str:
     unreviewed, samples = share
     colour = "yellow" if unreviewed else "green"
     return f"[{colour}]{unreviewed}/{samples}[/{colour}]"
-
-
-def _emit_json(payload: dict) -> None:
-    """Straight to stdout, past rich. See ``docs/adr/0030``."""
-    print(json.dumps(payload, indent=2, sort_keys=True, default=str))
 
 
 def _print_run(store, run) -> None:

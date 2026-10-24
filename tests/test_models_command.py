@@ -145,6 +145,29 @@ def test_an_unknown_host_is_refused_naming_the_ones_there_are(two_hosts):
     assert "gpu, gx10" in result.output
 
 
+def test_a_refusal_under_json_leaves_stdout_to_the_record(two_hosts):
+    """Nothing but JSON on stdout, so a pipe never parses an error. docs/adr/0030"""
+    result = _models(two_hosts, "--json", "--host", "dgx")
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "gpu, gx10" in result.stderr
+
+
+def test_a_project_asked_for_and_not_there_is_a_refusal_not_a_crash(host, tmp_path):
+    result = _models(host, "-p", str(tmp_path / "nowhere"))
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert result.stdout == ""
+    assert "nowhere" in result.stderr
+
+
+def test_a_bad_project_under_json_is_still_a_refusal_on_stderr(host, tmp_path):
+    result = _models(host, "--json", "-p", str(tmp_path / "nowhere"))
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "nowhere" in result.stderr
+
+
 def test_a_projects_catalog_chooses_the_host_when_nothing_else_does(two_hosts, make_project):
     toml = two_hosts.read_text().replace(
         '[modelling.gx10]\nurl = "http://gx10:8082"\n',

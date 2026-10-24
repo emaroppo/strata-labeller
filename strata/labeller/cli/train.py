@@ -58,37 +58,36 @@ def train(
         _remote_round(project, catalog, settings, host, fresh=fresh, val_ratio=val_ratio)
         return
 
-    try:
-        # Materialising used to be a hard link away and over before anyone
-        # looked. Pulling shards out of a bucket is minutes, and minutes of
-        # nothing is indistinguishable from a hang.
-        with _progress(bar=True, remaining=True, transient=True) as progress:
-            bar = progress.add_task("Materialising", total=None)
-            materialising = True
+    # Materialising used to be a hard link away and over before anyone
+    # looked. Pulling shards out of a bucket is minutes, and minutes of
+    # nothing is indistinguishable from a hang.
+    with (
+        _exit_on(RoundError),
+        _progress(bar=True, remaining=True, transient=True) as progress,
+    ):
+        bar = progress.add_task("Materialising", total=None)
+        materialising = True
 
-            def tick(done: int, total: int) -> None:
-                nonlocal materialising
-                progress.update(bar, completed=done, total=total)
-                if materialising and done >= total:
-                    # The last blob has landed and training is next, which
-                    # is long, quiet and not this bar's business
-                    materialising = False
-                    progress.stop()
-                    console.print(f"Materialised {total:,} sample(s). Training...")
+        def tick(done: int, total: int) -> None:
+            nonlocal materialising
+            progress.update(bar, completed=done, total=total)
+            if materialising and done >= total:
+                # The last blob has landed and training is next, which
+                # is long, quiet and not this bar's business
+                materialising = False
+                progress.stop()
+                console.print(f"Materialised {total:,} sample(s). Training...")
 
-            result = run_round(
-                project,
-                catalog,
-                fresh=fresh,
-                val_ratio=val_ratio,
-                on_progress=tick,
-                # Blobs already on this host, whatever the backend is.
-                # docs/adr/0002
-                cache=catalog_root / "blobs",
-            )
-    except RoundError as e:
-        console.print(f"[red]{e}[/red]")
-        raise typer.Exit(1) from None
+        result = run_round(
+            project,
+            catalog,
+            fresh=fresh,
+            val_ratio=val_ratio,
+            on_progress=tick,
+            # Blobs already on this host, whatever the backend is.
+            # docs/adr/0002
+            cache=catalog_root / "blobs",
+        )
 
     for line in describe(result):
         console.print(line)
