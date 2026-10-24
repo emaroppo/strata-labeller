@@ -1,18 +1,8 @@
 """A project as the labeller sees it: the job, plus what Label Studio needs of it.
 
-The job itself is :class:`strata.project.Project`: catalog, collections,
-label set and model, in ``project.toml``. This adds the tool's own half,
-kept in a ``[label_studio]`` section of the same file and in ``.state/``,
-which is not part of a handoff (``docs/adr/0016``):
-
-    projects/my-project/
-    ├── label_config.xml        # [label_studio] config only: a config of the project's own
-    └── .state/                 # Label Studio bookkeeping: which queue is whose
-
-The schema a project labels with is built from the job: the label type
-and classes are ``[label_set]``'s, and the media is the sample type's. A
-project with a config of its own supplies the control names Label Studio
-already knows, and has to agree with the job on the rest.
+The job is :class:`strata.project.Project`; this adds a ``[label_studio]`` section of the
+same file (a labeling config of the project's own) and ``.state/``, the Label Studio
+bookkeeping that is not part of a handoff. See ``docs/adr/0016``.
 """
 
 import json
@@ -30,7 +20,7 @@ from strata.project import (
     section,
 )
 
-from .labelstudio import schemas
+from .labelstudio import label_config, schemas
 from .labelstudio.schemas import LabelSchema
 
 __all__ = [
@@ -51,9 +41,7 @@ CUSTOM_LABEL_CONFIG = "label_config.xml"
 class LabelStudioSpec:
     """The ``[label_studio]`` section: what this tool keeps in the job's file."""
 
-    #: A labeling config of the project's own, relative to the project root.
-    #: It supplies control names and layout; the label type and the classes are
-    #: ``[label_set]``'s, and the config has to agree with them.
+    #: A labeling config of the project's own, relative to the project root. docs/adr/0016
     config: str = ""
 
 
@@ -73,13 +61,8 @@ class LabellingProject(Project):
 
     def _validate(self) -> None:
         super()._validate()
-        # Built here so a bad config or parameter is an error at load time.
-        # docs/adr/0030
+        # Built here so a bad config or parameter is an error at load time. docs/adr/0030
         _ = self.schema
-
-    # ------------------------------------------------------------------
-    # Label schema
-    # ------------------------------------------------------------------
 
     @property
     def label_config_path(self) -> Path:
@@ -113,9 +96,8 @@ class LabellingProject(Project):
     def _schema_from_config(self) -> LabelSchema:
         """A project's own config: control names from the XML, the rest from the job.
 
-        The XML may offer no class the job does not declare. The job may
-        declare more than the XML offers; that is what ``class add`` leaves
-        behind until the live config is updated. See ``docs/adr/0016``.
+        Refuses an XML class the job does not declare; the job may declare more. See
+        ``docs/adr/0016``.
         """
         path = self.label_config_path
         if not path.exists():
@@ -139,30 +121,16 @@ class LabellingProject(Project):
         return schema
 
     def schema_with(self, classes: list[str]) -> LabelSchema:
-        """This project's schema, but carrying someone else's class list.
-
-        The label set is authoritative for which classes exist; project.toml
-        says what kind of job this is, and seeds the list when the label set
-        is first created. See ``docs/adr/0014``.
-        """
+        """This project's schema, but carrying someone else's class list. See ``docs/adr/0014``."""
         schema = self.schema
         schema.classes = list(classes)
         return schema
-
-    # ------------------------------------------------------------------
-    # The tool's own paths
-    # ------------------------------------------------------------------
 
     @property
     def state_dir(self) -> Path:
         return self.root / ".state"
 
-    # ------------------------------------------------------------------
-    # Which queue is whose
-    # ------------------------------------------------------------------
-
-    #: Where each Label Studio instance's project id is kept, keyed by the
-    #: instance's URL.
+    #: Each Label Studio instance's project id, keyed by the instance's URL.
     LS_PROJECTS = "label_studio.json"
 
     def _ls_projects(self) -> dict:
@@ -174,8 +142,8 @@ class LabellingProject(Project):
     def ls_project_id(self, ls_url: str) -> int | None:
         """This project's queue on one Label Studio, if it has one.
 
-        Per instance, in the project's state rather than its file, which is
-        copied between machines (``docs/adr/0008``).
+        Per instance, in the state dir, not the file copied between machines. See
+        ``docs/adr/0008``.
         """
         return self._ls_projects().get(ls_url.rstrip("/"))
 
@@ -196,16 +164,10 @@ class LabellingProject(Project):
             )
         return found
 
-    # ------------------------------------------------------------------
-    # Writing
-    # ------------------------------------------------------------------
-
     def add_classes(self, names: list[str], known: list[str] | None = None) -> list[str]:
         """Append classes to project.toml, and to a config of the project's own."""
         classes = super().add_classes(names, known)
         if self.label_studio.config and self.label_config_path.exists():
-            from .labelstudio import label_config
-
             xml = self.label_config_path.read_text()
             for name in names:
                 if name not in label_config.get_classes(xml):

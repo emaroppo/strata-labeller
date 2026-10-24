@@ -1,6 +1,7 @@
 """Classification: one or more classes for a whole sample."""
 
 from strata.contracts import Choices
+from strata.contracts import ClassificationSchema as StoredClassificationSchema
 
 from .base import LabelSchema, Result, strip_volatile
 from .media import IMAGE, Media
@@ -36,14 +37,10 @@ class ClassificationSchema(LabelSchema):
     def data_key(self) -> str:
         return self.media.data_key
 
-    # ------------------------------------------------------------------
-    # Label Studio config
-    # ------------------------------------------------------------------
-
     def catalog_schema(self):
-        from strata.contracts import ClassificationSchema as Stored
-
-        return Stored(classes=list(self.classes), multiple=self.choice != "single")
+        return StoredClassificationSchema(
+            classes=list(self.classes), multiple=self.choice != "single"
+        )
 
     def label_config(self) -> str:
         return render_template(
@@ -54,10 +51,6 @@ class ClassificationSchema(LabelSchema):
             to_name=self.to_name,
             choice=self.choice,
         )
-
-    # ------------------------------------------------------------------
-    # Results
-    # ------------------------------------------------------------------
 
     def canonicalize(self, results: list[dict]) -> list[Result]:
         return [strip_volatile(r) for r in results if r.get("type") == "choices"]

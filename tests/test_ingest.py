@@ -265,3 +265,16 @@ def test_a_shared_index_is_named_by_its_url_not_a_local_directory():
     section = {"url": "postgresql+psycopg://strata@pi:5432/demo", "s3_bucket": "demo"}
     config = read_catalogs(section, {}).default
     assert _index_at(config) == "postgresql+psycopg://strata@pi:5432/demo"
+
+
+def test_a_shared_index_is_named_without_its_password():
+    # A url can carry its password, and saying where the index is must not
+    # repeat it. docs/adr/0030
+    from strata.catalog.config import read_catalogs
+    from strata.labeller.cli._shared import _index_at
+
+    section = {"url": "postgresql+psycopg://strata:hunter2@pi:5432/demo", "s3_bucket": "demo"}
+    config = read_catalogs(section, {}).default
+    shown = _index_at(config)
+    assert "hunter2" not in shown
+    assert shown == "postgresql+psycopg://strata:***@pi:5432/demo"

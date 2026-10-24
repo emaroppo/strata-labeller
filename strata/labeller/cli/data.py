@@ -4,6 +4,12 @@ from pathlib import Path
 
 import typer
 
+from strata.catalog import CatalogError, IntakeError, admit
+from strata.contracts import PREPARED_NAME
+from strata.prepare import PreparerError, available
+from strata.prepare import run as run_preparer
+
+from .. import corpus
 from ..project import ProjectError
 from ._shared import (
     ConfigOption,
@@ -44,11 +50,6 @@ def ingest(
     Registering is not queueing: the catalog holds the whole pool and
     ``push`` sends only what you are about to review.
     """
-    from strata.catalog import CatalogError, IntakeError, admit
-    from strata.contracts import PREPARED_NAME
-
-    from .. import corpus
-
     project = _load_project(project_path)
     settings = _settings(config_path)
     data_dir = project.data_dir
@@ -59,8 +60,7 @@ def ingest(
         raise typer.Exit(1)
     if not (data_dir / PREPARED_NAME).exists():
         if not any(p.is_file() for p in data_dir.rglob("*")):
-            # Nothing there yet is not a mistake: a project exists before its
-            # data does, and this is what someone runs to find out.
+            # Nothing there yet is not a mistake: a project exists before its data does
             console.print(f"[yellow]No files under {data_dir} yet.[/yellow]")
             return
         # Files, and nothing saying what they are. docs/adr/0040
@@ -112,8 +112,7 @@ def ingest(
                 on_sample=lambda _p: progress.advance(bar),
             )
         except CatalogError as e:
-            # A file this type cannot store; the chunks before it are
-            # committed. docs/adr/0032
+            # A file this type cannot store; the chunks before it are committed. docs/adr/0032
             progress.stop()
             _error(str(e))
             raise typer.Exit(1) from None
@@ -162,12 +161,6 @@ def prepare(
     against the type and catalogues what it names. Files already in the
     data root are indexed where they are.
     """
-    from strata.contracts import PREPARED_NAME
-    from strata.prepare import PreparerError, available
-    from strata.prepare import run as run_preparer
-
-    from .. import corpus
-
     project = _load_project(project_path)
     source_dir = source or project.source_dir
     if not source_dir.exists():
@@ -176,8 +169,7 @@ def prepare(
             f"[data] source_root at where they are."
         )
         raise typer.Exit(1)
-    # The index from an earlier run is not a source, where the files are
-    # prepared in place. docs/adr/0040
+    # An earlier run's index is not a source when files are prepared in place. docs/adr/0040
     everything = [
         p for p in sorted(source_dir.rglob("*")) if p.is_file() and p != source_dir / PREPARED_NAME
     ]

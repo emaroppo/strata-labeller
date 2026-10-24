@@ -1,11 +1,8 @@
 """The Label Studio boundary.
 
-Everything that knows Label Studio's shape stops here. Past this module a
-sample is a catalog row and an annotation is a :mod:`strata.contracts` value;
-inside it, results carry control names, media keys and percentages, and
-``schemas/`` does the conversion. A task's sample URL names the checksum,
-and the task's data names the type beside it. See ``docs/adr/0013`` and
-``docs/adr/0052``.
+Past this module a sample is a catalog row and an annotation a :mod:`strata.contracts`
+value; inside it, results carry control names, media keys and percentages. A task's URL
+names the checksum and its data the type. See ``docs/adr/0013`` and ``docs/adr/0052``.
 """
 
 from dataclasses import dataclass
@@ -20,15 +17,8 @@ from .schemas import LabelSchema
 #: What Label Studio serves local files under.
 LOCAL_FILES = "/data/local-files/?d="
 
-#: Key under task["data"] naming the sample's type, beside the media key
-#: whose URL names its bytes. Prefixed so no labeling config's ``$name``
-#: reads it. docs/adr/0052
+#: The sample's type in task["data"]; prefixed so no config's ``$name`` reads it. docs/adr/0052
 TYPE_KEY = "strata_type"
-
-
-# ----------------------------------------------------------------------
-# Values
-# ----------------------------------------------------------------------
 
 
 def to_results(value: AnyValue, schema: LabelSchema) -> list[dict]:
@@ -39,41 +29,28 @@ def to_results(value: AnyValue, schema: LabelSchema) -> list[dict]:
 def from_results(results: list[dict], schema: LabelSchema) -> AnyValue:
     """Label Studio results as a neutral value.
 
-    Built through the schema's own value type (``docs/adr/0013``). An empty
-    list produces an empty value, not nothing: a reviewer who found none of
-    the classes present has answered (``docs/adr/0009``).
+    An empty list is an empty value, not nothing: finding none present is an answer.
+    See ``docs/adr/0009`` and ``docs/adr/0013``.
     """
     return schema.value_type(values=list(schema.decode_target(results)))
 
 
 def prediction_to_results(prediction: AnyPrediction, schema: LabelSchema) -> list[dict]:
-    """A model's output as Label Studio results.
-
-    Delegated to the schema, which refuses a value of the wrong kind rather
-    than encoding something meaningless.
-    """
+    """A model's output as Label Studio results; the schema refuses a value of the wrong kind."""
     return schema.encode_target(list(prediction.values))
-
-
-# ----------------------------------------------------------------------
-# Addressing
-# ----------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Addressing:
     """How a task refers to its sample, in both directions.
 
-    One object so the two directions cannot disagree. Writes the mount
-    form or, with ``urls``, the catalog's signed HTTP URL; reads both, so
-    old tasks keep resolving until relinked. See ``docs/adr/0013``.
+    Writes the mount form or, with ``urls``, the catalog's signed URL; reads both, so
+    old tasks resolve until relinked. See ``docs/adr/0013``.
     """
 
-    #: What Label Studio serves the blob mount under. Changing it is a
-    #: relink, not a rename. docs/adr/0013
+    #: What Label Studio serves the blob mount under; changing it is a relink. docs/adr/0013
     prefix: str = "blobs"
-    #: The catalog's blob server, which signs its own URLs. None means the
-    #: mount.
+    #: The catalog's blob server, which signs its own URLs; None means the mount.
     urls: SignedUrls | None = None
 
     def url_for(self, sample: SampleRow) -> str:
@@ -91,19 +68,16 @@ class Addressing:
     def data_for(self, sample: SampleRow, data_key: str) -> dict:
         """What a task's data says about its sample: where its bytes are, and its type.
 
-        Both, always, since the same bytes can be two samples of different
-        types. See ``docs/adr/0052``.
+        See ``docs/adr/0052``.
         """
         return {data_key: self.url_for(sample), TYPE_KEY: sample.type}
 
     def sample_from(self, data: dict, data_key: str, catalog: Catalog) -> SampleRow | None:
         """The sample a task's data names, or None if it names none.
 
-        A task of one type never settles for a sample of another. One pushed
-        before tasks carried a type resolves while one live sample has its
-        bytes, and raises :class:`~strata.catalog.AmbiguousSample` once
-        several do. Relinking gives it the type while it still resolves, and
-        a task pushed again names it. See ``docs/adr/0052``.
+        A task of one type never settles for a sample of another; one without a type
+        resolves while one live sample has its bytes and raises
+        :class:`~strata.catalog.AmbiguousSample` once several do. See ``docs/adr/0052``.
         """
         checksum = self.checksum_from(data.get(data_key, ""))
         if checksum is None:
@@ -118,39 +92,24 @@ def _digest_or_none(stem: str) -> str | None:
 
 
 def blob_url(sample: SampleRow, prefix: str) -> str:
-    """Where Label Studio fetches a sample's bytes.
+    """Where Label Studio fetches a sample's bytes, built from the checksum.
 
-    Built from the checksum, not from where the sample's bytes currently
-    sit (``docs/adr/0001``).
-
-    Percent-encoded, because a path that reaches a query string unescaped
-    breaks on characters a checksum will never contain but a suffix might.
+    Percent-encoded: a suffix can hold characters that break inside a query string.
+    See ``docs/adr/0001``.
     """
     return f"{LOCAL_FILES}{prefix}/{quote(blob_path(sample.checksum, suffix_of(sample)))}"
 
 
 def checksum_from_url(url: str, prefix: str) -> str | None:
-    """The sample a task's URL names, or None if it names none.
-
-    None is the ordinary answer for a task created before the catalog: its
-    URL addresses the old data root, whose filenames are not checksums.
-    """
+    """The sample a task's URL names, or None when the URL addresses no blob."""
     if LOCAL_FILES not in url:
         return None
     tail = unquote(url.split(LOCAL_FILES, 1)[1])
     marker = f"{prefix}/"
     if not tail.startswith(marker):
         return None
-    # The fan-out directories carry no information the name does not, so the
-    # stem is the whole answer — and checking it looks like a digest is what
-    # keeps a path that merely sits under the prefix from being taken for a
-    # sample.
+    # The stem is the whole answer; checking it is a digest keeps a stray path from passing
     return _digest_or_none(Path(tail[len(marker) :]).stem)
-
-
-# ----------------------------------------------------------------------
-# Tasks
-# ----------------------------------------------------------------------
 
 
 @dataclass
@@ -160,8 +119,7 @@ class Task:
     sample_id: int
     data: dict
     annotations: list[dict]
-    #: Whether anyone has answered, which is not the same as the answer
-    #: being non-empty. docs/adr/0009
+    #: Whether anyone has answered, which is not the same as a non-empty answer. docs/adr/0009
     answered: bool = False
 
     def as_import(self) -> dict:

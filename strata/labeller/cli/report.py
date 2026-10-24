@@ -5,6 +5,10 @@ from pathlib import Path
 import typer
 from rich.table import Table
 
+from strata.catalog import CatalogError
+from strata.modelling import RunStore, RunStoreMissing
+
+from .. import history
 from ._shared import (
     ConfigOption,
     ProjectOption,
@@ -45,10 +49,6 @@ def report(
     measures nothing. The catalog is opened for its identity, the way
     ``train`` opens it to freeze a version.
     """
-    from strata.modelling import RunStore, RunStoreMissing
-
-    from .. import history
-
     project = _load_project(project_path)
     with _exit_on(RunStoreMissing):
         store = RunStore.open(project.runs_dir)
@@ -81,8 +81,6 @@ def report(
         )
         raise typer.Exit(1)
 
-    from strata.catalog import CatalogError
-
     try:
         label_set_id, _ = catalog.label_sets.get(project.label_set_name)
         reviews = catalog.annotations.review_counts(label_set_id)
@@ -106,13 +104,11 @@ def report(
     table.add_column("Dataset", justify="right")
     table.add_column(metric, justify="right")
     table.add_column("Δ", justify="right")
-    # Beside the metric, because it bounds what the metric means.
-    # docs/adr/0005
+    # Beside the metric, because it bounds what the metric means. docs/adr/0005
     table.add_column("Unchecked val", justify="right")
     table.add_column("Lineage")
     for row in rows:
-        # Whether it continued, not what from: two ids in one row of a table
-        # is a row of ellipses, and the chain itself is what `--run` is for.
+        # Whether it continued, not what from; the chain is what --run is for
         lineage = "warm" if row.warm else "[yellow]unchained[/yellow]"
         shown = f"v{row.version}" if row.version is not None else "[dim]—[/dim]"
         delta = f"{row.delta:+.4f}" if row.delta is not None else ""
@@ -122,8 +118,7 @@ def report(
     console.print(table)
 
     if reviews:
-        # How the labels that arrived with the corpus fared under review,
-        # per import. docs/adr/0028
+        # How imported labels fared under review, per import. docs/adr/0028
         imports = Table(title="Imported labels under review")
         imports.add_column("Batch")
         imports.add_column("Accepted", justify="right")
@@ -140,8 +135,6 @@ def report(
 
 
 def _unchecked_cell(row) -> str:
-    from .. import history
-
     share = history.unchecked_share(row.unchecked, "val")
     if share is None:
         return "[dim]—[/dim]"
@@ -184,8 +177,7 @@ def _print_run(store, run) -> None:
 
     unchecked = store.unchecked(run.id)
     if unchecked:
-        # Per side and per import batch, how much of it a person never
-        # vouched for. docs/adr/0005
+        # Per side and import batch, how much a person never vouched for. docs/adr/0005
         table = Table(title="Of what it saw, nobody checked")
         table.add_column("Side")
         table.add_column("Batch")

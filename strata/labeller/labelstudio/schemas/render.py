@@ -20,8 +20,7 @@ def render_template(
 ) -> str:
     """Fill a template's @placeholders, rendering the class list itself.
 
-    Hotkeys are assigned in order so review can stay on the keyboard; Label
-    Studio only binds single digits, so classes past the ninth go without.
+    Label Studio binds only single-digit hotkeys, so classes past the ninth get none.
     """
     lines = []
     for i, value in enumerate(classes, start=1):

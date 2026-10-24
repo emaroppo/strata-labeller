@@ -5,6 +5,10 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
+from strata.modelling.plugins.registry import available
+from strata.modelling.remote.client import RemoteError, Trainer
+
+from ..project import LabellingProject, ProjectError
 from ._remote import _blob_server_catalog, _on_another_catalog, _unreachable
 from ._shared import (
     CatalogOption,
@@ -41,17 +45,11 @@ def models(
     whether its model is on the list: a file reference runs here and never
     on a host.
     """
-    from strata.modelling.plugins.registry import available
-    from strata.modelling.remote.client import RemoteError, Trainer
-
-    from ..project import LabellingProject, ProjectError
-
     settings = _settings(config_path)
     try:
         project = LabellingProject.load(project_path)
     except ProjectError as e:
-        # Asked for by name and not there is a refusal; none asked for and
-        # none found is the list without a verdict.
+        # Named and missing is a refusal; none named is the list without a verdict
         if project_path is not None:
             _error(str(e))
             raise typer.Exit(1) from None
@@ -121,8 +119,6 @@ def catalog_check(
     blob server left on the old catalog answers 404 for every new sample, and
     a modelling host left on it refuses every round.
     """
-    from strata.modelling.remote.client import RemoteError, Trainer
-
     settings = _settings(config_path)
     config = _catalog_config(settings, catalog_name)
     try:

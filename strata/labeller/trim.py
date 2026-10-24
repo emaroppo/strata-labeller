@@ -1,9 +1,7 @@
 """Spans moved off the whitespace around them, against the document they cover.
 
-Label Studio shows a document as HTML, which renders a run of spaces as
-one, so a selection made after aligned text comes back starting inside the
-run. Export trims what comes in; this finds what is already stored, and
-says what it would write before writing it. Nothing here prints.
+Label Studio renders a document as HTML, which collapses a run of spaces, so a selection
+made after aligned text comes back starting inside the run. Nothing here prints.
 """
 
 from dataclasses import dataclass, field
@@ -19,8 +17,7 @@ SOURCES = ("human", "import", "model")
 def text_of(catalog: Catalog, sample: SampleRow) -> str:
     """A sample's text exactly as stored, which is what span offsets count.
 
-    Decoded from the bytes rather than read as text, which would turn
-    ``\\r\\n`` into ``\\n`` and move every offset after the first line.
+    Decoded from the bytes: reading as text would fold ``\\r\\n`` and move every offset.
     """
     return catalog.blobs.get(sample.location).decode("utf-8")
 
@@ -41,8 +38,7 @@ class Trim:
 class TrimReport:
     checked: int = 0
     changes: list[Trim] = field(default_factory=list)
-    #: Samples with a disputed answer, left alone: writing to one settles
-    #: the dispute, and a trim is not someone looking again.
+    #: Disputed samples, left alone: writing to one would settle the dispute. docs/adr/0009
     disputed: list[str] = field(default_factory=list)
 
     @property
@@ -80,10 +76,9 @@ def plan(catalog: Catalog, label_set_id: int, collections) -> TrimReport:
 
 
 def apply(catalog: Catalog, label_set_id: int, report: TrimReport) -> int:
-    """Write each change as a new answer under its own source. docs/adr/0027
+    """Write each change as a new answer under its own source, never an edit.
 
-    A new row, never an edit: history keeps what was there, the batch is
-    inherited, and frozen versions keep the answer they were frozen with.
+    See ``docs/adr/0027``.
     """
     written = 0
     for change in report.changes:

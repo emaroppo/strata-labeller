@@ -4,6 +4,7 @@ Label Studio's percentages become fractions of the image with a top-left
 origin here and nowhere else. See ``docs/adr/0013``.
 """
 
+from strata.contracts import BBoxSchema as StoredBBoxSchema
 from strata.contracts import Box, Boxes
 
 from .base import LabelSchema, Result, strip_volatile
@@ -41,9 +42,7 @@ class BBoxSchema(LabelSchema):
         return self.media.data_key
 
     def catalog_schema(self):
-        from strata.contracts import BBoxSchema as Stored
-
-        return Stored(classes=list(self.classes))
+        return StoredBBoxSchema(classes=list(self.classes))
 
     def label_config(self) -> str:
         return render_template(

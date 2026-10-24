@@ -1,13 +1,22 @@
 """The push command: score the pool, order it, and send it with the model's guesses attached."""
 
+import random
 from pathlib import Path
 
 import typer
+from pydantic import TypeAdapter
 
 from strata.contracts import AnyPrediction, AnyValue
-from strata.modelling import RunStore, RunStoreMissing
+from strata.modelling import PredictionCache, PredictRequest, RunStore, RunStoreMissing
+from strata.modelling import predict as run_predict
+from strata.modelling.remote.client import RemoteError, Trainer
+from strata.modelling.remote.wire import PredictionRequest
 
+from ..labelstudio.adapter import prediction_to_results
+from ..labelstudio.sync import rebuild_task_map, save_task_map, tasks_to_push
 from ..project import ProjectError
+from ..review import queue
+from ..review.active_learning import STRATEGIES, against, certainty, disagreement
 from ._remote import _follow, _trainer
 from ._shared import (
     ConfigOption,
@@ -34,11 +43,7 @@ from ._shared import (
 
 
 def _store_if_any(project):
-    """This project's run store, or None when nothing has trained here.
-
-    Consulted, never made: a push with no runs pushes without predictions,
-    and must not leave an empty store behind to say otherwise.
-    """
+    """This project's run store, or None when nothing has trained here. See ``docs/adr/0018``."""
     try:
         return RunStore.open(project.runs_dir)
     except RunStoreMissing:
@@ -50,8 +55,7 @@ def _run_for_push(
 ) -> str | None:
     """Which run scores this push, in the numbering of whoever will score it.
 
-    Run ids belong to the store that issued them, so the host is asked for
-    its own. See ``docs/adr/0005``.
+    See ``docs/adr/0005``.
     """
     if not remote:
         if store is None:
@@ -61,12 +65,9 @@ def _run_for_push(
             return None
         return run.id
 
-    from strata.modelling.remote.client import RemoteError, Trainer
-
     trainer = Trainer(host.url, host.token)
     with _exit_on(RemoteError):
-        # Asked for by id or not, the host is the one that knows, and it is
-        # asked before the pool is fetched. docs/adr/0030
+        # The host is the one that knows, asked before the pool is fetched. docs/adr/0030
         found = (
             trainer.run(run_id) if run_id else trainer.latest_run(project.dataset_name, catalog_id)
         )
@@ -85,15 +86,7 @@ def _run_for_push(
 def _remote_predictions(
     host, run_id: str, checksums: list[str], features: dict | None = None
 ) -> dict:
-    """Score a review pool on the host that has the GPU and the blobs.
-
-    The same job machinery as a round. See ``docs/adr/0007``.
-    """
-    from pydantic import TypeAdapter
-
-    from strata.modelling.remote.client import RemoteError
-    from strata.modelling.remote.wire import PredictionRequest
-
+    """Score a review pool on the host that has the GPU and the blobs. See ``docs/adr/0007``."""
     trainer = _trainer(host)
     with _exit_on(RemoteError):
         job = trainer.predict(
@@ -108,8 +101,7 @@ def _remote_predictions(
             f"[yellow]{len(result['unknown']):,} sample(s) the host's catalog "
             f"does not know — left out of the ranking[/yellow]"
         )
-    # Through the union: a remote scoring pass returns whatever the task
-    # emits. docs/adr/0006
+    # Through the union: a remote pass returns whatever the task emits. docs/adr/0006
     prediction = TypeAdapter(AnyPrediction)
     return {
         checksum: prediction.validate_python(value)
@@ -172,14 +164,6 @@ def push(
     model's prediction is from the imported label, and what the reviewer
     sees is the import itself, to confirm or correct. Export records which.
     """
-    from strata.modelling import PredictionCache, PredictRequest
-    from strata.modelling import predict as run_predict
-
-    from ..labelstudio.adapter import prediction_to_results
-    from ..labelstudio.sync import rebuild_task_map, save_task_map, tasks_to_push
-    from ..review import queue
-    from ..review.active_learning import STRATEGIES, against, certainty, disagreement
-
     if strategy not in STRATEGIES:
         _error(f"Unknown strategy {strategy!r}. Available: {', '.join(sorted(STRATEGIES))}.")
         raise typer.Exit(1)
@@ -209,8 +193,7 @@ def push(
         _report_ambiguous(ambiguous)
         save_task_map(project, ls_project_id, task_map, catalog.id)
 
-    # Per sample, since two samples with the same bytes can carry different
-    # labels. docs/adr/0052
+    # Per sample: two samples with the same bytes can carry different labels. docs/adr/0052
     labels: dict[int, AnyValue] = {}
     if review_imports:
         pool = catalog.samples.unreviewed(label_set_id, project.collections)
@@ -226,8 +209,7 @@ def push(
             return
 
     store = _store_if_any(project)
-    # The host that trained the run is the only one that holds it.
-    # docs/adr/0043
+    # The host that trained the run is the only one that holds it. docs/adr/0043
     host = _modelling(settings, host_name or project.model.host, project.catalog.name)
     remote = bool(host.url)
     scores: dict[str, AnyPrediction] = {}
@@ -251,8 +233,7 @@ def push(
                 f"once — they stay out of this queue.[/yellow]"
             )
         if remote:
-            # The host keeps its own cache, keyed on its own run ids.
-            # docs/adr/0006
+            # The host keeps its own cache, keyed on its own run ids. docs/adr/0006
             scores = _remote_predictions(
                 host,
                 scoring_run,
@@ -284,10 +265,7 @@ def push(
         console.print("[yellow]No run with a checkpoint yet; pushing without predictions.[/yellow]")
 
     if review_imports:
-        # Ranked by how far the model is from the imported label, and
-        # nothing disputed joins this queue. docs/adr/0028
-        # The ranking is per checksum, as the scores are: two samples with
-        # one checksum rank by one label, and each is shown its own.
+        # Ranked per checksum by distance from the imported label; no disputes join. docs/adr/0028
         checked = {s.checksum: labels[s.id] for s in pool if s.id in labels}
         ordering = against(checked)
         scores = {c: ordering.bind(c, p) for c, p in scores.items() if c in checked}
@@ -324,8 +302,7 @@ def push(
     )
 
     if review_imports:
-        # The reviewer sees the imported label, scored by the model's
-        # distance from it. docs/adr/0028
+        # The reviewer sees the imported label, scored by the model's distance. docs/adr/0028
         payload = [
             (
                 s.id,
@@ -391,13 +368,6 @@ def audit(
     ones a second look can tell anything about; otherwise it is over
     every answer, and says so.
     """
-    import random
-
-    from strata.modelling import PredictionCache
-
-    from ..labelstudio.sync import save_task_map
-    from ..review import queue
-
     project = _load_project(project_path)
     settings = _settings(config_path)
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)

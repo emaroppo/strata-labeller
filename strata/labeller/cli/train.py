@@ -4,7 +4,16 @@ from pathlib import Path
 
 import typer
 
-from ._remote import _job_state, _on_another_catalog, _reattach, _trainer
+from strata.catalog import CatalogError
+from strata.catalog.stages import Context as CatalogContext
+from strata.catalog.stages import DatasetRequest, dataset
+from strata.modelling.remote.client import RemoteError
+from strata.modelling.stages import Context as ModellingContext
+from strata.modelling.stages import DatasetIdentity, Host, TrainStageRequest
+from strata.modelling.stages import train as train_stage
+
+from ..round import RoundError, describe, run_round
+from ._remote import _job_state, _on_another_catalog, _print_run_result, _reattach, _trainer
 from ._shared import (
     ConfigOption,
     HostOption,
@@ -44,8 +53,6 @@ def train(
     """
     project = _load_project(project_path)
 
-    from ..round import RoundError, describe, run_round
-
     settings = _settings(config_path)
     catalog, catalog_root = _catalog_for(settings, config_path, name=project.catalog.name)
 
@@ -58,9 +65,7 @@ def train(
         _remote_round(project, catalog, settings, host, fresh=fresh, val_ratio=val_ratio)
         return
 
-    # Materialising used to be a hard link away and over before anyone
-    # looked. Pulling shards out of a bucket is minutes, and minutes of
-    # nothing is indistinguishable from a hang.
+    # Minutes of silence are indistinguishable from a hang. docs/adr/0031
     with (
         _exit_on(RoundError),
         _progress(bar=True, remaining=True, transient=True) as progress,
@@ -72,8 +77,7 @@ def train(
             nonlocal materialising
             progress.update(bar, completed=done, total=total)
             if materialising and done >= total:
-                # The last blob has landed and training is next, which
-                # is long, quiet and not this bar's business
+                # Training is next: long, quiet and not this bar's business
                 materialising = False
                 progress.stop()
                 console.print(f"Materialised {total:,} sample(s). Training...")
@@ -84,8 +88,7 @@ def train(
             fresh=fresh,
             val_ratio=val_ratio,
             on_progress=tick,
-            # Blobs already on this host, whatever the backend is.
-            # docs/adr/0002
+            # Blobs already on this host, whatever the backend. docs/adr/0002
             cache=catalog_root / "blobs",
         )
 
@@ -95,17 +98,7 @@ def train(
 
 
 def _remote_round(project, catalog, settings, host, fresh: bool, val_ratio: float) -> None:
-    """Freeze a dataset here, and have another host train on it.
-
-    The split is where the knowledge is. See ``docs/adr/0007``.
-    """
-    from strata.catalog import CatalogError
-    from strata.catalog.stages import Context as CatalogContext
-    from strata.catalog.stages import DatasetRequest, dataset
-    from strata.modelling.remote.client import RemoteError
-    from strata.modelling.stages import Context as ModellingContext
-    from strata.modelling.stages import DatasetIdentity, Host, TrainStageRequest, train
-
+    """Freeze a dataset here, and have another host train on it. See ``docs/adr/0007``."""
     trainer = _trainer(host)
 
     # Asked before anything is frozen. docs/adr/0030
@@ -135,7 +128,7 @@ def _remote_round(project, catalog, settings, host, fresh: bool, val_ratio: floa
     with _progress(elapsed=True, transient=True) as progress:
         bar = progress.add_task("Waiting for the host...")
         with _exit_on(RemoteError):
-            record = train(
+            record = train_stage(
                 TrainStageRequest(
                     dataset=DatasetIdentity(
                         dataset_id=frozen.dataset_id,
@@ -154,25 +147,12 @@ def _remote_round(project, catalog, settings, host, fresh: bool, val_ratio: floa
                     store=None,
                     host=Host(host.url, host.token),
                     on_state=_job_state(progress, bar),
-                    # The client already spoken to, so the handshake is not
-                    # repeated and a test's fake host is the one asked
+                    # The client already spoken to, so a test's fake host is the one asked
                     client=lambda url, token: trainer,
                 ),
             )
-    _print_train_record(record)
+    _print_run_result(record.run_id, record.parent_run_id, record.materialised, record.metrics)
     console.print(
         "[dim]The run and its checkpoint live on that host, which is where the "
         "next round will warm-start from.[/dim]"
     )
-
-
-def _print_train_record(record) -> None:
-    """A finished remote round: the run, its parent, and its metrics."""
-    console.print(
-        f"[green]Run {record.run_id}[/green]"
-        + (f", continuing run {record.parent_run_id}" if record.parent_run_id else " (cold)")
-    )
-    if record.materialised:
-        console.print(f"  [dim]{record.materialised:,} sample(s) materialised there[/dim]")
-    for metric, value in sorted(record.metrics.items()):
-        console.print(f"  {metric}: {value}")

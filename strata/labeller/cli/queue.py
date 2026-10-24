@@ -5,6 +5,9 @@ from pathlib import Path
 import typer
 from rich.markup import escape
 
+from .. import trim as trimming
+from ..labelstudio.sync import pull_annotations, save_task_map, tasks_to_push
+from ..labelstudio.sync import relink as plan_relink
 from ..project import ProjectError
 from ._shared import (
     ConfigOption,
@@ -64,8 +67,7 @@ def unskip(
                 client.delete_annotations(ls_project_id, task_ids)
             console.print(f"Cleared the skip on {len(task_ids)} Label Studio task(s)")
         if len(task_ids) < len(selected):
-            # Ordinary rather than a fault: a skipped sample need never have
-            # reached Label Studio, and push will create its task when it does
+            # Ordinary, not a fault: a skipped sample need never have reached Label Studio
             console.print(f"[dim]{len(selected) - len(task_ids)} had no task there yet.[/dim]")
 
     moved = catalog.annotations.unskip(label_set_id, [s.id for s in selected])
@@ -89,8 +91,6 @@ def init(
     view of the catalog rather than a second copy of it. That is what makes
     a project disposable: delete it, run this again, lose nothing.
     """
-    from ..labelstudio.sync import save_task_map, tasks_to_push
-
     project = _load_project(project_path)
     settings = _settings(config_path)
     config = _catalog_config(settings, project.catalog.name)
@@ -102,8 +102,7 @@ def init(
         raise typer.Exit(1)
 
     schema = _schema_for(project, catalog)
-    # Answered first: with a limit, the point is to carry what is already
-    # known rather than to fill the project with unreviewed samples
+    # Answered first: with a limit, the point is to carry what is already known
     samples = catalog.samples.labelled(
         label_set_id, project.collections
     ) + catalog.samples.unlabelled(label_set_id, project.collections)
@@ -164,8 +163,6 @@ def export_annotations(
     exporting halfway through a review stamps the seed's own guesses as
     ground truth. ``--reviewed-only`` keeps back anything nobody opened.
     """
-    from ..labelstudio.sync import pull_annotations
-
     project = _load_project(project_path)
     settings = _settings(config_path)
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
@@ -241,8 +238,6 @@ def relink(
     and rewriting it would destroy the only record of what it showed. So is
     a task with no type whose bytes several samples already hold.
     """
-    from ..labelstudio.sync import relink as plan_relink
-
     project = _load_project(project_path)
     settings = _settings(config_path)
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)
@@ -312,8 +307,6 @@ def trim(
     source, so history keeps the old one and frozen versions are untouched.
     A sample whose answer is disputed is left alone and named.
     """
-    from .. import trim as trimming
-
     project = _load_project(project_path)
     settings = _settings(config_path)
     catalog, _ = _catalog_for(settings, config_path, name=project.catalog.name)

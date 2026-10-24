@@ -18,7 +18,13 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
+from strata.catalog import CatalogError, SigningError, blob_path, redacted
+from strata.catalog.config import CatalogConfigError, CatalogMissing, open_catalog
+from strata.project import ModellingConfigError, settings_path
+
 from ..config import Settings
+from ..labelstudio.adapter import Addressing
+from ..labelstudio.sync import TaskMapError, load_task_map, task_map_catalog
 from ..project import PROJECT_ENV_VAR, PROJECTS_DIR, LabellingProject, ProjectError
 
 app = typer.Typer(name="strata-labeller")
@@ -41,9 +47,6 @@ ProjectOption = typer.Option(
 
 def _config_path(value: Path | None) -> Path:
     """The host file: ``--config``, else ``$STRATA_CONFIG``, else ``./config.toml``."""
-    from strata.catalog.config import CatalogConfigError
-    from strata.project import settings_path
-
     with _exit_on(CatalogConfigError):
         return settings_path(value)
 
@@ -75,11 +78,7 @@ HostOption = typer.Option(
 )
 
 
-# The refusal idiom of every strata command, as ``strata.common.cli`` has it
-# (``refuse``, ``exit_on``, ``print_json``), written out again here with the
-# standard library: the labeller may not import ``strata.common`` (the
-# workspace's dependency graph does not allow it), and the catalog does not
-# re-export the kit. Same line on stderr, same exit status, same JSON.
+# strata.common.cli's refusal idiom, written again: the labeller may not import it. docs/adr/0030
 
 
 def _error(message: str) -> None:
@@ -96,10 +95,8 @@ def _print_json(payload: Any) -> None:
 def _exit_on(*errors: type[Exception]):
     """Report a refusal and stop. Anything not named is a crash, and stays one.
 
-    A store behind its migrations is always a refusal, as everywhere in
-    strata (``docs/adr/0018``). The labeller may not import the class that
-    says so, ``strata.common.errors.SchemaOutOfDate``, so it is known by
-    where it lives: the module path is the promise.
+    ``strata.common.errors`` is known by module path, not import, since the labeller may
+    not import ``strata.common``. See ``docs/adr/0015`` and ``docs/adr/0018``.
     """
     try:
         yield
@@ -116,8 +113,7 @@ def _exit_on(*errors: type[Exception]):
 def _progress(
     *, bar: bool = False, elapsed: bool = False, remaining: bool = False, transient: bool = False
 ) -> Progress:
-    """A progress display in the house style: a spinner and a description,
-    then only what the caller can actually measure."""
+    """House-style progress: a spinner and a description, then only what the caller can measure."""
     columns = [SpinnerColumn(), TextColumn("[progress.description]{task.description}")]
     if bar:
         columns += [BarColumn(), MofNCompleteColumn()]
@@ -140,6 +136,7 @@ def _ls_url(settings: Settings, project: LabellingProject) -> str:
 
 def _ls_client(settings: Settings, project: LabellingProject, config_path: Path):
     """Build a Label Studio client, failing early on a missing token."""
+    # Lazy: the Label Studio SDK is slow to import, and only some commands need it
     from ..labelstudio.ls_client import LSClient
 
     instance = settings.label_studio_for(project.catalog.name)
@@ -156,14 +153,9 @@ def _ls_client(settings: Settings, project: LabellingProject, config_path: Path)
 def _addressing(settings, config):
     """How this host writes and reads task image URLs, for one catalog.
 
-    One place, because the two directions have to agree
-    (``docs/adr/0013``). ``config`` is the project's catalog, and there is
-    no default (``docs/adr/0020``).
+    ``config`` is the project's catalog, with no default. See ``docs/adr/0013`` and
+    ``docs/adr/0020``.
     """
-    from strata.catalog import SigningError
-
-    from ..labelstudio.adapter import Addressing
-
     if config is None:
         raise TypeError(
             "_addressing needs the project's catalog config; the host's default "
@@ -176,12 +168,9 @@ def _addressing(settings, config):
 def _local_paths(root: Path, samples) -> list[Path]:
     """Files on this host for ``samples``, for a model that reads paths.
 
-    Not asked of the blob backend, which gives no paths
-    (``docs/adr/0002``), and resolved from the checksum rather than the
-    sample's location (``docs/adr/0001``).
+    Resolved from the checksum, under the local blobs. See ``docs/adr/0001`` and
+    ``docs/adr/0002``.
     """
-    from strata.catalog import blob_path
-
     blobs = root / "blobs"
     paths = []
     for sample in samples:
@@ -207,8 +196,6 @@ def _catalog_for(settings, config_path: Path, create: bool = False, name: str = 
     ``name`` is the one a project asks for; empty means the host's default.
     ``create`` for the commands that put data in. See ``docs/adr/0018``.
     """
-    from strata.catalog.config import CatalogMissing, open_catalog
-
     config = _catalog_config(settings, name)
     try:
         return open_catalog(config, create=create), Path(config.root)
@@ -223,11 +210,10 @@ def _catalog_for(settings, config_path: Path, create: bool = False, name: str = 
 def _index_at(config) -> str:
     """Where a catalog's index is, as a person would look for it.
 
-    The URL for a shared index, which config.toml writes without its
-    password; the directory for a local one. ``root`` alone would name a
-    local directory a remote catalog never uses.
+    The redacted URL for a shared index, the directory for a local one. See
+    ``docs/adr/0030``.
     """
-    return config.url or str(Path(config.root))
+    return redacted(config.url) if config.url else str(Path(config.root))
 
 
 def _where_index(settings, name: str = "") -> str:
@@ -241,20 +227,12 @@ def _settings(config_path: Path | None = None):
     ``None`` resolves as ``--config`` does. Several catalogs and no
     default is refused at load. See ``docs/adr/0020``.
     """
-    from strata.catalog.config import CatalogConfigError
-
     with _exit_on(CatalogConfigError):
         return Settings.load(config_path)
 
 
 def _task_map(project, ls_project_id: int, catalog):
-    """The cached task map for this project, or an exit explaining itself.
-
-    One place, so the refusal of another catalog's map reads the same
-    everywhere and an adopted map is said out loud. See ``docs/adr/0008``.
-    """
-    from ..labelstudio.sync import TaskMapError, load_task_map, task_map_catalog
-
+    """The cached task map for this project, or an exit explaining itself. See ``docs/adr/0008``."""
     with _exit_on(TaskMapError):
         mapping = load_task_map(project, ls_project_id, catalog.id)
 
@@ -270,9 +248,7 @@ def _task_map(project, ls_project_id: int, catalog):
 def _report_ambiguous(task_ids: list[int], shown: int = 10) -> None:
     """Name the tasks that carry no type and whose bytes several samples hold.
 
-    One place, so push, export and relink refuse them in the same words.
-    Each is named by its id, since the task is what someone would go and
-    look at. See ``docs/adr/0052``.
+    See ``docs/adr/0052``.
     """
     if not task_ids:
         return
@@ -290,8 +266,6 @@ def _catalog_config(settings, name: str = ""):
 
     Never falls back to the default: see ``docs/adr/0020``.
     """
-    from strata.catalog.config import CatalogConfigError
-
     with _exit_on(CatalogConfigError):
         return settings.catalogs.named(name)
 
@@ -303,21 +277,12 @@ def _modelling(settings, name: str = "", catalog: str = ""):
     the one ``catalog`` names as its default, else the machine's. See
     ``docs/adr/0043``.
     """
-    from strata.project import ModellingConfigError
-
     with _exit_on(ModellingConfigError):
         return settings.modelling_for(catalog, name)
 
 
 def _catalog_if_any(settings, name: str = ""):
-    """The configured catalog, or None when this host has none yet.
-
-    For the paths that decorate output with counts, where absence is not an
-    error. Distinct from :func:`_catalog_for`, which exits, and never a
-    shortcut to a local index. See ``docs/adr/0020``.
-    """
-    from strata.catalog.config import CatalogMissing, open_catalog
-
+    """The configured catalog, or None when this host has none yet. See ``docs/adr/0020``."""
     try:
         return open_catalog(_catalog_config(settings, name))
     except CatalogMissing:
@@ -360,12 +325,8 @@ def _warn_on_composition_drift(project: LabellingProject, catalog, schema) -> No
 def _schema_for(project: LabellingProject, catalog):
     """The project's schema, with the classes the label set actually holds.
 
-    Read from the catalog rather than from project.toml
-    (``docs/adr/0014``). Falls back to the project's own when no label set
-    exists yet, which is the case that creates one.
+    The project's own when no label set exists yet. See ``docs/adr/0014``.
     """
-    from strata.catalog import CatalogError
-
     try:
         _, label_set = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
@@ -376,8 +337,6 @@ def _schema_for(project: LabellingProject, catalog):
 
 
 def _label_set_for(catalog, project: LabellingProject):
-    from strata.catalog import CatalogError
-
     try:
         return catalog.label_sets.get(project.label_set_name)
     except CatalogError:

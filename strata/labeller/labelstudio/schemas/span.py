@@ -1,16 +1,12 @@
 """Span labelling: labelled character ranges inside a document (NER).
 
-Label Studio addresses spans by character offsets into the raw text, and
-carries the covered substring alongside. Offsets are what matter; the text
-is kept because it makes a stored annotation readable on its own.
-
-A region carries a *list* of labels. What a label set allows is declared:
-``multi_label`` puts ``choice="multiple"`` on the control, and
-``overlapping`` says two regions may intersect. Both default to off. See
-``docs/adr/0014``.
+Offsets into the raw text are what matter; the covered substring is kept so a stored
+annotation reads on its own. A region carries a list of labels; ``multi_label`` and
+``overlapping`` are declared by the label set and default to off. See ``docs/adr/0014``.
 """
 
 from strata.contracts import Span, Spans
+from strata.contracts import SpanSchema as StoredSpanSchema
 
 from .base import LabelSchema, Result, strip_volatile
 from .media import TEXT, Media
@@ -47,9 +43,7 @@ class SpanSchema(LabelSchema):
         return self.media.data_key
 
     def catalog_schema(self):
-        from strata.contracts import SpanSchema as Stored
-
-        return Stored(
+        return StoredSpanSchema(
             classes=list(self.classes),
             multi_label=self.multi_label,
             overlapping=self.overlapping,
@@ -63,8 +57,7 @@ class SpanSchema(LabelSchema):
             indent="    ",
             from_name=self.from_name,
             to_name=self.to_name,
-            # A whole attribute, so a single-label project's config is byte
-            # for byte what it was. docs/adr/0029
+            # A whole attribute, so a single-label config stays byte for byte. docs/adr/0029
             choice=' choice="multiple"' if self.multi_label else "",
         )
 
@@ -84,8 +77,7 @@ class SpanSchema(LabelSchema):
                     text=value.get("text", ""),
                 )
             )
-        # The order Spans keeps on parse (docs/adr/0004), so a decoded list
-        # compares before it is wrapped
+        # The order Spans keeps on parse, so a decoded list compares unwrapped. docs/adr/0004
         return sorted(spans, key=lambda s: (s.start, s.end, tuple(s.labels)))
 
     def encode_target(self, target: list[Span]) -> list[Result]:

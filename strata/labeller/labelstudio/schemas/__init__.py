@@ -1,10 +1,8 @@
 """Label schemas: one per task type, selected by task and media.
 
-A template is ``<media>_<task>``: the task is the project's ``[label_set]``,
-the media is its sample type's. A project with a labeling config of its
-own (``[label_studio] config``) has the schema read from that XML, so the
-control names Label Studio already knows stay authoritative, while the
-task and the classes remain the job's. See ``docs/adr/0016``.
+A template is ``<media>_<task>``: the task is the project's ``[label_set]``, the media
+its sample type's. A custom labeling config has its schema read from the XML; the task
+and the classes remain the job's. See ``docs/adr/0016``.
 """
 
 import re
@@ -30,8 +28,7 @@ class TemplateSpec:
         return self.schema.control_tag
 
 
-# The valid media/task combinations, which is not their product.
-# docs/adr/0014
+# The valid media/task combinations, which is not their product. docs/adr/0014
 TEMPLATES: dict[str, TemplateSpec] = {
     "image_classification": TemplateSpec(ClassificationSchema, IMAGE),
     "image_bbox": TemplateSpec(BBoxSchema, IMAGE),
@@ -39,8 +36,7 @@ TEMPLATES: dict[str, TemplateSpec] = {
     "text_span": TemplateSpec(SpanSchema, TEXT),
 }
 
-# Label Studio control tag -> the schemas that use it. A custom config is
-# read by its control, and the media it pairs with comes from the media tag
+# Label Studio control tag -> schema; a custom config is read by its control
 CONTROL_TAGS: dict[str, type[LabelSchema]] = {
     spec.control_tag: spec.schema for spec in TEMPLATES.values()
 }
@@ -77,10 +73,8 @@ def from_template(template: str, classes: list[str], **params) -> LabelSchema:
 def from_label_config(xml: str) -> LabelSchema:
     """Derive a schema by reading a labeling config.
 
-    The control names come from the XML, because that is what annotations
-    in Label Studio reference. The classes it offers are read so the job's
-    can be checked against them; the job's list is the authoritative one
-    (``docs/adr/0016``).
+    Control names come from the XML, which is what annotations reference; the job's
+    class list stays authoritative. See ``docs/adr/0016``.
     """
     media = _media_from_config(xml)
     for tag, schema_cls in CONTROL_TAGS.items():
@@ -96,8 +90,7 @@ def from_label_config(xml: str) -> LabelSchema:
         if schema_cls is ClassificationSchema:
             params["choice"] = _attr(attrs, "choice") or "multiple"
         if schema_cls is SpanSchema:
-            # What the config permits, the label set has to accept; overlap
-            # has no attribute, so it stays in project.toml. docs/adr/0014
+            # Overlap has no attribute in the config, so it stays in project.toml. docs/adr/0014
             params["multi_label"] = _attr(attrs, "choice") == "multiple"
         return schema_cls(classes, media=media, **params)
 

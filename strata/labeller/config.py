@@ -1,9 +1,7 @@
 """Machine-level settings: the host's, plus how this host reaches Label Studio.
 
-The catalogs and the modelling host are :class:`strata.project.Settings`,
-which every tool on the machine reads. This adds the one section that is
-the labeller's own. Everything that belongs to a job lives in the project
-directory instead; see :mod:`strata.labeller.project`.
+The catalogs and modelling host are :class:`strata.project.Settings`; this adds the
+labeller's own section. What belongs to a job is :mod:`strata.labeller.project`'s.
 """
 
 import re
@@ -25,8 +23,7 @@ class LabelStudioConfigError(CatalogConfigError):
 class LabelStudioConfig:
     url: str = "http://localhost:8080"
     api_key: str = field(default="", repr=False)
-    # A directory inside the Label Studio container, not a media; the word
-    # stays because deployments mount it there. docs/adr/0013
+    # A path inside the Label Studio container, kept as deployments mount it. docs/adr/0013
     local_storage_path: str = "/label-studio/data/images"
     #: The catalog whose own instance this is; empty for the machine's.
     catalog: str = ""
@@ -85,8 +82,7 @@ class Settings(HostSettings):
                     f"describe. Configured: {', '.join(known)}."
                 )
             config = LabelStudioConfig(**{**scalars, **table}, catalog=name)
-            # Its own key only: the machine's belongs to another instance, and
-            # sending it would be refused as an invalid token by the wrong server
+            # Its own key only: the machine's belongs to another instance. docs/adr/0044
             config.api_key = environ.get(_key_variable(name)) or table.get("api_key", "")
             self.label_studio_by_catalog[name] = config
 

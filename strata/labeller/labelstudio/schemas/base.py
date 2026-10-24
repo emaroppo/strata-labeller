@@ -1,10 +1,8 @@
 """What a label schema is, and the types every schema speaks.
 
-A schema owns what is specific to a task type at the Label Studio boundary:
-the labeling config it generates, and the translation between Label Studio
-results and the :mod:`strata.contracts` values a catalog stores. Ranking a
-prediction for review is :mod:`strata.labeller.review.active_learning`'s.
-See ``docs/adr/0013`` and ``docs/adr/0012``.
+A schema owns one task type's Label Studio boundary: the labeling config it generates
+and the translation between results and :mod:`strata.contracts` values. Ranking for
+review is :mod:`strata.labeller.review.active_learning`'s. See ``docs/adr/0013``.
 """
 
 from string import Template
@@ -16,8 +14,7 @@ from .media import Media
 
 Result = dict[str, Any]
 
-# Fields Label Studio attaches that say nothing about the annotation itself;
-# dropped so the same annotation reads the same from two exports
+# Attached by Label Studio per export; dropped so one annotation reads the same twice
 VOLATILE_FIELDS = {"id", "origin", "lead_time", "created_at", "updated_at", "parent_id"}
 
 
@@ -55,10 +52,7 @@ class LabelSchema(Protocol):
         ...
 
     def catalog_schema(self):
-        """This schema as the catalog stores it, with Label Studio left behind.
-
-        Media does not survive the crossing. See ``docs/adr/0014``.
-        """
+        """This schema as the catalog stores it, without the media. See ``docs/adr/0014``."""
         raise NotImplementedError
 
     def label_config(self) -> str:

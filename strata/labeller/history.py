@@ -20,22 +20,19 @@ class HistoryRow:
     run: Run
     value: float
     version: int | None
-    #: Against the run's own parent, and only when both were scored on the
-    #: same held-out samples. None means "cannot be compared". docs/adr/0035
+    #: Against the run's own parent, only when scored on the same held-out samples. docs/adr/0035
     delta: float | None
     #: Whether it continued a run in the store. False is a cold start.
     warm: bool
-    #: How much of what the run saw nobody checked, per side and batch.
-    #: Empty for a run recorded before that was written down.
+    #: How much of what the run saw nobody checked, per side and batch; empty if unrecorded.
     unchecked: list[Unchecked] = field(default_factory=list)
 
 
 def history(store, dataset: str, metric: str, catalog_id: str | None = None) -> list[HistoryRow]:
     """One row per run that recorded ``metric`` over ``dataset``, oldest first.
 
-    Within ``catalog_id`` when given (``docs/adr/0008``). A delta is taken
-    only against a run's own parent, and not across a dataset version
-    going backwards (``docs/adr/0035``).
+    Within ``catalog_id`` when given. A delta is against a run's own parent only, never
+    across a dataset version going backwards. See ``docs/adr/0008`` and ``docs/adr/0035``.
     """
     rows: list[HistoryRow] = []
     seen: dict[str, float] = {}
@@ -79,14 +76,9 @@ def unchecked_json(rows: list[Unchecked]) -> list[dict]:
 
 
 def run_json(run) -> dict:
-    """One run, as something to compute on rather than to read.
-
-    Everything the store holds, including ``params`` and ``classes``. See
-    ``docs/adr/0035``.
-    """
+    """One run, as something to compute on: everything the store holds. See ``docs/adr/0035``."""
     data = run.model_dump(mode="json")
-    # Not a field on the model, and the one thing a caller would otherwise
-    # have to reimplement the id format to get.
+    # Not a model field; without it a caller would reimplement the id format
     data["short"] = run.short
     return data
 

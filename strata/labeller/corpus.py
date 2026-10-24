@@ -1,13 +1,15 @@
 """Getting a project's files into its catalog: preparing a source, then registering it.
 
-What ``prepare`` and ``ingest`` do between reading a directory and saying
-what happened. Nothing here prints; each step returns what it found and
-what it left out. See ``docs/adr/0030`` and ``docs/adr/0036``.
+Nothing here prints; each step returns what it found and what it left out.
+See ``docs/adr/0030`` and ``docs/adr/0036``.
 """
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
+from strata.catalog import canonical_form
+from strata.prepare import PreparerError, preparers
 
 
 @dataclass
@@ -44,14 +46,9 @@ def ingest_files(
 ) -> dict[Path, int]:
     """Register an admitted corpus in ``catalog``; returns each file's sample id.
 
-    ``admission`` is what the catalog checked the prepared index against the
-    type into: each file with the metadata to record, ``source_path``
-    included. In batches, each one transaction, so a re-run after a failure
-    carries on (``docs/adr/0032``). A grouping is in that metadata, and
-    nothing here treats it apart (``docs/adr/0023``).
+    ``admission`` is the catalog's check of the prepared index against the type: each
+    file with its metadata. One transaction per batch. See ``docs/adr/0032`` and ``0023``.
     """
-    from strata.catalog import canonical_form
-
     paths = list(admission.entries)
     canonicalise = canonical_form(type(sample_type))
     registered: dict[Path, int] = {}
@@ -73,10 +70,8 @@ def ingest_files(
 def land_labels(catalog, label_set_id: int, admission, registered: dict[Path, int], batch):
     """Store the candidate labels an admitted corpus carries, as one import.
 
-    The labels enter with the files, under ``source="import"`` and the batch
-    name given (``docs/adr/0028``). Every labelled file was admitted, so
-    every one is registered. Returns what was written, or None where the
-    corpus carried no labels.
+    Returns what was written, or None where the corpus carried no labels. See
+    ``docs/adr/0028``.
     """
     items = [(registered[path], value) for path, value in admission.values.items()]
     if not items:
@@ -99,8 +94,6 @@ def choose_preparer(name: str, produces: str, sample: Path):
     Refuses one whose output this project would not ingest. See
     ``docs/adr/0033``.
     """
-    from strata.prepare import PreparerError, preparers
-
     cls = preparers.resolve(name) if name else preparers.for_source(produces, sample)
     if cls.produces != produces:
         raise PreparerError(

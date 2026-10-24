@@ -6,9 +6,11 @@ import typer
 from rich.markup import escape
 from rich.table import Table
 
-from strata.catalog import Catalog
+from strata.catalog import Catalog, CatalogError
 
-from ..project import PROJECTS_DIR, LabellingProject, ProjectError
+from ..labelstudio import schemas
+from ..labelstudio.label_config import LabelConfigError
+from ..project import PROJECTS_DIR, LabellingProject, ProjectError, list_projects
 from ._shared import (
     ConfigOption,
     ProjectOption,
@@ -49,8 +51,7 @@ def new(
 ) -> None:
     """Scaffold a new project under projects/ (or at an explicit path)."""
     directory = Path(name_or_path)
-    # A bare name lands in projects/; anything path-shaped is taken literally.
-    # Read off what was typed: Path("./cats") has dropped its "./" already.
+    # Read off what was typed: Path("./cats") has already dropped its "./"
     if "/" not in name_or_path and not name_or_path.startswith("."):
         directory = Path(PROJECTS_DIR) / directory
     directory.mkdir(parents=True, exist_ok=True)
@@ -66,8 +67,7 @@ def new(
         )
 
     console.print(f"[green]Created project '{project.name}' in {directory}[/green]")
-    # Ingest takes a prepared corpus, so the first step is preparing one.
-    # docs/adr/0040
+    # Ingest takes a prepared corpus, so the first step is preparing one. docs/adr/0040
     console.print(f"  Put {project.schema.media.name} files in {project.data_dir}, then run:")
     console.print(f"    {_prepare_hint(project)}")
     console.print(f"    strata-labeller ingest --project {project.name}")
@@ -76,8 +76,6 @@ def new(
 @app.command()
 def templates() -> None:
     """List the labeling templates: which task over which media."""
-    from ..labelstudio import schemas
-
     table = Table(title="Labeling templates")
     table.add_column("Template", style="cyan")
     table.add_column("Label type", style="magenta")
@@ -95,10 +93,6 @@ def templates() -> None:
 @app.command(name="projects")
 def list_projects_cmd() -> None:
     """List the projects under projects/."""
-    from strata.catalog import CatalogError
-
-    from ..project import list_projects
-
     found = list_projects()
     if not found:
         console.print(
@@ -106,8 +100,7 @@ def list_projects_cmd() -> None:
         )
         return
 
-    # Counts live in the catalog, opened per project; a project that has
-    # never ingested is still listed. docs/adr/0020
+    # Counts live in the catalog, opened per project; no catalog yet still lists. docs/adr/0020
     settings = _settings()
     catalogs: dict[str, Catalog | None] = {}
 
@@ -177,14 +170,11 @@ def class_add(
     hand-tuned layout survives. Refresh your Label Studio tab afterwards and
     the new option is there.
     """
-    from ..labelstudio.label_config import LabelConfigError
-
     project = _load_project(project_path)
     settings = _settings(config_path)
 
     with _exit_on(ProjectError):
-        # No inference from what is in use: the label set holds the class
-        # list. docs/adr/0014
+        # The label set holds the class list; nothing is inferred from use. docs/adr/0014
         classes = project.add_classes(names)
     console.print(f"[green]Added {', '.join(names)}[/green] — classes: {', '.join(classes)}")
 
@@ -204,8 +194,6 @@ def class_add(
                 )
                 raise typer.Exit(1) from None
         console.print(f"Label Studio project {ls_project_id} updated — refresh the tab to see it.")
-
-    from strata.catalog import CatalogError
 
     catalog = _catalog_if_any(settings, project.catalog.name)
     if catalog is not None:
@@ -227,22 +215,14 @@ def class_add(
 
 
 def _add_to_label_set(project: LabellingProject, settings, classes: list[str]) -> None:
-    """Widen the catalog's label set to match the project's class list.
-
-    Both have to move together: the labeling config comes from
-    project.toml, and an export is validated against the label set. See
-    ``docs/adr/0016``.
-    """
-    from strata.catalog import CatalogError
-
+    """Widen the catalog's label set to match the project's class list. See ``docs/adr/0016``."""
     catalog = _catalog_if_any(settings, project.catalog.name)
     if catalog is None:
         return
     try:
         label_set_id, schema = catalog.label_sets.get(project.label_set_name)
     except CatalogError:
-        # No label set yet: ingest creates it from project.toml.
-        # docs/adr/0016
+        # No label set yet: ingest creates it from project.toml. docs/adr/0016
         return
 
     added = [c for c in classes if c not in schema.classes]
@@ -270,8 +250,7 @@ def class_list(
     table.add_column("Class", style="cyan")
     table.add_column("Samples", justify="right", style="green")
     for name in schema.classes:
-        # From the class index rather than by decoding every annotation,
-        # which is what that table exists for
+        # From the class index, not by decoding every annotation. docs/adr/0039
         table.add_row(
             name, str(len(catalog.samples.with_class(label_set_id, name, project.collections)))
         )
@@ -280,8 +259,7 @@ def class_list(
     declared = set(project.label_set.classes)
     drifted = set(schema.classes) ^ declared
     if declared and drifted:
-        # A class in one and not the other lets a reviewer apply a label
-        # the catalog then refuses. docs/adr/0016
+        # A class in one and not the other is a label the catalog refuses. docs/adr/0016
         console.print(
             f"[yellow]project.toml and the label set disagree: "
             f"{', '.join(sorted(drifted))}[/yellow]"

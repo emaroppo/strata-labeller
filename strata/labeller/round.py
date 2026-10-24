@@ -1,9 +1,8 @@
 """A training round, on the catalog.
 
-Three stages across two packages: the catalog freezes a dataset version
-and materialises it, and modelling trains from the directory. The
-labeller only sequences them, with the same stage functions an experiment
-file names. Why a version is frozen and inherited: ``docs/adr/0003``.
+The catalog freezes a dataset version and materialises it, modelling trains from the
+directory; the labeller sequences the same stage functions an experiment file names.
+See ``docs/adr/0003``.
 """
 
 from dataclasses import dataclass
@@ -70,8 +69,7 @@ def run_round(
     )
 
     store = RunStore.local(project.runs_dir)
-    # The warm-start policy is the caller's, and this caller's is the
-    # default: the newest run over this dataset unless told to start fresh.
+    # Warm start is the caller's policy: the newest run on this dataset unless fresh. docs/adr/0025
     record = train(
         TrainStageRequest(
             dataset_dir=built.directory,

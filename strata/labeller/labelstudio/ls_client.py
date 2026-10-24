@@ -40,10 +40,6 @@ class LSClient:
             raise RuntimeError("Label Studio created a project and answered with no id")
         return project.id
 
-    # ------------------------------------------------------------------
-    # Labeling config
-    # ------------------------------------------------------------------
-
     def get_label_config(self, project_id: int) -> str:
         return self.client.projects.get(id=project_id).label_config or ""
 
@@ -64,9 +60,7 @@ class LSClient:
     def delete_annotations(self, project_id: int, task_ids: list[int]) -> None:
         """Bulk-delete the annotations on the given tasks.
 
-        Used to bring skipped tasks back into the review queue: the skip is
-        recorded as a cancelled annotation, so the task stays out of the
-        queue until that annotation is gone.
+        A skip is a cancelled annotation, so deleting it returns the task to the queue.
         """
         if not task_ids:
             return
@@ -89,23 +83,14 @@ class LSClient:
             selected_items=SelectedItemsIncluded(all_=False, included=task_ids),
         )
 
-    # ------------------------------------------------------------------
-    # Tasks, predictions, annotations
-    # ------------------------------------------------------------------
-
     def setup_local_storage(self, project_id: int, path: str | None = None) -> None:
         self.client.import_storage.local.create(
             project=project_id,
             path=path or self.instance.local_storage_path,
-            # What is on the mount is whatever the project labels —
-            # pictures, documents, frames
+            # What is on the mount is whatever the project labels
             title="Local files",
             use_blob_urls=False,
         )
-
-    # ------------------------------------------------------------------
-    # The catalog path
-    # ------------------------------------------------------------------
 
     def import_catalog_tasks(
         self,
@@ -128,8 +113,7 @@ class LSClient:
             )
             task_ids = (response.model_extra or {}).get("task_ids") or []
             if len(task_ids) != len(batch):
-                # Without a positional match there is no saying which task is
-                # which; --rebuild-map recovers the mapping. docs/adr/0032
+                # No positional match: --rebuild-map recovers the mapping. docs/adr/0032
                 continue
             mapping.update(
                 {task.sample_id: task_id for task, task_id in zip(batch, task_ids, strict=True)}
@@ -150,18 +134,12 @@ class LSClient:
     def update_task_data(self, task_id: int, data: dict) -> None:
         """Repoint one task at a different sample.
 
-        Data is replaced whole rather than merged, which is what the API
-        offers — so callers pass the task's existing data with one key
-        changed, not just the key.
+        Data is replaced whole, not merged: pass the task's existing data with one key changed.
         """
         self.client.tasks.update(str(task_id), data=data)
 
     def export_raw(self, project_id: int) -> list[dict]:
-        """The export snapshot, unconverted.
-
-        One bulk download rather than paging; what it means is the sync
-        layer's business, not this one's.
-        """
+        """The export snapshot, unconverted, in one bulk download."""
         return [
             task if isinstance(task, dict) else task.dict()
             for task in self.client.projects.exports.as_json(project_id, timeout=600)
@@ -206,7 +184,6 @@ class LSClient:
             )
 
         if model_version is not None:
-            # LS only displays predictions matching the project's active
-            # model version, so keep it pointed at what was just pushed
+            # Label Studio shows only predictions matching the project's active model version
             self.client.projects.update(id=project_id, model_version=model_version)
         return len(to_push)

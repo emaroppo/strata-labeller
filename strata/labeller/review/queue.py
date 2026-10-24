@@ -1,9 +1,7 @@
 """Building a review queue: what each sample is told, how it is scored, what goes first.
 
-What ``push`` does between reading the pool and creating the tasks, with
-nothing printed: each step returns what it decided and what it left out,
-and the command says it. See ``docs/adr/0011`` for coverage and
-``docs/adr/0012`` for the ordering.
+Nothing here prints; each step returns what it decided and what it left out. See
+``docs/adr/0011`` for coverage and ``docs/adr/0012`` for the ordering.
 """
 
 from collections.abc import Callable, Sequence
@@ -20,18 +18,14 @@ from .active_learning import rank
 class Coverage:
     """Each sample's declared features, and the samples that lack one.
 
-    Keyed by checksum, because that is what a prediction is keyed by
-    (``docs/adr/0006``): two samples with the same bytes are scored once,
-    and are told the same features. See ``docs/adr/0052``.
+    Keyed by checksum, which is what a prediction is keyed by. See ``docs/adr/0006`` and
+    ``docs/adr/0052``.
     """
 
     by_checksum: dict[str, dict]
-    #: Samples missing a declared feature, left out of the queue and said
-    #: out loud. docs/adr/0011
+    #: Samples missing a declared feature, left out and said. docs/adr/0011
     uncovered: list[SampleRow] = field(default_factory=list)
-    #: Samples whose bytes an earlier sample in the pool holds with other
-    #: features. One scoring pass tells a checksum one set, so these are
-    #: left out and named rather than scored as the other. docs/adr/0052
+    #: Samples whose bytes an earlier sample holds with other features, left out. docs/adr/0052
     conflicting: list[SampleRow] = field(default_factory=list)
 
     @property
@@ -43,8 +37,7 @@ class Coverage:
 def feature_values(catalog, pool: Sequence[SampleRow], specs) -> tuple[list[SampleRow], Coverage]:
     """Resolve the pool's features, dropping the samples a declaration does not cover.
 
-    Decided per sample, since two samples can share bytes and not
-    metadata (``docs/adr/0052``).
+    Decided per sample. See ``docs/adr/0052``.
     """
     if not specs:
         return list(pool), Coverage({s.checksum: {} for s in pool})
@@ -82,11 +75,8 @@ def score_locally(
 ) -> Scored:
     """Score a pool with a local run, asking the cache first and filling it after.
 
-    ``predict`` takes the paths and features of the samples the cache lacks
-    and returns their predictions in order. Everything here deals in
-    checksum -> prediction value: unwrapping the handler's result in some
-    places but not others is how a cache came to hold values that read
-    back empty.
+    ``predict`` takes the paths and features of the samples the cache lacks and returns
+    their predictions in order. Everything here deals in checksum -> prediction value.
     """
     digests = coverage.digests
     checksums = list(dict.fromkeys(s.checksum for s in pool))
@@ -105,8 +95,7 @@ def score_locally(
 def disputed(catalog, label_set_id: int, collections, exclude: set[int]) -> list[SampleRow]:
     """Samples two people answered differently, as rows, minus ``exclude``.
 
-    Found by sample id, which a dispute is recorded against: its checksum
-    may be another type's bytes too. See ``docs/adr/0052``.
+    Found by sample id, which a dispute is recorded against. See ``docs/adr/0052``.
     """
     conflicts = catalog.conflicts.disputed(label_set_id, collections)
     wanted = {c["sample_id"] for c in conflicts} - exclude
@@ -136,8 +125,7 @@ def plan(
 ) -> Queue:
     """Order the queue: disputed samples first, then the pool by ``strategy``, cut at ``limit``.
 
-    Disputed samples have an answer, so they are not in the pool; they are
-    added, ahead of the ranking. See ``docs/adr/0009``.
+    Disputed samples are not in the pool and are added ahead of it. See ``docs/adr/0009``.
     """
     if scores:
         ranked = rank(pool, scores, strategy, empty_share=empty_share)

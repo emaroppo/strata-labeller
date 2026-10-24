@@ -1,9 +1,8 @@
 """Keeping Label Studio and the catalog in step.
 
-One direction each way, and the catalog wins. Task ids are cached rather
-than stored: a sample is recognised by the blob its task points at and the
-type beside it, so the map can always be rebuilt by listing tasks. See
-``docs/adr/0029`` and ``docs/adr/0052``.
+One direction each way, and the catalog wins. Task ids are cached, not stored: a sample
+is recognised by its task's blob and type, so the map can be rebuilt by listing tasks.
+See ``docs/adr/0029`` and ``docs/adr/0052``.
 """
 
 import json
@@ -33,19 +32,13 @@ class PullReport:
     #: Spans whose edges were moved off whitespace on the way in
     trimmed: int = 0
     unrecognised: list[str] = field(default_factory=list)
-    #: Task ids from before tasks carried a type, whose bytes several
-    #: samples hold. docs/adr/0052
+    #: Tasks with no type whose bytes several samples hold. docs/adr/0052
     ambiguous: list[int] = field(default_factory=list)
     undeclared: set[str] = field(default_factory=set)
 
     @property
     def total(self) -> int:
         return self.annotated + self.skipped
-
-
-# ----------------------------------------------------------------------
-# The task map
-# ----------------------------------------------------------------------
 
 
 class TaskMapError(Exception):
@@ -121,12 +114,9 @@ class RelinkReport:
     #: (task id, new data) for each task whose URL or type should change.
     changes: list[tuple[int, dict]] = field(default_factory=list)
     unchanged: int = 0
-    #: URLs naming no sample. Left alone rather than guessed at — a task
-    #: from before the catalog points at a real image this cannot identify,
-    #: and rewriting it would lose the only record of what it showed.
+    #: URLs naming no sample, left alone: rewriting one would lose what the task showed.
     unrecognised: list[str] = field(default_factory=list)
-    #: Task ids from before tasks carried a type, whose bytes several
-    #: samples hold. Left alone for the same reason. docs/adr/0052
+    #: Tasks with no type whose bytes several samples hold, left alone. docs/adr/0052
     ambiguous: list[int] = field(default_factory=list)
 
     @property
@@ -137,13 +127,10 @@ class RelinkReport:
 def relink(
     tasks: list[dict], catalog: Catalog, addressing: Addressing, data_key: str
 ) -> RelinkReport:
-    """Work out how each task's image URL should now read.
+    """Work out how each task's data should now read; the caller applies it.
 
-    Three jobs, one operation: moving tasks off the mount onto the serving
-    API, re-signing (``docs/adr/0013``), and giving a task from before
-    types the type of the one sample its bytes name, which keeps it
-    resolving once a second type holds them (``docs/adr/0052``). Computed
-    here and applied by the caller (``docs/adr/0030``).
+    Moves tasks off the mount onto the serving API, re-signs, and gives a typeless task
+    its one sample's type. See ``docs/adr/0013``, ``docs/adr/0030`` and ``docs/adr/0052``.
     """
     report = RelinkReport()
     for task in tasks:
@@ -170,11 +157,8 @@ def rebuild_task_map(
 ) -> tuple[dict[int, int], list[str], list[int]]:
     """Recover sample id -> task id from what Label Studio holds.
 
-    Returns the map, the URLs it could not place, and the ids of tasks
-    with no type whose bytes several samples hold. A URL that names no blob
-    is the ordinary case for a task made before the cutover, and saying so
-    beats matching it to the wrong sample; so does naming a task that could
-    be either of two (``docs/adr/0052``).
+    Returns the map, the URLs it could not place, and the ids of typeless tasks whose
+    bytes several samples hold; neither is matched to a guess. See ``docs/adr/0052``.
     """
     mapping: dict[int, int] = {}
     unrecognised: list[str] = []
@@ -193,11 +177,6 @@ def rebuild_task_map(
     return mapping, unrecognised, ambiguous
 
 
-# ----------------------------------------------------------------------
-# Out
-# ----------------------------------------------------------------------
-
-
 def tasks_to_push(
     samples: list[SampleRow],
     catalog: Catalog,
@@ -206,19 +185,10 @@ def tasks_to_push(
     addressing: Addressing,
     existing: dict[int, int],
 ) -> tuple[list[Task], PushReport]:
-    """Tasks for samples Label Studio does not have yet.
-
-    Skipping what is already there is what makes a push resumable. See
-    ``docs/adr/0032``.
-    """
+    """Tasks for samples Label Studio does not have yet. See ``docs/adr/0032``."""
     wanted = [s for s in samples if s.id not in existing]
     report = PushReport(pushed=len(wanted), already_present=len(samples) - len(wanted))
     return build_tasks(wanted, catalog, label_set_id, schema, addressing), report
-
-
-# ----------------------------------------------------------------------
-# Back
-# ----------------------------------------------------------------------
 
 
 def _was_opened(annotation: dict) -> bool:
@@ -245,13 +215,9 @@ def pull_annotations(
 ) -> tuple[list[tuple[int, AnyValue | None]], PullReport]:
     """Turn a Label Studio export into catalog writes.
 
-    A task with no annotation is left alone rather than recorded as empty,
-    and a cancelled one is a skip (``docs/adr/0029``). ``reviewed_only``
-    keeps back annotations nobody has opened (``docs/adr/0028``).
-
-    Spans are trimmed of surrounding whitespace against the document:
-    Label Studio renders a run of spaces as one, so a selection after
-    aligned text starts inside the run, and the reviewer can't see it.
+    A task with no annotation is left alone, a cancelled one is a skip, and ``reviewed_only``
+    keeps back annotations nobody opened. Spans are trimmed of surrounding whitespace against
+    the document. See ``docs/adr/0028`` and ``docs/adr/0029``.
     """
     report = PullReport()
     items: list[tuple[int, AnyValue | None]] = []
@@ -287,8 +253,7 @@ def pull_annotations(
         if isinstance(value, Spans) and value.values:
             value, moved = value.trimmed(text_of(catalog, sample))
             report.trimmed += moved
-        # Which classes a value asserts is the label type's own question.
-        # docs/adr/0039
+        # Which classes a value asserts is the label type's own question. docs/adr/0039
         report.undeclared |= stored.classes_asserted(value) - known
         items.append((sample.id, value))
         report.annotated += 1
