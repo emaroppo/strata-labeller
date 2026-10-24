@@ -24,6 +24,7 @@ from ._shared import (
     _ls_client,
     _ls_url,
     _modelling,
+    _report_ambiguous,
     _schema_for,
     _settings,
     _task_map,
@@ -197,7 +198,7 @@ def push(
     task_map = _task_map(project, ls_project_id, catalog)
     if rebuild_map or not task_map:
         with console.status("Listing tasks in Label Studio..."):
-            task_map, unrecognised = rebuild_task_map(
+            task_map, unrecognised, ambiguous = rebuild_task_map(
                 client.list_tasks(ls_project_id), catalog, addressing, schema.data_key
             )
         if unrecognised:
@@ -205,16 +206,19 @@ def push(
                 f"[yellow]{len(unrecognised)} task(s) point at nothing this catalog "
                 f"knows — from before the cutover, or since removed.[/yellow]"
             )
+        _report_ambiguous(ambiguous)
         save_task_map(project, ls_project_id, task_map, catalog.id)
 
-    labels: dict[str, AnyValue] = {}
+    # Per sample, since two samples with the same bytes can carry different
+    # labels. docs/adr/0052
+    labels: dict[int, AnyValue] = {}
     if review_imports:
         pool = catalog.samples.unreviewed(label_set_id, project.collections)
         if not pool:
             console.print("[yellow]No imported label is waiting to be confirmed.[/yellow]")
             return
         imported = catalog.annotations.values_of(label_set_id, [s.id for s in pool])
-        labels = {s.checksum: imported[s.id] for s in pool if s.id in imported}
+        labels = {s.id: imported[s.id] for s in pool if s.id in imported}
     else:
         pool = catalog.samples.unlabelled(label_set_id, project.collections)
         if not pool:
@@ -239,11 +243,21 @@ def push(
                 f"{', '.join(f.name for f in specs)} and cannot be scored — "
                 f"they stay out of this queue until they do.[/yellow]"
             )
+        if coverage.conflicting:
+            console.print(
+                f"[yellow]{len(coverage.conflicting):,} sample(s) share their bytes "
+                f"with another in the queue but not their "
+                f"{', '.join(f.name for f in specs)}, and a pass scores the bytes "
+                f"once — they stay out of this queue.[/yellow]"
+            )
         if remote:
             # The host keeps its own cache, keyed on its own run ids.
             # docs/adr/0006
             scores = _remote_predictions(
-                host, scoring_run, [s.checksum for s in pool], coverage.by_checksum
+                host,
+                scoring_run,
+                list(dict.fromkeys(s.checksum for s in pool)),
+                coverage.by_checksum,
             )
         else:
             assert store is not None
@@ -272,8 +286,11 @@ def push(
     if review_imports:
         # Ranked by how far the model is from the imported label, and
         # nothing disputed joins this queue. docs/adr/0028
-        ordering = against(labels)
-        scores = {c: ordering.bind(c, p) for c, p in scores.items() if c in labels}
+        # The ranking is per checksum, as the scores are: two samples with
+        # one checksum rank by one label, and each is shown its own.
+        checked = {s.checksum: labels[s.id] for s in pool if s.id in labels}
+        ordering = against(checked)
+        scores = {c: ordering.bind(c, p) for c, p in scores.items() if c in checked}
         planned = queue.plan(pool, scores, ordering, empty_share=1.0, limit=limit)
         if not scores and limit is not None:
             planned = queue.plan(pool, {}, ordering, empty_share=1.0, limit=limit)
@@ -312,15 +329,15 @@ def push(
         payload = [
             (
                 s.id,
-                schema.encode_target(list(labels[s.checksum].values)),
+                schema.encode_target(list(labels[s.id].values)),
                 (
-                    disagreement(planned.scored[s.id], labels[s.checksum])
+                    disagreement(planned.scored[s.id], labels[s.id])
                     if s.id in planned.scored
                     else 1.0
                 ),
             )
             for s in planned.ranked
-            if s.checksum in labels
+            if s.id in labels
         ]
         pushed = client.push_catalog_predictions(
             ls_project_id,

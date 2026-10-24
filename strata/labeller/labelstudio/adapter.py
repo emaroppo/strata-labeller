@@ -3,8 +3,9 @@
 Everything that knows Label Studio's shape stops here. Past this module a
 sample is a catalog row and an annotation is a :mod:`strata.contracts` value;
 inside it, results carry control names, media keys and percentages, and
-``schemas/`` does the conversion. A task's sample URL names the checksum.
-See ``docs/adr/0013`` and ``docs/adr/0001``.
+``schemas/`` does the conversion. A task's sample URL names the checksum,
+and the task's data names the type beside it. See ``docs/adr/0013`` and
+``docs/adr/0052``.
 """
 
 from dataclasses import dataclass
@@ -18,6 +19,11 @@ from .schemas import LabelSchema
 
 #: What Label Studio serves local files under.
 LOCAL_FILES = "/data/local-files/?d="
+
+#: Key under task["data"] naming the sample's type, beside the media key
+#: whose URL names its bytes. Prefixed so no labeling config's ``$name``
+#: reads it. docs/adr/0052
+TYPE_KEY = "strata_type"
 
 
 # ----------------------------------------------------------------------
@@ -81,6 +87,28 @@ class Addressing:
         if LOCAL_FILES in url:
             return checksum_from_url(url, self.prefix)
         return SignedUrls.checksum_from(url)
+
+    def data_for(self, sample: SampleRow, data_key: str) -> dict:
+        """What a task's data says about its sample: where its bytes are, and its type.
+
+        Both, always, since the same bytes can be two samples of different
+        types. See ``docs/adr/0052``.
+        """
+        return {data_key: self.url_for(sample), TYPE_KEY: sample.type}
+
+    def sample_from(self, data: dict, data_key: str, catalog: Catalog) -> SampleRow | None:
+        """The sample a task's data names, or None if it names none.
+
+        A task of one type never settles for a sample of another. One pushed
+        before tasks carried a type resolves while one live sample has its
+        bytes, and raises :class:`~strata.catalog.AmbiguousSample` once
+        several do. Relinking gives it the type while it still resolves, and
+        a task pushed again names it. See ``docs/adr/0052``.
+        """
+        checksum = self.checksum_from(data.get(data_key, ""))
+        if checksum is None:
+            return None
+        return catalog.samples.by_checksum(checksum, data.get(TYPE_KEY) or None)
 
 
 def _digest_or_none(stem: str) -> str | None:
@@ -160,7 +188,7 @@ def build_tasks(
         tasks.append(
             Task(
                 sample_id=sample.id,
-                data={schema.data_key: addressing.url_for(sample)},
+                data=addressing.data_for(sample, schema.data_key),
                 annotations=to_results(value, schema) if value is not None else [],
                 answered=value is not None,
             )

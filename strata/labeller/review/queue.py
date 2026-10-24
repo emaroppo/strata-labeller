@@ -18,12 +18,21 @@ from .active_learning import rank
 
 @dataclass
 class Coverage:
-    """Each sample's declared features, and the samples that lack one."""
+    """Each sample's declared features, and the samples that lack one.
+
+    Keyed by checksum, because that is what a prediction is keyed by
+    (``docs/adr/0006``): two samples with the same bytes are scored once,
+    and are told the same features. See ``docs/adr/0052``.
+    """
 
     by_checksum: dict[str, dict]
     #: Samples missing a declared feature, left out of the queue and said
     #: out loud. docs/adr/0011
     uncovered: list[SampleRow] = field(default_factory=list)
+    #: Samples whose bytes an earlier sample in the pool holds with other
+    #: features. One scoring pass tells a checksum one set, so these are
+    #: left out and named rather than scored as the other. docs/adr/0052
+    conflicting: list[SampleRow] = field(default_factory=list)
 
     @property
     def digests(self) -> dict[str, str]:
@@ -32,15 +41,25 @@ class Coverage:
 
 
 def feature_values(catalog, pool: Sequence[SampleRow], specs) -> tuple[list[SampleRow], Coverage]:
-    """Resolve the pool's features, dropping the samples a declaration does not cover."""
+    """Resolve the pool's features, dropping the samples a declaration does not cover.
+
+    Decided per sample, since two samples can share bytes and not
+    metadata (``docs/adr/0052``).
+    """
     if not specs:
         return list(pool), Coverage({s.checksum: {} for s in pool})
     resolved = catalog.features_for([s.id for s in pool], specs)
-    by_checksum = {s.checksum: resolved.get(s.id, {}) for s in pool}
-    uncovered = [s for s in pool if not by_checksum[s.checksum]]
-    dropped = {s.checksum for s in uncovered}
-    kept = [s for s in pool if s.checksum not in dropped]
-    return kept, Coverage({s.checksum: by_checksum[s.checksum] for s in kept}, uncovered)
+    coverage = Coverage({})
+    kept = []
+    for s in pool:
+        values = resolved.get(s.id, {})
+        if not values:
+            coverage.uncovered.append(s)
+        elif coverage.by_checksum.setdefault(s.checksum, values) != values:
+            coverage.conflicting.append(s)
+        else:
+            kept.append(s)
+    return kept, coverage
 
 
 @dataclass
@@ -70,9 +89,10 @@ def score_locally(
     back empty.
     """
     digests = coverage.digests
-    checksums = [s.checksum for s in pool]
+    checksums = list(dict.fromkeys(s.checksum for s in pool))
     scores = cache.get(run_id, checksums, digests)
-    missing = [s for s in pool if s.checksum not in scores]
+    # One prediction per checksum, whatever the type. docs/adr/0052
+    missing = list({s.checksum: s for s in pool if s.checksum not in scores}.values())
     reused = len(scores)
     if missing:
         fresh = predict(paths_for(missing), [coverage.by_checksum[s.checksum] for s in missing])
@@ -83,10 +103,16 @@ def score_locally(
 
 
 def disputed(catalog, label_set_id: int, collections, exclude: set[int]) -> list[SampleRow]:
-    """Samples two people answered differently, as rows, minus ``exclude``."""
+    """Samples two people answered differently, as rows, minus ``exclude``.
+
+    Found by sample id, which a dispute is recorded against: its checksum
+    may be another type's bytes too. See ``docs/adr/0052``.
+    """
     conflicts = catalog.conflicts.disputed(label_set_id, collections)
-    rows = (catalog.samples.by_checksum(c["checksum"]) for c in conflicts)
-    return [row for row in rows if row is not None and row.id not in exclude]
+    wanted = {c["sample_id"] for c in conflicts} - exclude
+    if not wanted:
+        return []
+    return [row for row in catalog.samples.matching(collections) if row.id in wanted]
 
 
 @dataclass

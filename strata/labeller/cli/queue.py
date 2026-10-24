@@ -19,6 +19,7 @@ from ._shared import (
     _ls_client,
     _ls_url,
     _progress,
+    _report_ambiguous,
     _schema_for,
     _settings,
     _task_map,
@@ -213,6 +214,7 @@ def export_annotations(
             f"[yellow]{len(report.unrecognised)} task(s) point at nothing this "
             f"catalog knows, and were left alone.[/yellow]"
         )
+    _report_ambiguous(report.ambiguous)
 
 
 @app.command()
@@ -230,9 +232,14 @@ def relink(
     And it re-signs: a signed URL expires, so a task left in a review queue
     longer than a signature's life stops loading, and this is the fix.
 
+    It also gives a task from before types its sample's type, where one
+    sample holds its bytes, so the task keeps resolving once another type
+    holds them too.
+
     Tasks whose URL names no sample are left alone and reported. A task made
     before the catalog points at a real image that nothing here can identify,
-    and rewriting it would destroy the only record of what it showed.
+    and rewriting it would destroy the only record of what it showed. So is
+    a task with no type whose bytes several samples already hold.
     """
     from ..labelstudio.sync import relink as plan_relink
 
@@ -263,6 +270,7 @@ def relink(
         )
         for url in report.unrecognised[:3]:
             console.print(f"    [dim]{escape(url)}[/dim]")
+    _report_ambiguous(report.ambiguous)
 
     if dry_run:
         console.print("\n[dim]Nothing was changed.[/dim]")

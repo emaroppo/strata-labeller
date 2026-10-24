@@ -8,7 +8,7 @@ import pytest
 
 from strata.catalog import EVERYTHING, Catalog
 from strata.contracts import Choices, ClassificationSchema
-from strata.labeller.labelstudio.adapter import Addressing, blob_url
+from strata.labeller.labelstudio.adapter import TYPE_KEY, Addressing, blob_url
 from strata.labeller.labelstudio.sync import (
     load_task_map,
     pull_annotations,
@@ -39,6 +39,25 @@ def ls_task(task_id: int, url: str, data_key: str = "image", **extra) -> dict:
     return {"id": task_id, "data": {data_key: url}, **extra}
 
 
+def typed(task: dict, type_: str) -> dict:
+    return {**task, "data": {**task["data"], TYPE_KEY: type_}}
+
+
+@pytest.fixture
+def held_twice(tmp_path):
+    """Give some checksums' bytes a second sample, of another type.
+
+    The same bytes as two types are two samples, so a lookup by checksum
+    alone no longer has one answer. See ``docs/adr/0052``.
+    """
+
+    def _hold(catalog, *checksums):
+        cached = catalog.ensure_cached(list(checksums), tmp_path / "held")
+        catalog.ingest([cached[c] for c in checksums], media="image", subtype="copy")
+
+    return _hold
+
+
 # ----------------------------------------------------------------------
 # The task map
 # ----------------------------------------------------------------------
@@ -66,7 +85,7 @@ def test_the_map_rebuilds_from_what_label_studio_holds(stocked, schema):
     samples = catalog.samples.unlabelled(label_set_id, EVERYTHING)
     tasks = [ls_task(500 + i, blob_url(s, "blobs")) for i, s in enumerate(samples)]
 
-    mapping, unrecognised = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
+    mapping, unrecognised, _ = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
     # The cache only saves a listing; nothing depends on it surviving
     assert mapping == {s.id: 500 + i for i, s in enumerate(samples)}
     assert unrecognised == []
@@ -76,7 +95,7 @@ def test_a_task_from_before_the_cutover_is_reported_not_guessed(stocked, schema)
     catalog, _, _ = stocked
     tasks = [ls_task(1, "/data/local-files/?d=images/vid1/f001.jpg")]
 
-    mapping, unrecognised = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
+    mapping, unrecognised, _ = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
     # It points at the old data root, which names no blob. Matching it to
     # some sample by string similarity would be worse than saying so.
     assert mapping == {}
@@ -86,8 +105,60 @@ def test_a_task_from_before_the_cutover_is_reported_not_guessed(stocked, schema)
 def test_a_blob_no_longer_in_the_catalog_is_unrecognised(stocked, schema):
     catalog, _, _ = stocked
     tasks = [ls_task(1, "/data/local-files/?d=blobs/aa/bb/" + "0" * 64 + ".jpg")]
-    mapping, unrecognised = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
+    mapping, unrecognised, _ = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
     assert mapping == {} and len(unrecognised) == 1
+
+
+def test_a_typed_task_finds_the_sample_of_its_type(stocked, schema):
+    catalog, _, label_set_id = stocked
+    [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
+    tasks = [typed(ls_task(1, blob_url(sample, "blobs")), sample.type)]
+
+    mapping, unrecognised, ambiguous = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
+    assert mapping == {sample.id: 1}
+    assert unrecognised == [] and ambiguous == []
+
+
+def test_a_typed_task_never_settles_for_another_type(stocked, schema):
+    catalog, _, label_set_id = stocked
+    [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
+    tasks = [typed(ls_task(1, blob_url(sample, "blobs")), "text/generated")]
+
+    mapping, unrecognised, _ = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
+    # The bytes are catalogued, but not as that type: the one row there is
+    # not what the task showed
+    assert mapping == {}
+    assert len(unrecognised) == 1
+
+
+def test_a_task_from_before_types_resolves_while_one_sample_holds_its_bytes(stocked, schema):
+    catalog, _, label_set_id = stocked
+    [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
+    tasks = [ls_task(1, blob_url(sample, "blobs"))]
+
+    mapping, _, ambiguous = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
+    assert mapping == {sample.id: 1}
+    assert ambiguous == []
+
+
+def test_a_task_from_before_types_is_refused_by_id_once_two_samples_hold_its_bytes(
+    stocked, schema, held_twice
+):
+    catalog, _, label_set_id = stocked
+    first, second = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:2]
+    held_twice(catalog, first.checksum)
+    tasks = [
+        ls_task(7, blob_url(first, "blobs")),
+        typed(ls_task(8, blob_url(first, "blobs")), first.type),
+        ls_task(9, blob_url(second, "blobs")),
+    ]
+
+    mapping, unrecognised, ambiguous = rebuild_task_map(tasks, catalog, ADDRESSING, schema.data_key)
+    # Matching it to whichever row came first would be a guess; the rest of
+    # the listing still places
+    assert ambiguous == [7]
+    assert mapping == {first.id: 8, second.id: 9}
+    assert unrecognised == []
 
 
 # ----------------------------------------------------------------------
@@ -120,6 +191,15 @@ def test_a_pushed_task_points_at_the_blob(stocked, schema):
     samples = catalog.samples.unlabelled(label_set_id, EVERYTHING)
     tasks, _ = tasks_to_push(samples[:1], catalog, label_set_id, schema, ADDRESSING, {})
     assert samples[0].checksum in tasks[0].data[schema.data_key]
+
+
+def test_a_pushed_task_names_its_samples_type(stocked, schema):
+    catalog, _ids, label_set_id = stocked
+    samples = catalog.samples.unlabelled(label_set_id, EVERYTHING)
+    tasks, _ = tasks_to_push(samples, catalog, label_set_id, schema, ADDRESSING, {})
+    # Always, not only where two samples share the bytes. docs/adr/0052
+    assert [t.data[TYPE_KEY] for t in tasks] == [s.type for s in samples]
+    assert all(t.data[TYPE_KEY] == "image/plain" for t in tasks)
 
 
 # ----------------------------------------------------------------------
@@ -250,6 +330,38 @@ def test_an_unrecognised_task_is_reported_not_dropped(stocked, schema):
     items, report = pull_annotations(exported, catalog, label_set_id, schema, ADDRESSING, ["cat"])
     assert items == []
     assert len(report.unrecognised) == 1
+
+
+def test_a_pushed_task_comes_back_to_its_own_sample(stocked, schema):
+    catalog, _ids, label_set_id = stocked
+    [sample] = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:1]
+    [task], _ = tasks_to_push([sample], catalog, label_set_id, schema, ADDRESSING, {})
+    exported = [{**annotated(1, "", ["cat"]), "data": task.data}]
+
+    items, report = pull_annotations(exported, catalog, label_set_id, schema, ADDRESSING, ["cat"])
+    assert items == [(sample.id, Choices(values=["cat"]))]
+    assert report.ambiguous == []
+
+
+def test_an_answer_on_a_task_from_before_types_is_refused_by_id_when_ambiguous(
+    stocked, schema, held_twice
+):
+    catalog, _ids, label_set_id = stocked
+    first, second = catalog.samples.unlabelled(label_set_id, EVERYTHING)[:2]
+    held_twice(catalog, first.checksum)
+    exported = [
+        annotated(3, blob_url(first, "blobs"), ["cat"]),
+        annotated(4, blob_url(second, "blobs"), ["dog"]),
+    ]
+
+    items, report = pull_annotations(
+        exported, catalog, label_set_id, schema, ADDRESSING, ["cat", "dog"]
+    )
+    # Not written to either sample, not dropped without a word, and the
+    # export carries on with the tasks it can place
+    assert report.ambiguous == [3]
+    assert report.unrecognised == []
+    assert items == [(second.id, Choices(values=["dog"]))]
 
 
 def test_reviewed_only_keeps_back_an_answer_nobody_opened(stocked, schema):

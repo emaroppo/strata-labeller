@@ -13,12 +13,12 @@ import json
 from pathlib import Path
 
 from strata.contracts import ChoicesPrediction
-from strata.modelling import Model
+from strata.modelling import LabelModel
 
 TOY_SOURCE = Path(__file__)
 
 
-class Toy(Model):
+class Toy(LabelModel):
     label_type = "classification"
     version = "1"
 

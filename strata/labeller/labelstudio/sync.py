@@ -1,14 +1,15 @@
 """Keeping Label Studio and the catalog in step.
 
 One direction each way, and the catalog wins. Task ids are cached rather
-than stored: a sample is recognised by the blob its task points at, so the
-map can always be rebuilt by listing tasks. See ``docs/adr/0029``.
+than stored: a sample is recognised by the blob its task points at and the
+type beside it, so the map can always be rebuilt by listing tasks. See
+``docs/adr/0029`` and ``docs/adr/0052``.
 """
 
 import json
 from dataclasses import dataclass, field
 
-from strata.catalog import Catalog, SampleRow
+from strata.catalog import AmbiguousSample, Catalog, SampleRow
 from strata.contracts import AnyValue, Spans
 
 from ..project import LabellingProject
@@ -32,6 +33,9 @@ class PullReport:
     #: Spans whose edges were moved off whitespace on the way in
     trimmed: int = 0
     unrecognised: list[str] = field(default_factory=list)
+    #: Task ids from before tasks carried a type, whose bytes several
+    #: samples hold. docs/adr/0052
+    ambiguous: list[int] = field(default_factory=list)
     undeclared: set[str] = field(default_factory=set)
 
     @property
@@ -114,17 +118,20 @@ def save_task_map(
 class RelinkReport:
     """What repointing a project's tasks did, or would do."""
 
-    #: (task id, new data) for each task whose URL should change.
+    #: (task id, new data) for each task whose URL or type should change.
     changes: list[tuple[int, dict]] = field(default_factory=list)
     unchanged: int = 0
     #: URLs naming no sample. Left alone rather than guessed at — a task
     #: from before the catalog points at a real image this cannot identify,
     #: and rewriting it would lose the only record of what it showed.
     unrecognised: list[str] = field(default_factory=list)
+    #: Task ids from before tasks carried a type, whose bytes several
+    #: samples hold. Left alone for the same reason. docs/adr/0052
+    ambiguous: list[int] = field(default_factory=list)
 
     @property
     def total(self) -> int:
-        return len(self.changes) + self.unchanged + len(self.unrecognised)
+        return len(self.changes) + self.unchanged + len(self.unrecognised) + len(self.ambiguous)
 
 
 def relink(
@@ -132,48 +139,58 @@ def relink(
 ) -> RelinkReport:
     """Work out how each task's image URL should now read.
 
-    Two jobs, one operation: moving tasks off the mount onto the serving
-    API, and re-signing (``docs/adr/0013``). Computed here and applied by
-    the caller (``docs/adr/0030``).
+    Three jobs, one operation: moving tasks off the mount onto the serving
+    API, re-signing (``docs/adr/0013``), and giving a task from before
+    types the type of the one sample its bytes name, which keeps it
+    resolving once a second type holds them (``docs/adr/0052``). Computed
+    here and applied by the caller (``docs/adr/0030``).
     """
     report = RelinkReport()
     for task in tasks:
         data = task.get("data") or {}
-        url = data.get(data_key, "")
-        checksum = addressing.checksum_from(url)
-        sample = catalog.samples.by_checksum(checksum) if checksum else None
+        try:
+            sample = addressing.sample_from(data, data_key, catalog)
+        except AmbiguousSample:
+            report.ambiguous.append(task["id"])
+            continue
         if sample is None:
-            report.unrecognised.append(url)
+            report.unrecognised.append(data.get(data_key, ""))
             continue
 
-        fresh = addressing.url_for(sample)
-        if fresh == url:
+        fresh = {**data, **addressing.data_for(sample, data_key)}
+        if fresh == data:
             report.unchanged += 1
             continue
-        report.changes.append((task["id"], {**data, data_key: fresh}))
+        report.changes.append((task["id"], fresh))
     return report
 
 
 def rebuild_task_map(
     tasks: list[dict], catalog: Catalog, addressing: Addressing, data_key: str
-) -> tuple[dict[int, int], list[str]]:
+) -> tuple[dict[int, int], list[str], list[int]]:
     """Recover sample id -> task id from what Label Studio holds.
 
-    Returns the map and the URLs it could not place. A URL that names no
-    blob is the ordinary case for a task made before the cutover, and saying
-    so beats matching it to the wrong sample.
+    Returns the map, the URLs it could not place, and the ids of tasks
+    with no type whose bytes several samples hold. A URL that names no blob
+    is the ordinary case for a task made before the cutover, and saying so
+    beats matching it to the wrong sample; so does naming a task that could
+    be either of two (``docs/adr/0052``).
     """
     mapping: dict[int, int] = {}
     unrecognised: list[str] = []
+    ambiguous: list[int] = []
     for task in tasks:
-        url = (task.get("data") or {}).get(data_key, "")
-        checksum = addressing.checksum_from(url)
-        sample = catalog.samples.by_checksum(checksum) if checksum else None
+        data = task.get("data") or {}
+        try:
+            sample = addressing.sample_from(data, data_key, catalog)
+        except AmbiguousSample:
+            ambiguous.append(task["id"])
+            continue
         if sample is None:
-            unrecognised.append(url)
+            unrecognised.append(data.get(data_key, ""))
             continue
         mapping[sample.id] = task["id"]
-    return mapping, unrecognised
+    return mapping, unrecognised, ambiguous
 
 
 # ----------------------------------------------------------------------
@@ -242,11 +259,15 @@ def pull_annotations(
     stored = schema.catalog_schema()
 
     for task in exported:
-        url = (task.get("data") or {}).get(schema.data_key, "")
-        checksum = addressing.checksum_from(url)
-        sample = catalog.samples.by_checksum(checksum) if checksum else None
+        data = task.get("data") or {}
+        try:
+            sample = addressing.sample_from(data, schema.data_key, catalog)
+        except AmbiguousSample:
+            # Not matched to whichever row comes first. docs/adr/0052
+            report.ambiguous.append(task["id"])
+            continue
         if sample is None:
-            report.unrecognised.append(url)
+            report.unrecognised.append(data.get(schema.data_key, ""))
             continue
 
         annotations = task.get("annotations") or []

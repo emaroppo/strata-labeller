@@ -9,7 +9,7 @@ import pytest
 
 from strata.catalog import EVERYTHING, SignedUrls
 from strata.contracts import ClassificationSchema
-from strata.labeller.labelstudio.adapter import Addressing, blob_url
+from strata.labeller.labelstudio.adapter import TYPE_KEY, Addressing, blob_url
 from strata.labeller.labelstudio.sync import relink
 
 SECRET = "shared with the server"
@@ -54,12 +54,42 @@ def test_other_data_keys_survive(stocked):
 
 def test_a_task_already_current_is_left_alone(stocked):
     catalog, samples = stocked
-    tasks = [task(1, LOCAL.url_for(samples[0]))]
+    tasks = [{"id": 1, "data": LOCAL.data_for(samples[0], "image")}]
 
     report = relink(tasks, catalog, LOCAL, "image")
 
     assert report.changes == []
     assert report.unchanged == 1
+
+
+def test_a_task_from_before_types_gains_its_samples_type(stocked):
+    catalog, samples = stocked
+    url = LOCAL.url_for(samples[0])
+
+    report = relink([task(1, url, note="looked odd")], catalog, LOCAL, "image")
+
+    # The URL was already current; the type is what changes, so the task
+    # keeps resolving once a second type holds the same bytes. docs/adr/0052
+    assert report.changes == [(1, {"image": url, "note": "looked odd", TYPE_KEY: "image/plain"})]
+
+
+def test_a_task_from_before_types_whose_bytes_two_samples_hold_is_left_alone(stocked, tmp_path):
+    catalog, samples = stocked
+    shared = samples[0].checksum
+    # A second sample over the same bytes, of another type
+    cached = catalog.ensure_cached([shared], tmp_path / "held")
+    catalog.ingest([cached[shared]], media="image", subtype="copy")
+    tasks = [
+        task(1, blob_url(samples[0], "blobs")),
+        {"id": 2, "data": LOCAL.data_for(samples[0], "image")},
+    ]
+
+    report = relink(tasks, catalog, SERVED, "image")
+
+    # Giving it either type would be a guess at what the reviewer saw
+    assert report.ambiguous == [1]
+    assert [task_id for task_id, _ in report.changes] == [2]
+    assert report.total == 2
 
 
 def test_a_url_naming_no_sample_is_reported_not_rewritten(stocked):

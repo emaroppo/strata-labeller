@@ -242,6 +242,24 @@ def _task_map(project, ls_project_id: int, catalog):
     return mapping
 
 
+def _report_ambiguous(task_ids: list[int], shown: int = 10) -> None:
+    """Name the tasks that carry no type and whose bytes several samples hold.
+
+    One place, so push, export and relink refuse them in the same words.
+    Each is named by its id, since the task is what someone would go and
+    look at. See ``docs/adr/0052``.
+    """
+    if not task_ids:
+        return
+    named = ", ".join(str(i) for i in task_ids[:shown])
+    more = f" and {len(task_ids) - shown:,} more" if len(task_ids) > shown else ""
+    console.print(
+        f"[yellow]{len(task_ids):,} task(s) name no sample type, and several samples "
+        f"hold their bytes, so they stand for none of them and were left alone: "
+        f"{named}{more}. A task pushed now names its type.[/yellow]"
+    )
+
+
 def _catalog_config(settings, name: str = ""):
     """Look up a named catalog, or exit saying which names exist.
 

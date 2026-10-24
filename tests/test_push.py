@@ -225,6 +225,46 @@ def test_the_task_map_survives_the_command(stage):
     assert saved["catalog"] == catalog.id
 
 
+def test_every_task_pushed_names_its_samples_type(stage):
+    from strata.labeller.labelstudio.adapter import TYPE_KEY
+
+    project, config, fake, by_name, _, _ = stage
+
+    push(project, config)
+
+    # Beside the URL that names the bytes, since the same bytes can be two
+    # samples. docs/adr/0052
+    data = {task["data"]["image"]: task["data"][TYPE_KEY] for task in fake.tasks.values()}
+    assert len(data) == 3
+    assert set(data.values()) == {row.type for row in by_name.values()} == {"image/plain"}
+
+
+def test_rebuilding_the_map_names_a_task_it_cannot_place_by_its_id(stage, tmp_path):
+    from strata.labeller.labelstudio.adapter import blob_url
+
+    project, config, fake, by_name, catalog, _ = stage
+    torn = by_name["torn"]
+    ls_project_id = next(iter(fake.projects))
+    fake.tasks[41] = {
+        "project": ls_project_id,
+        "data": {"image": blob_url(torn, "blobs")},
+        "annotations": [],
+    }
+
+    # A second sample over torn's bytes, of another type and in no
+    # collection the project reads
+    cached = catalog.ensure_cached([torn.checksum], tmp_path / "held")
+    catalog.ingest([cached[torn.checksum]], media="image", subtype="copy")
+
+    result = push(project, config, "--rebuild-map")
+
+    assert result.exit_code == 0, result.output
+    assert "stand for none of them" in result.output and ": 41." in result.output
+    # The old task stays as it was; torn gets a task that names its type
+    assert fake.tasks[41]["data"] == {"image": blob_url(torn, "blobs")}
+    assert len(fake.tasks) == 4
+
+
 def test_pushing_without_predictions_still_creates_tasks(stage):
     project, config, fake, _, _, _ = stage
 
